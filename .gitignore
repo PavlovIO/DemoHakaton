@@ -1,0 +1,17 @@
+# Go
+/backend/bin/
+*.test
+*.out
+# Node
+node_modules/
+/frontend/dist/
+# Python
+__pycache__/
+# Env / local
+.env
+*.local
+# Uploaded KYC files in local dev
+/storage/
+.DS_Store
+.idea/
+.vscode/

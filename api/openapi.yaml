@@ -1,0 +1,1964 @@
+openapi: 3.0.3
+info:
+  title: Liquidity Platform API
+  version: 0.1.0
+  description: |
+    Контракт между фронтендом (SPA) и бэкендом платформы ликвидности (MVP).
+    Этот файл — единственный источник правды: Go-сервер генерируется через oapi-codegen,
+    TS-клиент — через openapi-typescript. Любое изменение API начинается с PR в этот файл.
+
+    ## Аутентификация
+    - `POST /auth/login` ставит две cookie:
+      - `session` — HttpOnly, Secure, SameSite=Lax, непрозрачный токен сессии (в БД хранится его хэш);
+      - `csrf_token` — НЕ HttpOnly, фронт читает её и кладёт в заголовок.
+    - Все запросы, кроме GET/HEAD/OPTIONS, обязаны слать заголовок `X-CSRF-Token`,
+      равный значению cookie `csrf_token` (double-submit). Иначе 403 `CSRF_INVALID`.
+    - Фронт ходит с `credentials: "include"`.
+
+    ## Авторизация
+    Роль (`admin` / `borrower` / `lender`) определяет доступ к ручке, но КАЖДЫЙ запрос
+    к конкретной сущности дополнительно проверяет владение (защита от IDOR).
+    Списки (`GET /applications`, `GET /offers`, `GET /deals`) — role-scoped:
+    один и тот же эндпоинт возвращает разный набор данных в зависимости от роли.
+    Компания с `kyc_status != verified` не может создавать заявки и офферы (403 `KYC_NOT_VERIFIED`).
+
+    ## Деньги и проценты
+    Суммы и проценты передаются **строками** в десятичном формате (`"500000.00"`, `"8.00"`),
+    чтобы избежать потери точности float в JSON. В БД — `NUMERIC`.
+    Валюта — ISO 4217, страна — ISO 3166-1 alpha-2.
+
+    ## Ошибки
+    Единый формат `Error`. Коды: `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `CSRF_INVALID`,
+    `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `RATE_LIMITED`, `INTERNAL`.
+
+    ## Пагинация
+    `page` (с 1) + `page_size` (по умолчанию 20, максимум 100). Ответ: `{items, total, page, page_size}`.
+
+    ## Статусные машины
+    - Организация (KYC): `draft → under_review → verified | rejected`; из `rejected` можно снова в `under_review`.
+    - Заявка: `draft → moderation → published | rejected`; `rejected → moderation` (после правки);
+      `published → agreed` (принят оффер); `draft|moderation|rejected|published → cancelled`.
+    - Оффер: `sent → accepted | rejected | withdrawn`.
+      При принятии одного оффера все остальные `sent`-офферы заявки → `rejected` (reason `another_offer_accepted`),
+      всё в одной транзакции БД с блокировкой строки заявки.
+  contact:
+    name: Liquidity Platform team
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Локальная разработка
+tags:
+  - name: auth
+  - name: organizations
+    description: Профиль компании и KYC со стороны клиента
+  - name: dictionaries
+  - name: applications
+    description: Заявки на ликвидность (создают заёмщики)
+  - name: offers
+    description: Предложения кредиторов
+  - name: deals
+    description: Зафиксированные сделки
+  - name: chat
+  - name: notifications
+  - name: admin
+  - name: system
+
+security:
+  - cookieAuth: []
+
+paths:
+  # ───────────────────────── system ─────────────────────────
+  /healthz:
+    get:
+      tags: [system]
+      operationId: healthz
+      summary: Liveness/readiness (проверяет соединение с БД)
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+
+  # ───────────────────────── auth ─────────────────────────
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Регистрация компании и её первого пользователя
+      description: |
+        Создаёт `organization` (kyc_status=`draft`) и `user`.
+        Правила: `borrower` → `country_code` = `RU`; `lender` → `country_code` ≠ `RU`.
+        Роль `admin` через регистрацию получить нельзя (админы создаются сидом/CLI).
+        После успеха пользователь сразу залогинен (ставятся cookie, как у /auth/login).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Зарегистрирован и залогинен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вход по email и паролю
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Успешный вход; ставит cookie `session` и `csrf_token`
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Выход (инвалидирует сессию, чистит cookie)
+      responses:
+        '204': { description: Вышел }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Текущий пользователь и его компания
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ───────────────────────── organizations / KYC ─────────────────────────
+  /organizations/me:
+    get:
+      tags: [organizations]
+      operationId: getMyOrganization
+      summary: Профиль своей компании
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [organizations]
+      operationId: updateMyOrganization
+      summary: Редактирование профиля (только в статусах draft / rejected)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /organizations/me/documents:
+    get:
+      tags: [organizations]
+      operationId: listMyDocuments
+      summary: Загруженные KYC-документы своей компании
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/KycDocument' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [organizations]
+      operationId: uploadMyDocument
+      summary: Загрузить KYC-документ
+      description: |
+        Допустимые типы файлов: PDF, PNG, JPEG; максимум 10 MB.
+        Тип определяется по содержимому (magic bytes), а не по расширению.
+        Файл хранится вне веб-корня под случайным именем.
+        Только в статусах организации draft / rejected.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [doc_type, file]
+              properties:
+                doc_type: { $ref: '#/components/schemas/KycDocumentType' }
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Загружен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycDocument' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+        '413':
+          description: Файл слишком большой
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /organizations/me/documents/{documentId}:
+    delete:
+      tags: [organizations]
+      operationId: deleteMyDocument
+      summary: Удалить свой документ (только в статусах draft / rejected)
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '204': { description: Удалён }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /documents/{documentId}/file:
+    get:
+      tags: [organizations]
+      operationId: downloadDocument
+      summary: Скачать файл документа (владелец-организация или admin)
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Файл (Content-Disposition attachment)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /organizations/me/kyc/submit:
+    post:
+      tags: [organizations]
+      operationId: submitKyc
+      summary: Отправить компанию на верификацию
+      description: |
+        `draft|rejected → under_review`. Проверяет, что загружены обязательные документы:
+        - все: `charter`, `registration_certificate`, `address_proof`, `beneficiaries_register`;
+        - кредитор дополнительно: `source_of_funds`.
+        При переходе бэкенд запускает AML-скрининг (санкционные списки, FATF-юрисдикции)
+        и создаёт `AmlFlag` при совпадениях. Админ получает уведомление.
+      responses:
+        '200':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /registry/lookup:
+    get:
+      tags: [organizations]
+      operationId: registryLookup
+      summary: Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+      description: Доступно без логина на шаге регистрации; жёсткий rate limit.
+      security: []
+      parameters:
+        - name: country_code
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/CountryCode' }
+        - name: number
+          in: query
+          required: true
+          description: ИНН/ОГРН для RU, LEI для остальных стран
+          schema: { type: string, minLength: 8, maxLength: 20 }
+      responses:
+        '200':
+          description: OK (found=false, если ничего не нашли)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistryLookupResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '502':
+          description: Внешний реестр недоступен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ───────────────────────── dictionaries ─────────────────────────
+  /dictionaries/countries:
+    get:
+      tags: [dictionaries]
+      operationId: listCountries
+      security: []
+      summary: Справочник стран (с флагом FATF high-risk)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Country' }
+
+  /dictionaries/currencies:
+    get:
+      tags: [dictionaries]
+      operationId: listCurrencies
+      security: []
+      summary: Справочник валют
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Currency' }
+
+  /dictionaries/transfer-methods:
+    get:
+      tags: [dictionaries]
+      operationId: listTransferMethods
+      security: []
+      summary: Справочник способов передачи средств
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DictionaryItem' }
+
+  # ───────────────────────── applications ─────────────────────────
+  /applications:
+    get:
+      tags: [applications]
+      operationId: listApplications
+      summary: Список заявок (role-scoped) — витрина, «мои заявки», архив
+      description: |
+        - `borrower` — только заявки своей компании, любые статусы;
+        - `lender` — только `published` + заявки, по которым у компании есть оффер (для архива);
+        - `admin` — все заявки.
+        Фильтр по сумме (`amount_min`/`amount_max`) применяется только вместе с `currency`.
+      parameters:
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ApplicationStatus' }
+        - name: target_country
+          in: query
+          schema: { $ref: '#/components/schemas/CountryCode' }
+        - name: currency
+          in: query
+          schema: { $ref: '#/components/schemas/CurrencyCode' }
+        - name: amount_min
+          in: query
+          schema: { $ref: '#/components/schemas/Money' }
+        - name: amount_max
+          in: query
+          schema: { $ref: '#/components/schemas/Money' }
+        - name: term_min
+          in: query
+          description: Минимальный срок, месяцев
+          schema: { type: integer, minimum: 1 }
+        - name: term_max
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: borrower_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CreatedFrom'
+        - $ref: '#/components/parameters/CreatedTo'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at_desc, created_at_asc, amount_desc, amount_asc, term_asc, term_desc]
+            default: created_at_desc
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApplicationPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [applications]
+      operationId: createApplication
+      summary: Создать заявку (borrower, KYC verified) — в статусе draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplicationCreate' }
+      responses:
+        '201':
+          description: Создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /applications/{applicationId}:
+    get:
+      tags: [applications]
+      operationId: getApplication
+      summary: Карточка заявки
+      description: borrower — своя; lender — published или с его оффером; admin — любая. Иначе 404.
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [applications]
+      operationId: updateApplication
+      summary: Редактировать заявку (владелец, статусы draft / rejected)
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplicationUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/submit:
+    post:
+      tags: [applications]
+      operationId: submitApplication
+      summary: Отправить на модерацию (draft|rejected → moderation)
+      description: Запускает AML-правила по заявке (порог суммы, high-risk юрисдикция). Админ получает уведомление.
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/cancel:
+    post:
+      tags: [applications]
+      operationId: cancelApplication
+      summary: Отменить заявку (владелец; любой статус, кроме agreed/cancelled)
+      description: Все `sent`-офферы → `rejected` (reason `application_cancelled`).
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/reject-offers:
+    post:
+      tags: [applications]
+      operationId: rejectAllOffers
+      summary: Отклонить все текущие офферы (владелец); заявка остаётся published
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rejected_count]
+                properties:
+                  rejected_count: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/history:
+    get:
+      tags: [applications]
+      operationId: getApplicationHistory
+      summary: История смены статусов заявки и её офферов
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK (хронологически)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StatusHistoryEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /applications/{applicationId}/offers:
+    get:
+      tags: [offers]
+      operationId: listApplicationOffers
+      summary: Офферы по заявке
+      description: borrower-владелец и admin видят все; lender — только свой. Другим — 404.
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/OfferStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [offers]
+      operationId: createOffer
+      summary: Сделать оффер (lender, KYC verified, заявка published)
+      description: |
+        `amount` ≤ сумме заявки; валюта = валюте заявки.
+        Одна компания — не более одного активного (`sent`) оффера на заявку (иначе 409).
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OfferCreate' }
+      responses:
+        '201':
+          description: Создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────── offers ─────────────────────────
+  /offers:
+    get:
+      tags: [offers]
+      operationId: listOffers
+      summary: Список офферов (role-scoped) — «мои предложения», входящие, архив
+      description: |
+        - `lender` — офферы своей компании;
+        - `borrower` — офферы на заявки своей компании;
+        - `admin` — все.
+      parameters:
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/OfferStatus' }
+        - name: application_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: lender_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - name: borrower_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CreatedFrom'
+        - $ref: '#/components/parameters/CreatedTo'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfferPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /offers/{offerId}:
+    get:
+      tags: [offers]
+      operationId: getOffer
+      summary: Карточка оффера (видят только автор-кредитор, заёмщик-владелец заявки, admin)
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers/{offerId}/accept:
+    post:
+      tags: [offers]
+      operationId: acceptOffer
+      summary: Принять оффер (borrower-владелец заявки)
+      description: |
+        Одна транзакция БД с `SELECT ... FOR UPDATE` на заявку:
+        оффер → `accepted`; остальные `sent` → `rejected` (`another_offer_accepted`);
+        заявка → `agreed`; создаётся `Deal` со снапшотом условий.
+        Повторный/параллельный вызов → 409.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: Сделка зафиксирована
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /offers/{offerId}/reject:
+    post:
+      tags: [offers]
+      operationId: rejectOffer
+      summary: Отклонить оффер (borrower-владелец заявки)
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /offers/{offerId}/withdraw:
+    post:
+      tags: [offers]
+      operationId: withdrawOffer
+      summary: Отозвать свой оффер (lender, только из sent)
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  # ───────────────────────── chat ─────────────────────────
+  /offers/{offerId}/messages:
+    get:
+      tags: [chat]
+      operationId: listMessages
+      summary: Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
+      description: |
+        MVP — polling: фронт раз в 3–5 с запрашивает `after_id=<последний id>`.
+        Чтение помечает сообщения прочитанными для текущей стороны.
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+        - name: after_id
+          in: query
+          description: Вернуть сообщения с id > after_id
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: OK (по возрастанию id)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [chat]
+      operationId: sendMessage
+      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+      description: Текст хранится как есть и рендерится фронтом только как текст (никакого HTML).
+      parameters:
+        - $ref: '#/components/parameters/OfferId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageCreate' }
+      responses:
+        '201':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  # ───────────────────────── deals ─────────────────────────
+  /deals:
+    get:
+      tags: [deals]
+      operationId: listDeals
+      summary: Сделки (role-scoped — стороны сделки или admin)
+      parameters:
+        - $ref: '#/components/parameters/CreatedFrom'
+        - $ref: '#/components/parameters/CreatedTo'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DealPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /deals/{dealId}:
+    get:
+      tags: [deals]
+      operationId: getDeal
+      summary: Карточка сделки
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── notifications ─────────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      summary: Уведомления текущего пользователя (polling)
+      parameters:
+        - name: unread_only
+          in: query
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /notifications/{notificationId}/read:
+    post:
+      tags: [notifications]
+      operationId: markNotificationRead
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      operationId: markAllNotificationsRead
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ───────────────────────── admin ─────────────────────────
+  /admin/organizations:
+    get:
+      tags: [admin]
+      operationId: adminListOrganizations
+      summary: Компании (очередь верификации — kyc_status=under_review)
+      parameters:
+        - name: kyc_status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/KycStatus' }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/OrganizationType' }
+        - name: country_code
+          in: query
+          schema: { $ref: '#/components/schemas/CountryCode' }
+        - name: q
+          in: query
+          description: Поиск по названию / рег. номеру
+          schema: { type: string, maxLength: 200 }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/organizations/{organizationId}:
+    get:
+      tags: [admin]
+      operationId: adminGetOrganization
+      summary: Полная карточка компании для проверки (документы, бенефициары, AML-флаги, пользователи)
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationDetails' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/organizations/{organizationId}/kyc/approve:
+    post:
+      tags: [admin]
+      operationId: adminApproveKyc
+      summary: Верифицировать компанию (under_review → verified)
+      description: 409, если у компании есть открытые AML-флаги с severity=high.
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminComment' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /admin/organizations/{organizationId}/kyc/reject:
+    post:
+      tags: [admin]
+      operationId: adminRejectKyc
+      summary: Отклонить верификацию (under_review → rejected) с причиной
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminReason' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /admin/applications/{applicationId}/approve:
+    post:
+      tags: [admin]
+      operationId: adminApproveApplication
+      summary: Одобрить заявку (moderation → published)
+      description: Очередь модерации — `GET /applications?status=moderation` под admin.
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminComment' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /admin/applications/{applicationId}/reject:
+    post:
+      tags: [admin]
+      operationId: adminRejectApplication
+      summary: Вернуть заявку на доработку (moderation → rejected) с причиной
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminReason' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: adminListUsers
+      parameters:
+        - name: role
+          in: query
+          schema: { $ref: '#/components/schemas/Role' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/UserStatus' }
+        - name: q
+          in: query
+          description: Поиск по email
+          schema: { type: string, maxLength: 200 }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}/block:
+    post:
+      tags: [admin]
+      operationId: adminBlockUser
+      summary: Заблокировать пользователя (инвалидирует все его сессии)
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminReason' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/users/{userId}/unblock:
+    post:
+      tags: [admin]
+      operationId: adminUnblockUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/aml/flags:
+    get:
+      tags: [admin]
+      operationId: adminListAmlFlags
+      summary: AML-флаги (rule-based скрининг)
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/AmlFlagStatus' }
+        - name: severity
+          in: query
+          schema: { $ref: '#/components/schemas/AmlSeverity' }
+        - name: organization_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AmlFlagPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/aml/flags/{flagId}/resolve:
+    post:
+      tags: [admin]
+      operationId: adminResolveAmlFlag
+      parameters:
+        - name: flagId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution, comment]
+              properties:
+                resolution:
+                  type: string
+                  enum: [false_positive, confirmed]
+                comment: { type: string, minLength: 3, maxLength: 2000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AmlFlag' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/InvalidTransition' }
+
+  /admin/analytics/summary:
+    get:
+      tags: [admin]
+      operationId: adminAnalyticsSummary
+      summary: Базовая аналитика — количество заявок, средний размер, топ-страны
+      parameters:
+        - $ref: '#/components/parameters/CreatedFrom'
+        - $ref: '#/components/parameters/CreatedTo'
+        - name: top_n
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/audit-log:
+    get:
+      tags: [admin]
+      operationId: adminListAuditLog
+      summary: Журнал действий пользователей
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: entity_type
+          in: query
+          schema: { $ref: '#/components/schemas/EntityType' }
+        - name: entity_id
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/CreatedFrom'
+        - $ref: '#/components/parameters/CreatedTo'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+# ═════════════════════════ components ═════════════════════════
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    CreatedFrom:
+      name: created_from
+      in: query
+      schema: { type: string, format: date-time }
+    CreatedTo:
+      name: created_to
+      in: query
+      schema: { type: string, format: date-time }
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrganizationId:
+      name: organizationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Ошибка валидации (VALIDATION_ERROR)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Нет сессии или она истекла (UNAUTHORIZED)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Нет прав / CSRF / KYC не пройден / пользователь заблокирован
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Не найдено или нет доступа (чужие сущности всегда отдают 404, а не 403)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Конфликт (CONFLICT), например email уже занят
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidTransition:
+      description: Недопустимый переход статуса (INVALID_STATUS_TRANSITION)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Слишком много запросов (RATE_LIMITED)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    # ── primitives ──
+    Money:
+      type: string
+      pattern: '^\d{1,15}(\.\d{1,2})?$'
+      example: '500000.00'
+    Percent:
+      type: string
+      description: Проценты, например "8.00" = 8%
+      pattern: '^\d{1,3}(\.\d{1,4})?$'
+      example: '8.00'
+    CurrencyCode:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: EUR
+    CountryCode:
+      type: string
+      pattern: '^[A-Z]{2}$'
+      example: DE
+
+    # ── enums ──
+    Role:
+      type: string
+      enum: [admin, borrower, lender]
+    UserStatus:
+      type: string
+      enum: [active, blocked]
+    OrganizationType:
+      type: string
+      enum: [borrower, lender]
+    KycStatus:
+      type: string
+      enum: [draft, under_review, verified, rejected]
+    KycDocumentType:
+      type: string
+      enum: [charter, registration_certificate, address_proof, beneficiaries_register, source_of_funds, other]
+    ApplicationStatus:
+      type: string
+      enum: [draft, moderation, rejected, published, agreed, cancelled]
+    OfferStatus:
+      type: string
+      enum: [sent, accepted, rejected, withdrawn]
+    OfferRejectReason:
+      type: string
+      enum: [rejected_by_borrower, another_offer_accepted, application_cancelled]
+    TransferMethod:
+      type: string
+      enum: [swift, sepa, other]
+    RepaymentSchedule:
+      type: string
+      description: |
+        bullet — всё в конце срока; annuity — равные платежи;
+        interest_monthly_principal_bullet — проценты ежемесячно, тело в конце; custom — см. additional_terms
+      enum: [bullet, annuity, interest_monthly_principal_bullet, custom]
+    EntityType:
+      type: string
+      enum: [user, organization, document, application, offer, deal, message, aml_flag]
+    AmlFlagStatus:
+      type: string
+      enum: [open, false_positive, confirmed]
+    AmlSeverity:
+      type: string
+      enum: [low, medium, high]
+    AmlRule:
+      type: string
+      enum: [sanctions_match, high_risk_jurisdiction, amount_threshold, registry_mismatch, other]
+    NotificationType:
+      type: string
+      enum:
+        - kyc_submitted
+        - kyc_approved
+        - kyc_rejected
+        - application_submitted
+        - application_published
+        - application_rejected
+        - offer_received
+        - offer_accepted
+        - offer_rejected
+        - offer_withdrawn
+        - message_received
+        - aml_flag_created
+
+    # ── errors / common ──
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Некорректные данные
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string, example: amount }
+                  message: { type: string, example: must be greater than 0 }
+    AdminComment:
+      type: object
+      properties:
+        comment: { type: string, maxLength: 2000 }
+    AdminReason:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 2000 }
+    DictionaryItem:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, example: swift }
+        name: { type: string, example: SWIFT-перевод }
+    Country:
+      type: object
+      required: [code, name_ru, name_en, fatf_high_risk]
+      properties:
+        code: { $ref: '#/components/schemas/CountryCode' }
+        name_ru: { type: string, example: Германия }
+        name_en: { type: string, example: Germany }
+        fatf_high_risk:
+          type: boolean
+          description: Страна в чёрном/сером списке FATF
+    Currency:
+      type: object
+      required: [code, name]
+      properties:
+        code: { $ref: '#/components/schemas/CurrencyCode' }
+        name: { type: string, example: Евро }
+
+    # ── auth / users ──
+    RegisterRequest:
+      type: object
+      required: [email, password, role, organization]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          description: Хэшируется argon2id
+        role:
+          type: string
+          enum: [borrower, lender]
+        organization: { $ref: '#/components/schemas/OrganizationCreate' }
+        captcha_token:
+          type: string
+          description: Токен Yandex SmartCaptcha (если включена)
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        captcha_token: { type: string }
+    User:
+      type: object
+      required: [id, email, role, status, organization_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        organization_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: null для admin
+        created_at: { type: string, format: date-time }
+    Me:
+      type: object
+      required: [user, organization]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        organization:
+          allOf:
+            - $ref: '#/components/schemas/Organization'
+          nullable: true
+    UserPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    # ── organizations / KYC ──
+    Beneficiary:
+      type: object
+      required: [full_name, citizenship_country_code, ownership_percent]
+      properties:
+        full_name: { type: string, maxLength: 300 }
+        citizenship_country_code: { $ref: '#/components/schemas/CountryCode' }
+        ownership_percent: { $ref: '#/components/schemas/Percent' }
+    OrganizationCreate:
+      type: object
+      required: [name, country_code, registration_number, legal_address]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 300 }
+        country_code: { $ref: '#/components/schemas/CountryCode' }
+        registration_number:
+          type: string
+          description: ИНН (10 цифр) для RU; рег. номер в стране регистрации для остальных
+          maxLength: 50
+        lei:
+          type: string
+          pattern: '^[A-Z0-9]{20}$'
+          description: Legal Entity Identifier (рекомендуется для кредиторов)
+        legal_address: { type: string, maxLength: 1000 }
+    OrganizationUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 300 }
+        registration_number: { type: string, maxLength: 50 }
+        lei:
+          type: string
+          pattern: '^[A-Z0-9]{20}$'
+          nullable: true
+        legal_address: { type: string, maxLength: 1000 }
+        beneficiaries:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Beneficiary' }
+    Organization:
+      type: object
+      required:
+        [id, type, name, country_code, registration_number, legal_address, beneficiaries, kyc_status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/OrganizationType' }
+        name: { type: string }
+        country_code: { $ref: '#/components/schemas/CountryCode' }
+        registration_number: { type: string }
+        lei: { type: string, nullable: true }
+        legal_address: { type: string }
+        beneficiaries:
+          type: array
+          items: { $ref: '#/components/schemas/Beneficiary' }
+        kyc_status: { $ref: '#/components/schemas/KycStatus' }
+        kyc_reject_reason: { type: string, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    OrganizationShort:
+      type: object
+      required: [id, name, country_code]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        country_code: { $ref: '#/components/schemas/CountryCode' }
+    OrganizationDetails:
+      allOf:
+        - $ref: '#/components/schemas/Organization'
+        - type: object
+          required: [documents, aml_flags, users, registry_check]
+          properties:
+            documents:
+              type: array
+              items: { $ref: '#/components/schemas/KycDocument' }
+            aml_flags:
+              type: array
+              items: { $ref: '#/components/schemas/AmlFlag' }
+            users:
+              type: array
+              items: { $ref: '#/components/schemas/User' }
+            registry_check:
+              allOf:
+                - $ref: '#/components/schemas/RegistryLookupResult'
+              nullable: true
+              description: Результат сверки с реестром на момент submit KYC
+    OrganizationPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Organization' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+    KycDocument:
+      type: object
+      required: [id, doc_type, file_name, mime_type, size_bytes, uploaded_at]
+      properties:
+        id: { type: string, format: uuid }
+        doc_type: { $ref: '#/components/schemas/KycDocumentType' }
+        file_name:
+          type: string
+          description: Оригинальное имя (только для отображения, экранируется)
+        mime_type: { type: string, example: application/pdf }
+        size_bytes: { type: integer, format: int64 }
+        uploaded_at: { type: string, format: date-time }
+    RegistryLookupResult:
+      type: object
+      required: [source, found]
+      properties:
+        source:
+          type: string
+          enum: [egrul_dadata, gleif]
+        found: { type: boolean }
+        name: { type: string, nullable: true }
+        registration_number: { type: string, nullable: true }
+        legal_address: { type: string, nullable: true }
+        registry_status:
+          type: string
+          nullable: true
+          description: Статус в реестре (active, liquidating, liquidated, ...)
+        checked_at: { type: string, format: date-time }
+
+    # ── applications ──
+    ApplicationCreate:
+      type: object
+      required: [amount, currency, target_country_code, purpose, term_months, transfer_method]
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        target_country_code: { $ref: '#/components/schemas/CountryCode' }
+        purpose: { type: string, minLength: 10, maxLength: 2000 }
+        term_months: { type: integer, minimum: 1, maximum: 120 }
+        transfer_method: { $ref: '#/components/schemas/TransferMethod' }
+        transfer_method_comment: { type: string, maxLength: 500 }
+    ApplicationUpdate:
+      type: object
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        target_country_code: { $ref: '#/components/schemas/CountryCode' }
+        purpose: { type: string, minLength: 10, maxLength: 2000 }
+        term_months: { type: integer, minimum: 1, maximum: 120 }
+        transfer_method: { $ref: '#/components/schemas/TransferMethod' }
+        transfer_method_comment: { type: string, maxLength: 500, nullable: true }
+    Application:
+      type: object
+      required:
+        - id
+        - number
+        - borrower
+        - status
+        - amount
+        - currency
+        - target_country_code
+        - purpose
+        - term_months
+        - transfer_method
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        number:
+          type: string
+          description: Человекочитаемый номер
+          example: APP-000123
+        borrower: { $ref: '#/components/schemas/OrganizationShort' }
+        status: { $ref: '#/components/schemas/ApplicationStatus' }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        target_country_code: { $ref: '#/components/schemas/CountryCode' }
+        purpose: { type: string }
+        term_months: { type: integer }
+        transfer_method: { $ref: '#/components/schemas/TransferMethod' }
+        transfer_method_comment: { type: string, nullable: true }
+        moderation_comment:
+          type: string
+          nullable: true
+          description: Причина отказа модерации (видна владельцу и admin)
+        offers_count:
+          type: integer
+          nullable: true
+          description: Только для владельца и admin; для lender — null
+        my_offer_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Только для lender — id активного оффера его компании по этой заявке
+        accepted_offer_id: { type: string, format: uuid, nullable: true }
+        published_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ApplicationPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Application' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+    StatusHistoryEntry:
+      type: object
+      required: [id, entity_type, entity_id, to_status, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        entity_type: { $ref: '#/components/schemas/EntityType' }
+        entity_id: { type: string }
+        from_status: { type: string, nullable: true }
+        to_status: { type: string }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        actor_role:
+          allOf:
+            - $ref: '#/components/schemas/Role'
+          nullable: true
+        comment: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    # ── offers ──
+    OfferCreate:
+      type: object
+      required: [amount, interest_rate_annual, repayment_schedule]
+      properties:
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: ≤ суммы заявки
+        interest_rate_annual: { $ref: '#/components/schemas/Percent' }
+        fee_percent:
+          allOf:
+            - $ref: '#/components/schemas/Percent'
+          description: Комиссия за организацию сделки, % от суммы (если применимо)
+        repayment_schedule: { $ref: '#/components/schemas/RepaymentSchedule' }
+        collateral:
+          type: string
+          maxLength: 2000
+          description: Требования к обеспечению
+        additional_terms: { type: string, maxLength: 4000 }
+        valid_until:
+          type: string
+          format: date-time
+          description: Срок действия оффера (опционально)
+    Offer:
+      type: object
+      required:
+        [id, application_id, lender, status, amount, currency, interest_rate_annual, repayment_schedule, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        application_id: { type: string, format: uuid }
+        application_number: { type: string, example: APP-000123 }
+        lender: { $ref: '#/components/schemas/OrganizationShort' }
+        status: { $ref: '#/components/schemas/OfferStatus' }
+        reject_reason:
+          allOf:
+            - $ref: '#/components/schemas/OfferRejectReason'
+          nullable: true
+        reject_comment: { type: string, nullable: true }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        interest_rate_annual: { $ref: '#/components/schemas/Percent' }
+        fee_percent:
+          allOf:
+            - $ref: '#/components/schemas/Percent'
+          nullable: true
+        repayment_schedule: { $ref: '#/components/schemas/RepaymentSchedule' }
+        collateral: { type: string, nullable: true }
+        additional_terms: { type: string, nullable: true }
+        valid_until: { type: string, format: date-time, nullable: true }
+        unread_messages:
+          type: integer
+          description: Непрочитанные сообщения чата для текущего пользователя
+        created_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time, nullable: true }
+    OfferPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Offer' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    # ── deals ──
+    Deal:
+      type: object
+      description: Снапшот условий на момент принятия оффера (не меняется после создания)
+      required:
+        - id
+        - number
+        - application_id
+        - offer_id
+        - borrower
+        - lender
+        - amount
+        - currency
+        - interest_rate_annual
+        - term_months
+        - repayment_schedule
+        - agreed_at
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, example: DEAL-000045 }
+        application_id: { type: string, format: uuid }
+        offer_id: { type: string, format: uuid }
+        borrower: { $ref: '#/components/schemas/OrganizationShort' }
+        lender: { $ref: '#/components/schemas/OrganizationShort' }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        interest_rate_annual: { $ref: '#/components/schemas/Percent' }
+        fee_percent:
+          allOf:
+            - $ref: '#/components/schemas/Percent'
+          nullable: true
+        fee_amount:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          nullable: true
+          description: Рассчитано бэкендом = amount × fee_percent / 100
+        term_months: { type: integer }
+        target_country_code: { $ref: '#/components/schemas/CountryCode' }
+        transfer_method: { $ref: '#/components/schemas/TransferMethod' }
+        repayment_schedule: { $ref: '#/components/schemas/RepaymentSchedule' }
+        collateral: { type: string, nullable: true }
+        additional_terms: { type: string, nullable: true }
+        agreed_at: { type: string, format: date-time }
+    DealPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Deal' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    # ── chat ──
+    MessageCreate:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 4000 }
+    Message:
+      type: object
+      required: [id, offer_id, author_user_id, author_role, author_organization, text, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        offer_id: { type: string, format: uuid }
+        author_user_id: { type: string, format: uuid }
+        author_role: { $ref: '#/components/schemas/Role' }
+        author_organization: { $ref: '#/components/schemas/OrganizationShort' }
+        text:
+          type: string
+          description: Plain text. Фронт рендерит ТОЛЬКО как текст.
+        is_mine: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    # ── notifications ──
+    Notification:
+      type: object
+      required: [id, type, title, entity_type, entity_id, is_read, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { $ref: '#/components/schemas/NotificationType' }
+        title: { type: string, example: Новое предложение по заявке APP-000123 }
+        entity_type: { $ref: '#/components/schemas/EntityType' }
+        entity_id: { type: string }
+        is_read: { type: boolean }
+        created_at: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      required: [items, total, unread_total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        total: { type: integer }
+        unread_total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    # ── AML ──
+    AmlFlag:
+      type: object
+      required: [id, organization, rule, severity, details, status, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        organization: { $ref: '#/components/schemas/OrganizationShort' }
+        application_id: { type: string, format: uuid, nullable: true }
+        rule: { $ref: '#/components/schemas/AmlRule' }
+        severity: { $ref: '#/components/schemas/AmlSeverity' }
+        details:
+          type: string
+          example: 'Совпадение бенефициара "Ivan Petrov" со списком OFAC SDN (score 0.92)'
+        status: { $ref: '#/components/schemas/AmlFlagStatus' }
+        resolved_by_user_id: { type: string, format: uuid, nullable: true }
+        resolution_comment: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+    AmlFlagPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AmlFlag' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    # ── analytics / audit ──
+    CountryStat:
+      type: object
+      required: [country_code, count]
+      properties:
+        country_code: { $ref: '#/components/schemas/CountryCode' }
+        count: { type: integer }
+    CurrencyStat:
+      type: object
+      required: [currency, count, total_amount, average_amount]
+      properties:
+        currency: { $ref: '#/components/schemas/CurrencyCode' }
+        count: { type: integer }
+        total_amount: { $ref: '#/components/schemas/Money' }
+        average_amount: { $ref: '#/components/schemas/Money' }
+    AnalyticsSummary:
+      type: object
+      required:
+        - applications_total
+        - applications_by_status
+        - offers_total
+        - deals_total
+        - amounts_by_currency
+        - top_demand_countries
+        - top_supply_countries
+      properties:
+        applications_total: { type: integer }
+        applications_by_status:
+          type: object
+          additionalProperties: { type: integer }
+          example: { published: 12, agreed: 4, moderation: 3 }
+        offers_total: { type: integer }
+        deals_total: { type: integer }
+        amounts_by_currency:
+          type: array
+          description: Средний размер финансирования считается отдельно по каждой валюте (без конвертации)
+          items: { $ref: '#/components/schemas/CurrencyStat' }
+        top_demand_countries:
+          type: array
+          description: Целевые юрисдикции заявок
+          items: { $ref: '#/components/schemas/CountryStat' }
+        top_supply_countries:
+          type: array
+          description: Страны регистрации кредиторов, сделавших офферы
+          items: { $ref: '#/components/schemas/CountryStat' }
+    AuditLogEntry:
+      type: object
+      required: [id, action, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: string, format: uuid, nullable: true }
+        action:
+          type: string
+          example: offer.accept
+        entity_type:
+          allOf:
+            - $ref: '#/components/schemas/EntityType'
+          nullable: true
+        entity_id: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        meta:
+          type: object
+          additionalProperties: true
+        created_at: { type: string, format: date-time }
+    AuditLogPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLogEntry' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
