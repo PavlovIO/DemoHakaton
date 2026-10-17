@@ -1,0 +1,17 @@
+# Normalize line endings
+* text=auto
+# Files that must stay LF (Linux shell, Make, SQL — не важно, но лучше единообразно)
+Makefile    text eol=lf
+*.sh        text eol=lf
+*.sql       text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+# Windows scripts — CRLF
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+# Binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.pdf       binary
