@@ -12,13 +12,76 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, role, status, organization_id, created_at
-FROM users
+const blockUser = `-- name: BlockUser :one
+UPDATE users SET status = 'blocked', blocked_reason = $2, updated_at = now()
 WHERE id = $1
+RETURNING id, email, role, status, organization_id, blocked_reason, created_at
 `
 
-type GetUserByIDRow struct {
+type BlockUserParams struct {
+	ID            uuid.UUID   `json:"id"`
+	BlockedReason pgtype.Text `json:"blocked_reason"`
+}
+
+type BlockUserRow struct {
+	ID             uuid.UUID          `json:"id"`
+	Email          string             `json:"email"`
+	Role           UserRole           `json:"role"`
+	Status         UserStatus         `json:"status"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	BlockedReason  pgtype.Text        `json:"blocked_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error) {
+	row := q.db.QueryRow(ctx, blockUser, arg.ID, arg.BlockedReason)
+	var i BlockUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.OrganizationID,
+		&i.BlockedReason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const countUsers = `-- name: CountUsers :one
+SELECT count(*) FROM users
+WHERE ($1::user_role IS NULL OR role = $1::user_role)
+  AND ($2::user_status IS NULL OR status = $2::user_status)
+  AND ($3::text IS NULL OR email ILIKE '%' || $3::text || '%')
+`
+
+type CountUsersParams struct {
+	Role   NullUserRole   `json:"role"`
+	Status NullUserStatus `json:"status"`
+	Q      pgtype.Text    `json:"q"`
+}
+
+func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsers, arg.Role, arg.Status, arg.Q)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (email, password_hash, role, organization_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, role, status, organization_id, created_at
+`
+
+type CreateUserParams struct {
+	Email          string      `json:"email"`
+	PasswordHash   string      `json:"password_hash"`
+	Role           UserRole    `json:"role"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+type CreateUserRow struct {
 	ID             uuid.UUID          `json:"id"`
 	Email          string             `json:"email"`
 	Role           UserRole           `json:"role"`
@@ -27,9 +90,14 @@ type GetUserByIDRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i GetUserByIDRow
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Role,
+		arg.OrganizationID,
+	)
+	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -39,4 +107,154 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, password_hash, role, status, organization_id,
+       blocked_reason, last_login_at, created_at, updated_at
+FROM users
+WHERE email = $1
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.OrganizationID,
+		&i.BlockedReason,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email, password_hash, role, status, organization_id,
+       blocked_reason, last_login_at, created_at, updated_at
+FROM users
+WHERE id = $1
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.OrganizationID,
+		&i.BlockedReason,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, email, role, status, organization_id, created_at
+FROM users
+WHERE ($3::user_role IS NULL OR role = $3::user_role)
+  AND ($4::user_status IS NULL OR status = $4::user_status)
+  AND ($5::text IS NULL OR email ILIKE '%' || $5::text || '%')
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListUsersParams struct {
+	Limit  int32          `json:"limit"`
+	Offset int32          `json:"offset"`
+	Role   NullUserRole   `json:"role"`
+	Status NullUserStatus `json:"status"`
+	Q      pgtype.Text    `json:"q"`
+}
+
+type ListUsersRow struct {
+	ID             uuid.UUID          `json:"id"`
+	Email          string             `json:"email"`
+	Role           UserRole           `json:"role"`
+	Status         UserStatus         `json:"status"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
+	rows, err := q.db.Query(ctx, listUsers,
+		arg.Limit,
+		arg.Offset,
+		arg.Role,
+		arg.Status,
+		arg.Q,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersRow{}
+	for rows.Next() {
+		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Role,
+			&i.Status,
+			&i.OrganizationID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unblockUser = `-- name: UnblockUser :one
+UPDATE users SET status = 'active', blocked_reason = NULL, updated_at = now()
+WHERE id = $1
+RETURNING id, email, role, status, organization_id, blocked_reason, created_at
+`
+
+type UnblockUserRow struct {
+	ID             uuid.UUID          `json:"id"`
+	Email          string             `json:"email"`
+	Role           UserRole           `json:"role"`
+	Status         UserStatus         `json:"status"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	BlockedReason  pgtype.Text        `json:"blocked_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UnblockUser(ctx context.Context, id uuid.UUID) (UnblockUserRow, error) {
+	row := q.db.QueryRow(ctx, unblockUser, id)
+	var i UnblockUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.OrganizationID,
+		&i.BlockedReason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateLastLogin = `-- name: UpdateLastLogin :exec
+UPDATE users SET last_login_at = now() WHERE id = $1
+`
+
+func (q *Queries) UpdateLastLogin(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, updateLastLogin, id)
+	return err
 }

@@ -11,7 +11,28 @@ import (
 )
 
 type Querier interface {
-	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
+	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
+	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
+	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
+	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
+	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
+	DeleteExpiredSessions(ctx context.Context) error
+	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
+	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
+	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
+	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
+	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
+	SubmitKycForReview(ctx context.Context, id uuid.UUID) (SubmitKycForReviewRow, error)
+	TouchSession(ctx context.Context, tokenHash []byte) error
+	UnblockUser(ctx context.Context, id uuid.UUID) (UnblockUserRow, error)
+	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
+	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
 }
 
 var _ Querier = (*Queries)(nil)
