@@ -11,28 +11,57 @@ import (
 )
 
 type Querier interface {
+	// Вызывать внутри транзакции после GetApplicationForUpdate
+	AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error)
+	AgreeApplication(ctx context.Context, arg AgreeApplicationParams) (Application, error)
+	ApproveApplication(ctx context.Context, id uuid.UUID) (Application, error)
 	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
 	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
+	CancelApplication(ctx context.Context, id uuid.UUID) (Application, error)
+	CountApplications(ctx context.Context, arg CountApplicationsParams) (int64, error)
+	CountDeals(ctx context.Context, arg CountDealsParams) (int64, error)
+	CountOffers(ctx context.Context, arg CountOffersParams) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
+	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
+	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
+	CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
+	CreateStatusHistory(ctx context.Context, arg CreateStatusHistoryParams) (StatusHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
+	GetApplicationByID(ctx context.Context, id uuid.UUID) (Application, error)
+	// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
+	GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error)
+	GetDealByID(ctx context.Context, id uuid.UUID) (Deal, error)
+	GetOfferByID(ctx context.Context, id uuid.UUID) (Offer, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]Application, error)
+	ListDeals(ctx context.Context, arg ListDealsParams) ([]Deal, error)
+	ListOffers(ctx context.Context, arg ListOffersParams) ([]Offer, error)
+	ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error)
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	RejectAllOffersForApplication(ctx context.Context, applicationID uuid.UUID) error
+	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
 	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
+	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
+	// Вызывать внутри транзакции после AcceptOffer
+	RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error
+	SubmitApplication(ctx context.Context, id uuid.UUID) (Application, error)
 	SubmitKycForReview(ctx context.Context, id uuid.UUID) (SubmitKycForReviewRow, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UnblockUser(ctx context.Context, id uuid.UUID) (UnblockUserRow, error)
+	UpdateApplication(ctx context.Context, arg UpdateApplicationParams) (Application, error)
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
+	WithdrawOffer(ctx context.Context, id uuid.UUID) (Offer, error)
 }
 
 var _ Querier = (*Queries)(nil)
