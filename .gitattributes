@@ -6,6 +6,10 @@ Makefile    text eol=lf
 *.sql       text eol=lf
 *.yaml      text eol=lf
 *.yml       text eol=lf
+# Go: gofmt и sqlc (в Docker) пишут LF — иначе после make gen все файлы «изменены»
+*.go        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
 # Windows scripts — CRLF
 *.ps1       text eol=crlf
 *.bat       text eol=crlf

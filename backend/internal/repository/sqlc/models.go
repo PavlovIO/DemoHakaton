@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 type AmlFlagStatus string
@@ -743,7 +744,7 @@ type Application struct {
 	BorrowerOrganizationID uuid.UUID          `json:"borrower_organization_id"`
 	CreatedByUserID        uuid.UUID          `json:"created_by_user_id"`
 	Status                 ApplicationStatus  `json:"status"`
-	Amount                 pgtype.Numeric     `json:"amount"`
+	Amount                 decimal.Decimal    `json:"amount"`
 	Currency               string             `json:"currency"`
 	TargetCountryCode      string             `json:"target_country_code"`
 	Purpose                string             `json:"purpose"`
@@ -775,7 +776,7 @@ type Beneficiary struct {
 	OrganizationID         uuid.UUID          `json:"organization_id"`
 	FullName               string             `json:"full_name"`
 	CitizenshipCountryCode string             `json:"citizenship_country_code"`
-	OwnershipPercent       pgtype.Numeric     `json:"ownership_percent"`
+	OwnershipPercent       decimal.Decimal    `json:"ownership_percent"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -795,24 +796,24 @@ type Currency struct {
 }
 
 type Deal struct {
-	ID                     uuid.UUID          `json:"id"`
-	Number                 pgtype.Int8        `json:"number"`
-	ApplicationID          uuid.UUID          `json:"application_id"`
-	OfferID                uuid.UUID          `json:"offer_id"`
-	BorrowerOrganizationID uuid.UUID          `json:"borrower_organization_id"`
-	LenderOrganizationID   uuid.UUID          `json:"lender_organization_id"`
-	Amount                 pgtype.Numeric     `json:"amount"`
-	Currency               string             `json:"currency"`
-	InterestRateAnnual     pgtype.Numeric     `json:"interest_rate_annual"`
-	FeePercent             pgtype.Numeric     `json:"fee_percent"`
-	FeeAmount              pgtype.Numeric     `json:"fee_amount"`
-	TermMonths             int32              `json:"term_months"`
-	TargetCountryCode      string             `json:"target_country_code"`
-	TransferMethod         string             `json:"transfer_method"`
-	RepaymentSchedule      RepaymentSchedule  `json:"repayment_schedule"`
-	Collateral             pgtype.Text        `json:"collateral"`
-	AdditionalTerms        pgtype.Text        `json:"additional_terms"`
-	AgreedAt               pgtype.Timestamptz `json:"agreed_at"`
+	ID                     uuid.UUID           `json:"id"`
+	Number                 pgtype.Int8         `json:"number"`
+	ApplicationID          uuid.UUID           `json:"application_id"`
+	OfferID                uuid.UUID           `json:"offer_id"`
+	BorrowerOrganizationID uuid.UUID           `json:"borrower_organization_id"`
+	LenderOrganizationID   uuid.UUID           `json:"lender_organization_id"`
+	Amount                 decimal.Decimal     `json:"amount"`
+	Currency               string              `json:"currency"`
+	InterestRateAnnual     decimal.Decimal     `json:"interest_rate_annual"`
+	FeePercent             decimal.NullDecimal `json:"fee_percent"`
+	FeeAmount              decimal.NullDecimal `json:"fee_amount"`
+	TermMonths             int32               `json:"term_months"`
+	TargetCountryCode      string              `json:"target_country_code"`
+	TransferMethod         string              `json:"transfer_method"`
+	RepaymentSchedule      RepaymentSchedule   `json:"repayment_schedule"`
+	Collateral             pgtype.Text         `json:"collateral"`
+	AdditionalTerms        pgtype.Text         `json:"additional_terms"`
+	AgreedAt               pgtype.Timestamptz  `json:"agreed_at"`
 }
 
 type KycDocument struct {
@@ -861,10 +862,10 @@ type Offer struct {
 	Status               OfferStatus           `json:"status"`
 	RejectReason         NullOfferRejectReason `json:"reject_reason"`
 	RejectComment        pgtype.Text           `json:"reject_comment"`
-	Amount               pgtype.Numeric        `json:"amount"`
+	Amount               decimal.Decimal       `json:"amount"`
 	Currency             string                `json:"currency"`
-	InterestRateAnnual   pgtype.Numeric        `json:"interest_rate_annual"`
-	FeePercent           pgtype.Numeric        `json:"fee_percent"`
+	InterestRateAnnual   decimal.Decimal       `json:"interest_rate_annual"`
+	FeePercent           decimal.NullDecimal   `json:"fee_percent"`
 	RepaymentSchedule    RepaymentSchedule     `json:"repayment_schedule"`
 	Collateral           pgtype.Text           `json:"collateral"`
 	AdditionalTerms      pgtype.Text           `json:"additional_terms"`
