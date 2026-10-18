@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -22,38 +23,64 @@ type Querier interface {
 	CountDeals(ctx context.Context, arg CountDealsParams) (int64, error)
 	CountOffers(ctx context.Context, arg CountOffersParams) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
+	CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error)
+	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
+	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
+	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
 	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
+	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)
+	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
+	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreateRegistryCheck(ctx context.Context, arg CreateRegistryCheckParams) (RegistryCheck, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
 	CreateStatusHistory(ctx context.Context, arg CreateStatusHistoryParams) (StatusHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
+	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (Application, error)
 	// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
 	GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error)
 	GetDealByID(ctx context.Context, id uuid.UUID) (Deal, error)
+	GetLatestRegistryCheck(ctx context.Context, organizationID pgtype.UUID) (RegistryCheck, error)
 	GetOfferByID(ctx context.Context, id uuid.UUID) (Offer, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
+	GetTopDemandCountries(ctx context.Context, limit int32) ([]GetTopDemandCountriesRow, error)
+	GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
 	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]Application, error)
+	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	ListDeals(ctx context.Context, arg ListDealsParams) ([]Deal, error)
+	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error)
+	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
+	ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error)
+	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	ListOffers(ctx context.Context, arg ListOffersParams) ([]Offer, error)
 	ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error)
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
+	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
+	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
+	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
 	RejectAllOffersForApplication(ctx context.Context, applicationID uuid.UUID) error
 	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
 	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
 	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
 	// Вызывать внутри транзакции после AcceptOffer
 	RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error
+	ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) (AmlFlag, error)
+	// Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
+	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SanctionsEntry, error)
 	SubmitApplication(ctx context.Context, id uuid.UUID) (Application, error)
 	SubmitKycForReview(ctx context.Context, id uuid.UUID) (SubmitKycForReviewRow, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
