@@ -1,14 +1,6 @@
 name: backend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - "api/**"
-      - "Makefile"
-      - "versions.env"
-      - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
