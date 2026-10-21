@@ -1,0 +1,17 @@
+name: Mirror to GitVerse
+
+on: [push, delete]
+
+jobs:
+  gitverse-mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror to GitVerse
+        run: |
+          # Замените ВАШ_НИК и ИМЯ_РЕПОЗИТОРИЯ на свои данные
+          git push --prune --force https://ВАШ_НИК:${{ secrets.GITVERSE_TOKEN }}@gitverse.ru/ВАШ_НИК/ИМЯ_РЕПОЗИТОРИЯ.git +refs/remotes/origin/*:refs/heads/* +refs/tags/*:refs/tags/*

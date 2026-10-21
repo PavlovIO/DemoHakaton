@@ -1,0 +1,117 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "api/**"
+      - "Makefile"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "api/**"
+      - "Makefile"
+      - ".github/workflows/backend.yml"
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GOLANGCI_LINT_VERSION: v2.14.0
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l backend)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Не отформатированы (запустите gofmt -w):"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: go -C backend vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: backend
+          # Собрать линтер той же версией Go, что и проект: готовый бинарник
+          # может быть собран более старым Go и откажется читать go.mod.
+          install-mode: goinstall
+
+  # Сгенерированный код должен совпадать со спекой и SQL: поменяли api/openapi.yaml
+  # или backend/queries — запустите make gen и закоммитьте результат.
+  gen-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: make gen
+        run: make gen
+      - name: diff
+        run: |
+          git add -N backend/internal
+          if ! git diff --exit-code --stat -- backend/internal; then
+            echo "::error::Сгенерированный код устарел. Запустите make gen и закоммитьте изменения."
+            git diff -- backend/internal | head -100
+            exit 1
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lp
+          POSTGRES_PASSWORD: lp_dev_password
+          POSTGRES_DB: liquidity_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lp -d liquidity_platform"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://lp:lp_dev_password@localhost:5432/liquidity_platform?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: migrate
+        run: make migrate-up
+      # Без -short: интеграционные тесты идут против Postgres из services.
+      - name: go test
+        run: go -C backend test -race -count=1 ./...
+
+  build:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: build
+        run: go -C backend build -o bin/server ./cmd/server
