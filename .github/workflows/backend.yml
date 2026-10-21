@@ -7,30 +7,39 @@ on:
       - "backend/**"
       - "api/**"
       - "Makefile"
+      - "versions.env"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
       - "api/**"
       - "Makefile"
+      - "versions.env"
       - ".github/workflows/backend.yml"
+
+# Ловушка «required check + paths»: PR, не трогающий эти пути, workflow не запускает вовсе,
+# и обязательная джоба висит «Expected — Waiting for status». Если понадобится разделить
+# проверки — не второй файл, а условия на уровне шагов (dorny/paths-filter).
 
 concurrency:
   group: backend-${{ github.ref }}
-  cancel-in-progress: true
+  # На main push-прогон — единственное подтверждение, что смёрженное состояние зелёное; не отменяем.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
-env:
-  GOLANGCI_LINT_VERSION: v2.14.0
-
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # Версии инструментов — из versions.env (единый источник с Makefile).
+      # grep: комментарии и пустые строки не должны попасть в $GITHUB_ENV.
+      - name: versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' versions.env >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -44,6 +53,9 @@ jobs:
           fi
       - name: go vet
         run: go -C backend vet ./...
+      # go.mod/go.sum должны быть прибраны: правили руками — tidy вернёт как было.
+      - name: go mod tidy -diff
+        run: go -C backend mod tidy -diff
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -52,30 +64,85 @@ jobs:
           # Собрать линтер той же версией Go, что и проект: готовый бинарник
           # может быть собран более старым Go и откажется читать go.mod.
           install-mode: goinstall
+      # В pre-commit actionlint обходится через LEFTHOOK=0 — здесь обязательно.
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@"${ACTIONLINT_VERSION}"
 
-  # Сгенерированный код должен совпадать со спекой и SQL: поменяли api/openapi.yaml
-  # или backend/queries — запустите make gen и закоммитьте результат.
+  # Сгенерированное должно совпадать с источниками: поменяли api/** или backend/queries —
+  # запустите make gen и закоммитьте результат (бандл, embed-копию, *.gen.go, sqlc).
   gen-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - name: make gen
         run: make gen
+      # git add -N: новые файлы тоже должны попасть в diff.
       - name: diff
         run: |
-          git add -N backend/internal
-          if ! git diff --exit-code --stat -- backend/internal; then
-            echo "::error::Сгенерированный код устарел. Запустите make gen и закоммитьте изменения."
-            git diff -- backend/internal | head -100
+          git add -N api backend/internal
+          if ! git diff --exit-code --stat -- api backend/internal; then
+            echo "::error::Сгенерированное разошлось с источниками (api/openapi.yaml, backend/internal/openapi/openapi.yaml, *.gen.go, sqlc). Запустите make gen и закоммитьте изменения."
+            git diff -- api backend/internal | head -100
             exit 1
           fi
 
+  # Линтер контракта: структура, дубли operationId, кривые $ref, отсутствующие ответы.
+  api-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' versions.env >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: vacuum lint
+        run: make lint-api
+
+  # Ломающие изменения контракта относительно базовой ветки PR.
+  api-breaking:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: versions
+        run: grep -E '^[A-Z][A-Z0-9_]*=' versions.env >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: contract changed?
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- api/openapi.yaml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # -f githubactions: аннотации прямо в диффе PR.
+      - name: oasdiff breaking
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git show "$BASE_SHA:api/openapi.yaml" > "$RUNNER_TEMP/base.yaml"
+          make diff-api BASE_SPEC="$RUNNER_TEMP/base.yaml" OASDIFF_FLAGS="-f githubactions"
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -94,7 +161,7 @@ jobs:
       DATABASE_URL: postgres://lp:lp_dev_password@localhost:5432/liquidity_platform?sslmode=disable
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -105,11 +172,12 @@ jobs:
         run: go -C backend test -race -count=1 ./...
 
   build:
-    needs: [lint, test]
+    needs: [lint, gen-check, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum

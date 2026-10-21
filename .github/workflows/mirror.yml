@@ -13,5 +13,4 @@ jobs:
 
       - name: Mirror to GitVerse
         run: |
-          # Замените ВАШ_НИК и ИМЯ_РЕПОЗИТОРИЯ на свои данные
-          git push --prune --force https://ВАШ_НИК:${{ secrets.GITVERSE_TOKEN }}@gitverse.ru/ВАШ_НИК/ИМЯ_РЕПОЗИТОРИЯ.git +refs/remotes/origin/*:refs/heads/* +refs/tags/*:refs/tags/*
+          git push --prune --force https://MaksimPastukhov15:${{ secrets.GITVERSE_TOKEN }}@gitverse.ru/MaksimPastukhov15/Liquidity_platform.git +refs/remotes/origin/*:refs/heads/* +refs/tags/*:refs/tags/*

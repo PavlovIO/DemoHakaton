@@ -1,0 +1,21 @@
+# Версии инструментов в versions.env и go run tool@version Dependabot не видит —
+# vacuum/oasdiff/goose/sqlc/golangci-lint поднимаются руками.
+# Обновление oapi-codegen закономерно уронит gen-check: это сигнал прогнать make gen в ветке PR.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
