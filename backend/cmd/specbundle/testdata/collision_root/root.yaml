@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info: { title: t, version: '0' }
+paths:
+  /x:
+    get:
+      operationId: x
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: './a.yaml#/components/schemas/Error' }
+components:
+  schemas:
+    Error:
+      type: string

@@ -1,0 +1,52 @@
+paths:
+# ───────────────────────── chat ─────────────────────────
+  /offers/{offerId}/messages:
+    get:
+      tags: [chat]
+      operationId: listMessages
+      summary: Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
+      description: |
+        MVP — polling: фронт раз в 3–5 с запрашивает `after_id=<последний id>`.
+        Чтение помечает сообщения прочитанными для текущей стороны.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OfferId'
+        - name: after_id
+          in: query
+          description: Вернуть сообщения с id > after_id
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: OK (по возрастанию id)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/chat.yaml#/components/schemas/Message' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+    post:
+      tags: [chat]
+      operationId: sendMessage
+      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+      description: Текст хранится как есть и рендерится фронтом только как текст (никакого HTML).
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OfferId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/chat.yaml#/components/schemas/MessageCreate' }
+      responses:
+        '201':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '../schemas/chat.yaml#/components/schemas/Message' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+        '429': { $ref: '../components.yaml#/components/responses/RateLimited' }

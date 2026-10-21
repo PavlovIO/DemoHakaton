@@ -1,0 +1,142 @@
+package handler_test
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
+)
+
+func TestErrorMapping(t *testing.T) {
+	tests := []struct {
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{apperr.Validation("bad", apperr.FieldError{Field: "amount", Message: "must be > 0"}), 400, "VALIDATION_ERROR"},
+		{apperr.Unauthorized("no session"), 401, "UNAUTHORIZED"},
+		{apperr.Forbidden("no"), 403, "FORBIDDEN"},
+		{apperr.CSRFInvalid(), 403, "CSRF_INVALID"},
+		{apperr.KYCNotVerified(), 403, "KYC_NOT_VERIFIED"},
+		{apperr.NotFound("nope"), 404, "NOT_FOUND"},
+		{apperr.Conflict("email taken"), 409, "CONFLICT"},
+		{apperr.InvalidTransition("published", "draft"), 409, "INVALID_STATUS_TRANSITION"},
+		{apperr.RateLimited(), 429, "RATE_LIMITED"},
+		{apperr.NotImplemented("listDeals"), 501, "NOT_IMPLEMENTED"},
+		{apperr.Unavailable("db down", errors.New("dial")), 503, "UNAVAILABLE"},
+		{errors.New("boom"), 500, "INTERNAL"},
+		// Доменная ошибка, обёрнутая через fmt.Errorf("...: %w"), всё равно распознаётся.
+		{wrap(apperr.NotFound("nope")), 404, "NOT_FOUND"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.wantCode, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			handler.WriteError(rec, req, tt.err)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			e := decodeError(t, rec.Body.Bytes())
+			if e.Error.Code != tt.wantCode {
+				t.Fatalf("code = %s, want %s", e.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestErrorMappingDetails(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handler.WriteError(rec, httptest.NewRequest(http.MethodGet, "/x", nil),
+		apperr.Validation("bad", apperr.FieldError{Field: "amount", Message: "must be > 0"}))
+
+	e := decodeError(t, rec.Body.Bytes())
+	if e.Error.Details == nil || len(e.Error.Details) != 1 || e.Error.Details[0].Field != "amount" {
+		t.Fatalf("details = %+v", e.Error.Details)
+	}
+}
+
+// Каждый код из apperr должен иметь явный статус: новый код без строки в statusByCode
+// молча превратился бы в 500.
+func TestEveryCodeHasStatus(t *testing.T) {
+	codes := []apperr.Code{
+		apperr.CodeValidation, apperr.CodeUnauthorized, apperr.CodeForbidden, apperr.CodeCSRFInvalid,
+		apperr.CodeKYCNotVerified, apperr.CodeNotFound, apperr.CodeConflict, apperr.CodeInvalidTransition,
+		apperr.CodeRateLimited, apperr.CodeInternal, apperr.CodeNotImplemented, apperr.CodeUnavailable,
+	}
+	for _, c := range codes {
+		if s := handler.StatusOf(c); s == http.StatusInternalServerError && c != apperr.CodeInternal {
+			t.Errorf("code %s has no status mapping", c)
+		}
+	}
+}
+
+// Ошибки, которые возникают до вызова хендлера, тоже приходят в формате Error.
+func TestRouterErrors(t *testing.T) {
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, DB: okDB{}})
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+		wantCode   string
+		wantField  string
+	}{
+		{"invalid uuid in path", "/api/v1/applications/not-a-uuid", 400, "VALIDATION_ERROR", "applicationId"},
+		{"invalid query param", "/api/v1/applications?page=abc", 400, "VALIDATION_ERROR", "page"},
+		{"unknown route", "/api/v1/nope", 404, "NOT_FOUND", ""},
+		{"not implemented yet", "/api/v1/deals", 501, "NOT_IMPLEMENTED", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, body := get(t, srv, tt.path)
+			if resp.StatusCode != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, tt.wantStatus, body)
+			}
+			e := decodeError(t, body)
+			if e.Error.Code != tt.wantCode {
+				t.Fatalf("code = %s, want %s", e.Error.Code, tt.wantCode)
+			}
+			if tt.wantField != "" {
+				if e.Error.Details == nil || e.Error.Details[0].Field != tt.wantField {
+					t.Fatalf("details = %+v, want field %s", e.Error.Details, tt.wantField)
+				}
+			}
+		})
+	}
+}
+
+func TestHealthz(t *testing.T) {
+	t.Run("db ok", func(t *testing.T) {
+		srv := newTestServer(t, handler.Deps{DB: okDB{}})
+		resp, body := get(t, srv, "/api/v1/healthz")
+		if resp.StatusCode != http.StatusOK || string(body) != "{\"status\":\"ok\"}\n" {
+			t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+		}
+	})
+	t.Run("db down", func(t *testing.T) {
+		srv := newTestServer(t, handler.Deps{DB: downDB{}})
+		resp, body := get(t, srv, "/api/v1/healthz")
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503", resp.StatusCode)
+		}
+		if e := decodeError(t, body); e.Error.Code != "UNAVAILABLE" {
+			t.Fatalf("code = %s, want UNAVAILABLE", e.Error.Code)
+		}
+	})
+}
+
+type okDB struct{}
+
+func (okDB) Ping(context.Context) error { return nil }
+
+type downDB struct{}
+
+func (downDB) Ping(context.Context) error { return errors.New("connection refused") }
+
+func wrap(err error) error { return errors.Join(errors.New("context"), err) }

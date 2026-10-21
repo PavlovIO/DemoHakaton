@@ -1,0 +1,63 @@
+components:
+  schemas:
+    # ── enums ──
+    Role:
+      type: string
+      enum: [admin, borrower, lender]
+    UserStatus:
+      type: string
+      enum: [active, blocked]
+    OrganizationType:
+      type: string
+      enum: [borrower, lender]
+    KycStatus:
+      type: string
+      enum: [draft, under_review, verified, rejected]
+    KycDocumentType:
+      type: string
+      enum: [charter, registration_certificate, address_proof, beneficiaries_register, source_of_funds, other]
+    ApplicationStatus:
+      type: string
+      enum: [draft, moderation, rejected, published, agreed, cancelled]
+    OfferStatus:
+      type: string
+      enum: [sent, accepted, rejected, withdrawn]
+    OfferRejectReason:
+      type: string
+      enum: [rejected_by_borrower, another_offer_accepted, application_cancelled]
+    TransferMethod:
+      type: string
+      enum: [swift, sepa, other]
+    RepaymentSchedule:
+      type: string
+      description: |
+        bullet — всё в конце срока; annuity — равные платежи;
+        interest_monthly_principal_bullet — проценты ежемесячно, тело в конце; custom — см. additional_terms
+      enum: [bullet, annuity, interest_monthly_principal_bullet, custom]
+    EntityType:
+      type: string
+      enum: [user, organization, document, application, offer, deal, message, aml_flag]
+    AmlFlagStatus:
+      type: string
+      enum: [open, false_positive, confirmed]
+    AmlSeverity:
+      type: string
+      enum: [low, medium, high]
+    AmlRule:
+      type: string
+      enum: [sanctions_match, high_risk_jurisdiction, amount_threshold, registry_mismatch, other]
+    NotificationType:
+      type: string
+      enum:
+        - kyc_submitted
+        - kyc_approved
+        - kyc_rejected
+        - application_submitted
+        - application_published
+        - application_rejected
+        - offer_received
+        - offer_accepted
+        - offer_rejected
+        - offer_withdrawn
+        - message_received
+        - aml_flag_created

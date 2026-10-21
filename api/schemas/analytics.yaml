@@ -1,0 +1,77 @@
+components:
+  schemas:
+    # ── analytics / audit ──
+    CountryStat:
+      type: object
+      required: [country_code, count]
+      properties:
+        country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        count: { type: integer }
+    CurrencyStat:
+      type: object
+      required: [currency, count, total_amount, average_amount]
+      properties:
+        currency: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        count: { type: integer }
+        total_amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+        average_amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+    AnalyticsSummary:
+      type: object
+      required:
+        - applications_total
+        - applications_by_status
+        - offers_total
+        - deals_total
+        - amounts_by_currency
+        - top_demand_countries
+        - top_supply_countries
+      properties:
+        applications_total: { type: integer }
+        applications_by_status:
+          type: object
+          additionalProperties: { type: integer }
+          example: { published: 12, agreed: 4, moderation: 3 }
+        offers_total: { type: integer }
+        deals_total: { type: integer }
+        amounts_by_currency:
+          type: array
+          description: Средний размер финансирования считается отдельно по каждой валюте (без конвертации)
+          items: { $ref: './analytics.yaml#/components/schemas/CurrencyStat' }
+        top_demand_countries:
+          type: array
+          description: Целевые юрисдикции заявок
+          items: { $ref: './analytics.yaml#/components/schemas/CountryStat' }
+        top_supply_countries:
+          type: array
+          description: Страны регистрации кредиторов, сделавших офферы
+          items: { $ref: './analytics.yaml#/components/schemas/CountryStat' }
+    AuditLogEntry:
+      type: object
+      required: [id, action, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: string, format: uuid, nullable: true }
+        action:
+          type: string
+          example: offer.accept
+        entity_type:
+          allOf:
+            - $ref: './enums.yaml#/components/schemas/EntityType'
+          nullable: true
+        entity_id: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        meta:
+          type: object
+          additionalProperties: true
+        created_at: { type: string, format: date-time }
+    AuditLogPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './analytics.yaml#/components/schemas/AuditLogEntry' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }

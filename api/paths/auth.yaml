@@ -1,0 +1,74 @@
+paths:
+# ───────────────────────── auth ─────────────────────────
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Регистрация компании и её первого пользователя
+      description: |
+        Создаёт `organization` (kyc_status=`draft`) и `user`.
+        Правила: `borrower` → `country_code` = `RU`; `lender` → `country_code` ≠ `RU`.
+        Роль `admin` через регистрацию получить нельзя (админы создаются сидом/CLI).
+        После успеха пользователь сразу залогинен (ставятся cookie, как у /auth/login).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/auth.yaml#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Зарегистрирован и залогинен
+          content:
+            application/json:
+              schema: { $ref: '../schemas/auth.yaml#/components/schemas/Me' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '409': { $ref: '../components.yaml#/components/responses/Conflict' }
+        '429': { $ref: '../components.yaml#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вход по email и паролю
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/auth.yaml#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Успешный вход; ставит cookie `session` и `csrf_token`
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '../schemas/auth.yaml#/components/schemas/Me' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '429': { $ref: '../components.yaml#/components/responses/RateLimited' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Выход (инвалидирует сессию, чистит cookie)
+      responses:
+        '204': { description: Вышел }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Текущий пользователь и его компания
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/auth.yaml#/components/schemas/Me' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }

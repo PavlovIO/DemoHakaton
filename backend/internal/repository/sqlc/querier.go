@@ -59,6 +59,10 @@ type Querier interface {
 	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
 	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]Application, error)
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
+	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
+	// fatf_high_risk: страна в чёрном или сером списке FATF.
+	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
+	ListCurrencies(ctx context.Context) ([]ListCurrenciesRow, error)
 	ListDeals(ctx context.Context, arg ListDealsParams) ([]Deal, error)
 	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error)
 	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
@@ -67,6 +71,7 @@ type Querier interface {
 	ListOffers(ctx context.Context, arg ListOffersParams) ([]Offer, error)
 	ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error)
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
+	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого

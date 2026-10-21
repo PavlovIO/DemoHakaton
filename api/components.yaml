@@ -1,0 +1,85 @@
+# Общие параметры и ответы; на них ссылаются api/paths/*.yaml.
+# ═════════════════════════ components ═════════════════════════
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    CreatedFrom:
+      name: created_from
+      in: query
+      schema: { type: string, format: date-time }
+    CreatedTo:
+      name: created_to
+      in: query
+      schema: { type: string, format: date-time }
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrganizationId:
+      name: organizationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Ошибка валидации (VALIDATION_ERROR)
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }
+    Unauthorized:
+      description: Нет сессии или она истекла (UNAUTHORIZED)
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }
+    Forbidden:
+      description: Нет прав / CSRF / KYC не пройден / пользователь заблокирован
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }
+    NotFound:
+      description: Не найдено или нет доступа (чужие сущности всегда отдают 404, а не 403)
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }
+    Conflict:
+      description: Конфликт (CONFLICT), например email уже занят
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }
+    InvalidTransition:
+      description: Недопустимый переход статуса (INVALID_STATUS_TRANSITION)
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }
+    RateLimited:
+      description: Слишком много запросов (RATE_LIMITED)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: './schemas/errors.yaml#/components/schemas/Error' }

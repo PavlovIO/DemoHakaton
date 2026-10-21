@@ -1,0 +1,97 @@
+components:
+  schemas:
+    # ── applications ──
+    ApplicationCreate:
+      type: object
+      required: [amount, currency, target_country_code, purpose, term_months, transfer_method]
+      properties:
+        amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+        currency: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        target_country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        purpose: { type: string, minLength: 10, maxLength: 2000 }
+        term_months: { type: integer, minimum: 1, maximum: 120 }
+        transfer_method: { $ref: './enums.yaml#/components/schemas/TransferMethod' }
+        transfer_method_comment: { type: string, maxLength: 500 }
+    ApplicationUpdate:
+      type: object
+      properties:
+        amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+        currency: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        target_country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        purpose: { type: string, minLength: 10, maxLength: 2000 }
+        term_months: { type: integer, minimum: 1, maximum: 120 }
+        transfer_method: { $ref: './enums.yaml#/components/schemas/TransferMethod' }
+        transfer_method_comment: { type: string, maxLength: 500, nullable: true }
+    Application:
+      type: object
+      required:
+        - id
+        - number
+        - borrower
+        - status
+        - amount
+        - currency
+        - target_country_code
+        - purpose
+        - term_months
+        - transfer_method
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        number:
+          type: string
+          description: Человекочитаемый номер
+          example: APP-000123
+        borrower: { $ref: './organizations.yaml#/components/schemas/OrganizationShort' }
+        status: { $ref: './enums.yaml#/components/schemas/ApplicationStatus' }
+        amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+        currency: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        target_country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        purpose: { type: string }
+        term_months: { type: integer }
+        transfer_method: { $ref: './enums.yaml#/components/schemas/TransferMethod' }
+        transfer_method_comment: { type: string, nullable: true }
+        moderation_comment:
+          type: string
+          nullable: true
+          description: Причина отказа модерации (видна владельцу и admin)
+        offers_count:
+          type: integer
+          nullable: true
+          description: Только для владельца и admin; для lender — null
+        my_offer_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Только для lender — id активного оффера его компании по этой заявке
+        accepted_offer_id: { type: string, format: uuid, nullable: true }
+        published_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ApplicationPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './applications.yaml#/components/schemas/Application' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+    StatusHistoryEntry:
+      type: object
+      required: [id, entity_type, entity_id, to_status, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        entity_type: { $ref: './enums.yaml#/components/schemas/EntityType' }
+        entity_id: { type: string }
+        from_status: { type: string, nullable: true }
+        to_status: { type: string }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        actor_role:
+          allOf:
+            - $ref: './enums.yaml#/components/schemas/Role'
+          nullable: true
+        comment: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }

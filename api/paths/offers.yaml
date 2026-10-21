@@ -1,0 +1,121 @@
+paths:
+# ───────────────────────── offers ─────────────────────────
+  /offers:
+    get:
+      tags: [offers]
+      operationId: listOffers
+      summary: Список офферов (role-scoped) — «мои предложения», входящие, архив
+      description: |
+        - `lender` — офферы своей компании;
+        - `borrower` — офферы на заявки своей компании;
+        - `admin` — все.
+      parameters:
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/enums.yaml#/components/schemas/OfferStatus' }
+        - name: application_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: lender_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - name: borrower_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - $ref: '../components.yaml#/components/parameters/CreatedFrom'
+        - $ref: '../components.yaml#/components/parameters/CreatedTo'
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/offers.yaml#/components/schemas/OfferPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+
+  /offers/{offerId}:
+    get:
+      tags: [offers]
+      operationId: getOffer
+      summary: Карточка оффера (видят только автор-кредитор, заёмщик-владелец заявки, admin)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /offers/{offerId}/accept:
+    post:
+      tags: [offers]
+      operationId: acceptOffer
+      summary: Принять оффер (borrower-владелец заявки)
+      description: |
+        Одна транзакция БД с `SELECT ... FOR UPDATE` на заявку:
+        оффер → `accepted`; остальные `sent` → `rejected` (`another_offer_accepted`);
+        заявка → `agreed`; создаётся `Deal` со снапшотом условий.
+        Повторный/параллельный вызов → 409.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: Сделка зафиксирована
+          content:
+            application/json:
+              schema: { $ref: '../schemas/deals.yaml#/components/schemas/Deal' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /offers/{offerId}/reject:
+    post:
+      tags: [offers]
+      operationId: rejectOffer
+      summary: Отклонить оффер (borrower-владелец заявки)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OfferId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /offers/{offerId}/withdraw:
+    post:
+      tags: [offers]
+      operationId: withdrawOffer
+      summary: Отозвать свой оффер (lender, только из sent)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OfferId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }

@@ -1,0 +1,322 @@
+paths:
+# ───────────────────────── admin ─────────────────────────
+  /admin/organizations:
+    get:
+      tags: [admin]
+      operationId: adminListOrganizations
+      summary: Компании (очередь верификации — kyc_status=under_review)
+      parameters:
+        - name: kyc_status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/enums.yaml#/components/schemas/KycStatus' }
+        - name: type
+          in: query
+          schema: { $ref: '../schemas/enums.yaml#/components/schemas/OrganizationType' }
+        - name: country_code
+          in: query
+          schema: { $ref: '../schemas/primitives.yaml#/components/schemas/CountryCode' }
+        - name: q
+          in: query
+          description: Поиск по названию / рег. номеру
+          schema: { type: string, maxLength: 200 }
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/OrganizationPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+
+  /admin/organizations/{organizationId}:
+    get:
+      tags: [admin]
+      operationId: adminGetOrganization
+      summary: Полная карточка компании для проверки (документы, бенефициары, AML-флаги, пользователи)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/OrganizationDetails' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /admin/organizations/{organizationId}/kyc/approve:
+    post:
+      tags: [admin]
+      operationId: adminApproveKyc
+      summary: Верифицировать компанию (under_review → verified)
+      description: 409, если у компании есть открытые AML-флаги с severity=high.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OrganizationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '../schemas/errors.yaml#/components/schemas/AdminComment' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /admin/organizations/{organizationId}/kyc/reject:
+    post:
+      tags: [admin]
+      operationId: adminRejectKyc
+      summary: Отклонить верификацию (under_review → rejected) с причиной
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/errors.yaml#/components/schemas/AdminReason' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /admin/applications/{applicationId}/approve:
+    post:
+      tags: [admin]
+      operationId: adminApproveApplication
+      summary: Одобрить заявку (moderation → published)
+      description: Очередь модерации — `GET /applications?status=moderation` под admin.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '../schemas/errors.yaml#/components/schemas/AdminComment' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /admin/applications/{applicationId}/reject:
+    post:
+      tags: [admin]
+      operationId: adminRejectApplication
+      summary: Вернуть заявку на доработку (moderation → rejected) с причиной
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/errors.yaml#/components/schemas/AdminReason' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: adminListUsers
+      parameters:
+        - name: role
+          in: query
+          schema: { $ref: '../schemas/enums.yaml#/components/schemas/Role' }
+        - name: status
+          in: query
+          schema: { $ref: '../schemas/enums.yaml#/components/schemas/UserStatus' }
+        - name: q
+          in: query
+          description: Поиск по email
+          schema: { type: string, maxLength: 200 }
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/auth.yaml#/components/schemas/UserPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+
+  /admin/users/{userId}/block:
+    post:
+      tags: [admin]
+      operationId: adminBlockUser
+      summary: Заблокировать пользователя (инвалидирует все его сессии)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/errors.yaml#/components/schemas/AdminReason' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/auth.yaml#/components/schemas/User' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /admin/users/{userId}/unblock:
+    post:
+      tags: [admin]
+      operationId: adminUnblockUser
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/UserId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/auth.yaml#/components/schemas/User' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /admin/aml/flags:
+    get:
+      tags: [admin]
+      operationId: adminListAmlFlags
+      summary: AML-флаги (rule-based скрининг)
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '../schemas/enums.yaml#/components/schemas/AmlFlagStatus' }
+        - name: severity
+          in: query
+          schema: { $ref: '../schemas/enums.yaml#/components/schemas/AmlSeverity' }
+        - name: organization_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/aml.yaml#/components/schemas/AmlFlagPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+
+  /admin/aml/flags/{flagId}/resolve:
+    post:
+      tags: [admin]
+      operationId: adminResolveAmlFlag
+      parameters:
+        - name: flagId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution, comment]
+              properties:
+                resolution:
+                  type: string
+                  enum: [false_positive, confirmed]
+                comment: { type: string, minLength: 3, maxLength: 2000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/aml.yaml#/components/schemas/AmlFlag' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /admin/analytics/summary:
+    get:
+      tags: [admin]
+      operationId: adminAnalyticsSummary
+      summary: Базовая аналитика — количество заявок, средний размер, топ-страны
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/CreatedFrom'
+        - $ref: '../components.yaml#/components/parameters/CreatedTo'
+        - name: top_n
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/analytics.yaml#/components/schemas/AnalyticsSummary' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+
+  /admin/audit-log:
+    get:
+      tags: [admin]
+      operationId: adminListAuditLog
+      summary: Журнал действий пользователей
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: entity_type
+          in: query
+          schema: { $ref: '../schemas/enums.yaml#/components/schemas/EntityType' }
+        - name: entity_id
+          in: query
+          schema: { type: string }
+        - $ref: '../components.yaml#/components/parameters/CreatedFrom'
+        - $ref: '../components.yaml#/components/parameters/CreatedTo'
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/analytics.yaml#/components/schemas/AuditLogPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }

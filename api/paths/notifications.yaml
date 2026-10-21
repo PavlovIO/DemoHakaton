@@ -1,0 +1,42 @@
+paths:
+# ───────────────────────── notifications ─────────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      summary: Уведомления текущего пользователя (polling)
+      parameters:
+        - name: unread_only
+          in: query
+          schema: { type: boolean, default: false }
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/notifications.yaml#/components/schemas/NotificationPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+
+  /notifications/{notificationId}/read:
+    post:
+      tags: [notifications]
+      operationId: markNotificationRead
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      operationId: markAllNotificationsRead
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }

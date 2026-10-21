@@ -1,0 +1,22 @@
+components:
+  schemas:
+    # ── chat ──
+    MessageCreate:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 4000 }
+    Message:
+      type: object
+      required: [id, offer_id, author_user_id, author_role, author_organization, text, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        offer_id: { type: string, format: uuid }
+        author_user_id: { type: string, format: uuid }
+        author_role: { $ref: './enums.yaml#/components/schemas/Role' }
+        author_organization: { $ref: './organizations.yaml#/components/schemas/OrganizationShort' }
+        text:
+          type: string
+          description: Plain text. Фронт рендерит ТОЛЬКО как текст.
+        is_mine: { type: boolean }
+        created_at: { type: string, format: date-time }

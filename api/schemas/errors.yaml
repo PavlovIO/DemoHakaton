@@ -1,0 +1,58 @@
+components:
+  schemas:
+    # ── errors / common ──
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: './errors.yaml#/components/schemas/ErrorBody' }
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Некорректные данные
+        details:
+          type: array
+          items: { $ref: './errors.yaml#/components/schemas/ErrorDetail' }
+    ErrorDetail:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string, example: amount }
+        message: { type: string, example: must be greater than 0 }
+    AdminComment:
+      type: object
+      properties:
+        comment: { type: string, maxLength: 2000 }
+    AdminReason:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 2000 }
+    DictionaryItem:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, example: swift }
+        name: { type: string, example: SWIFT-перевод }
+    Country:
+      type: object
+      required: [code, name_ru, name_en, fatf_high_risk]
+      properties:
+        code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        name_ru: { type: string, example: Германия }
+        name_en: { type: string, example: Germany }
+        fatf_high_risk:
+          type: boolean
+          description: Страна в чёрном/сером списке FATF
+    Currency:
+      type: object
+      required: [code, name]
+      properties:
+        code: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        name: { type: string, example: Евро }

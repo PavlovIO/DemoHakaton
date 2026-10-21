@@ -1,0 +1,27 @@
+# golangci-lint v2. Версия зафиксирована в Makefile (GOLANGCI_LINT_VERSION) и в CI.
+version: "2"
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose     # незакрытый resp.Body
+    - errorlint     # errors.Is/As вместо == и type switch по ошибкам
+    - misspell
+    - nilerr        # return nil при err != nil
+    - noctx         # HTTP-запросы и SQL без context
+    - unconvert
+  exclusions:
+    # Сгенерированный код (oapi-codegen, sqlc) не линтим.
+    generated: strict
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [noctx, bodyclose]
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: strict

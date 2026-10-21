@@ -1,0 +1,46 @@
+paths:
+# ───────────────────────── dictionaries ─────────────────────────
+  /dictionaries/countries:
+    get:
+      tags: [dictionaries]
+      operationId: listCountries
+      security: []
+      summary: Справочник стран (с флагом FATF high-risk)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/errors.yaml#/components/schemas/Country' }
+
+  /dictionaries/currencies:
+    get:
+      tags: [dictionaries]
+      operationId: listCurrencies
+      security: []
+      summary: Справочник валют
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/errors.yaml#/components/schemas/Currency' }
+
+  /dictionaries/transfer-methods:
+    get:
+      tags: [dictionaries]
+      operationId: listTransferMethods
+      security: []
+      summary: Справочник способов передачи средств
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/errors.yaml#/components/schemas/DictionaryItem' }

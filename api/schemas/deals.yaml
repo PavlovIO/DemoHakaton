@@ -1,0 +1,55 @@
+components:
+  schemas:
+    # ── deals ──
+    Deal:
+      type: object
+      description: Снапшот условий на момент принятия оффера (не меняется после создания)
+      required:
+        - id
+        - number
+        - application_id
+        - offer_id
+        - borrower
+        - lender
+        - amount
+        - currency
+        - interest_rate_annual
+        - term_months
+        - repayment_schedule
+        - agreed_at
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, example: DEAL-000045 }
+        application_id: { type: string, format: uuid }
+        offer_id: { type: string, format: uuid }
+        borrower: { $ref: './organizations.yaml#/components/schemas/OrganizationShort' }
+        lender: { $ref: './organizations.yaml#/components/schemas/OrganizationShort' }
+        amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+        currency: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        interest_rate_annual: { $ref: './primitives.yaml#/components/schemas/Percent' }
+        fee_percent:
+          allOf:
+            - $ref: './primitives.yaml#/components/schemas/Percent'
+          nullable: true
+        fee_amount:
+          allOf:
+            - $ref: './primitives.yaml#/components/schemas/Money'
+          nullable: true
+          description: Рассчитано бэкендом = amount × fee_percent / 100
+        term_months: { type: integer }
+        target_country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        transfer_method: { $ref: './enums.yaml#/components/schemas/TransferMethod' }
+        repayment_schedule: { $ref: './enums.yaml#/components/schemas/RepaymentSchedule' }
+        collateral: { type: string, nullable: true }
+        additional_terms: { type: string, nullable: true }
+        agreed_at: { type: string, format: date-time }
+    DealPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './deals.yaml#/components/schemas/Deal' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }

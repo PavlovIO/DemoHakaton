@@ -1,0 +1,246 @@
+paths:
+# ───────────────────────── applications ─────────────────────────
+  /applications:
+    get:
+      tags: [applications]
+      operationId: listApplications
+      summary: Список заявок (role-scoped) — витрина, «мои заявки», архив
+      description: |
+        - `borrower` — только заявки своей компании, любые статусы;
+        - `lender` — только `published` + заявки, по которым у компании есть оффер (для архива);
+        - `admin` — все заявки.
+        Фильтр по сумме (`amount_min`/`amount_max`) применяется только вместе с `currency`.
+      parameters:
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/enums.yaml#/components/schemas/ApplicationStatus' }
+        - name: target_country
+          in: query
+          schema: { $ref: '../schemas/primitives.yaml#/components/schemas/CountryCode' }
+        - name: currency
+          in: query
+          schema: { $ref: '../schemas/primitives.yaml#/components/schemas/CurrencyCode' }
+        # Не $ref на Money: у Money стоит x-go-type decimal.Decimal, а для query-параметра
+        # со struct-типом runtime oapi-codegen ищет в query поля структуры (bindParamsToExplodedObject),
+        # не находит и молча возвращает nil — фильтр исчезал бы без ошибки. Поэтому строка с тем же паттерном.
+        - name: amount_min
+          in: query
+          schema: { type: string, pattern: '^\d{1,15}(\.\d{1,2})?$', example: '100000.00' }
+        - name: amount_max
+          in: query
+          schema: { type: string, pattern: '^\d{1,15}(\.\d{1,2})?$', example: '900000.00' }
+        - name: term_min
+          in: query
+          description: Минимальный срок, месяцев
+          schema: { type: integer, minimum: 1 }
+        - name: term_max
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: borrower_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - $ref: '../components.yaml#/components/parameters/CreatedFrom'
+        - $ref: '../components.yaml#/components/parameters/CreatedTo'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created_at_desc, created_at_asc, amount_desc, amount_asc, term_asc, term_desc]
+            default: created_at_desc
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/ApplicationPage' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+    post:
+      tags: [applications]
+      operationId: createApplication
+      summary: Создать заявку (borrower, KYC verified) — в статусе draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/applications.yaml#/components/schemas/ApplicationCreate' }
+      responses:
+        '201':
+          description: Создана
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+
+  /applications/{applicationId}:
+    get:
+      tags: [applications]
+      operationId: getApplication
+      summary: Карточка заявки
+      description: borrower — своя; lender — published или с его оффером; admin — любая. Иначе 404.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+    patch:
+      tags: [applications]
+      operationId: updateApplication
+      summary: Редактировать заявку (владелец, статусы draft / rejected)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/applications.yaml#/components/schemas/ApplicationUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/submit:
+    post:
+      tags: [applications]
+      operationId: submitApplication
+      summary: Отправить на модерацию (draft|rejected → moderation)
+      description: Запускает AML-правила по заявке (порог суммы, high-risk юрисдикция). Админ получает уведомление.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/cancel:
+    post:
+      tags: [applications]
+      operationId: cancelApplication
+      summary: Отменить заявку (владелец; любой статус, кроме agreed/cancelled)
+      description: Все `sent`-офферы → `rejected` (reason `application_cancelled`).
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/applications.yaml#/components/schemas/Application' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/reject-offers:
+    post:
+      tags: [applications]
+      operationId: rejectAllOffers
+      summary: Отклонить все текущие офферы (владелец); заявка остаётся published
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rejected_count]
+                properties:
+                  rejected_count: { type: integer }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /applications/{applicationId}/history:
+    get:
+      tags: [applications]
+      operationId: getApplicationHistory
+      summary: История смены статусов заявки и её офферов
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: OK (хронологически)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/applications.yaml#/components/schemas/StatusHistoryEntry' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /applications/{applicationId}/offers:
+    get:
+      tags: [offers]
+      operationId: listApplicationOffers
+      summary: Офферы по заявке
+      description: borrower-владелец и admin видят все; lender — только свой. Другим — 404.
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/enums.yaml#/components/schemas/OfferStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+    post:
+      tags: [offers]
+      operationId: createOffer
+      summary: Сделать оффер (lender, KYC verified, заявка published)
+      description: |
+        `amount` ≤ сумме заявки; валюта = валюте заявки.
+        Одна компания — не более одного активного (`sent`) оффера на заявку (иначе 409).
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/offers.yaml#/components/schemas/OfferCreate' }
+      responses:
+        '201':
+          description: Создан
+          content:
+            application/json:
+              schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/Conflict' }

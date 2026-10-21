@@ -1,0 +1,123 @@
+components:
+  schemas:
+ # ── organizations / KYC ──
+    Beneficiary:
+      type: object
+      required: [full_name, citizenship_country_code, ownership_percent]
+      properties:
+        full_name: { type: string, maxLength: 300 }
+        citizenship_country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        ownership_percent: { $ref: './primitives.yaml#/components/schemas/Percent' }
+    OrganizationCreate:
+      type: object
+      required: [name, country_code, registration_number, legal_address]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 300 }
+        country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        registration_number:
+          type: string
+          description: ИНН (10 цифр) для RU; рег. номер в стране регистрации для остальных
+          maxLength: 50
+        lei:
+          type: string
+          pattern: '^[A-Z0-9]{20}$'
+          description: Legal Entity Identifier (рекомендуется для кредиторов)
+        legal_address: { type: string, maxLength: 1000 }
+    OrganizationUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 300 }
+        registration_number: { type: string, maxLength: 50 }
+        lei:
+          type: string
+          pattern: '^[A-Z0-9]{20}$'
+          nullable: true
+        legal_address: { type: string, maxLength: 1000 }
+        beneficiaries:
+          type: array
+          maxItems: 50
+          items: { $ref: './organizations.yaml#/components/schemas/Beneficiary' }
+    Organization:
+      type: object
+      required:
+        [id, type, name, country_code, registration_number, legal_address, beneficiaries, kyc_status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: './enums.yaml#/components/schemas/OrganizationType' }
+        name: { type: string }
+        country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+        registration_number: { type: string }
+        lei: { type: string, nullable: true }
+        legal_address: { type: string }
+        beneficiaries:
+          type: array
+          items: { $ref: './organizations.yaml#/components/schemas/Beneficiary' }
+        kyc_status: { $ref: './enums.yaml#/components/schemas/KycStatus' }
+        kyc_reject_reason: { type: string, nullable: true }
+        verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    OrganizationShort:
+      type: object
+      required: [id, name, country_code]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        country_code: { $ref: './primitives.yaml#/components/schemas/CountryCode' }
+    OrganizationDetails:
+      allOf:
+        - $ref: './organizations.yaml#/components/schemas/Organization'
+        - type: object
+          required: [documents, aml_flags, users, registry_check]
+          properties:
+            documents:
+              type: array
+              items: { $ref: './organizations.yaml#/components/schemas/KycDocument' }
+            aml_flags:
+              type: array
+              items: { $ref: './aml.yaml#/components/schemas/AmlFlag' }
+            users:
+              type: array
+              items: { $ref: './auth.yaml#/components/schemas/User' }
+            registry_check:
+              allOf:
+                - $ref: './organizations.yaml#/components/schemas/RegistryLookupResult'
+              nullable: true
+              description: Результат сверки с реестром на момент submit KYC
+    OrganizationPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './organizations.yaml#/components/schemas/Organization' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+    KycDocument:
+      type: object
+      required: [id, doc_type, file_name, mime_type, size_bytes, uploaded_at]
+      properties:
+        id: { type: string, format: uuid }
+        doc_type: { $ref: './enums.yaml#/components/schemas/KycDocumentType' }
+        file_name:
+          type: string
+          description: Оригинальное имя (только для отображения, экранируется)
+        mime_type: { type: string, example: application/pdf }
+        size_bytes: { type: integer, format: int64 }
+        uploaded_at: { type: string, format: date-time }
+    RegistryLookupResult:
+      type: object
+      required: [source, found]
+      properties:
+        source:
+          type: string
+          enum: [egrul_dadata, gleif]
+        found: { type: boolean }
+        name: { type: string, nullable: true }
+        registration_number: { type: string, nullable: true }
+        legal_address: { type: string, nullable: true }
+        registry_status:
+          type: string
+          nullable: true
+          description: Статус в реестре (active, liquidating, liquidated, ...)
+        checked_at: { type: string, format: date-time }

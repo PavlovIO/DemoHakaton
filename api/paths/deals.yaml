@@ -1,0 +1,38 @@
+paths:
+# ───────────────────────── deals ─────────────────────────
+  /deals:
+    get:
+      tags: [deals]
+      operationId: listDeals
+      summary: Сделки (role-scoped — стороны сделки или admin)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/CreatedFrom'
+        - $ref: '../components.yaml#/components/parameters/CreatedTo'
+        - $ref: '../components.yaml#/components/parameters/Page'
+        - $ref: '../components.yaml#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/deals.yaml#/components/schemas/DealPage' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+
+  /deals/{dealId}:
+    get:
+      tags: [deals]
+      operationId: getDeal
+      summary: Карточка сделки
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/deals.yaml#/components/schemas/Deal' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }

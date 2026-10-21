@@ -1,0 +1,32 @@
+components:
+  schemas:
+    # ── primitives ──
+    Money:
+      type: string
+      pattern: '^\d{1,15}(\.\d{1,2})?$'
+      example: '500000.00'
+      # В БД NUMERIC, в sqlc — decimal.Decimal. x-go-type убирает ручные
+      # string <-> decimal конвертации в хендлерах; на провод уходит та же строка
+      # (decimal.MarshalJSON кавычит значение, MarshalJSONWithoutQuotes=false).
+      # Паттерн проверяет middleware валидации по спеке (handler/validate.go).
+      x-go-type: decimal.Decimal
+      x-go-type-import:
+        name: decimal
+        path: github.com/shopspring/decimal
+    Percent:
+      type: string
+      description: Проценты, например "8.00" = 8%
+      pattern: '^\d{1,3}(\.\d{1,4})?$'
+      example: '8.00'
+      x-go-type: decimal.Decimal
+      x-go-type-import:
+        name: decimal
+        path: github.com/shopspring/decimal
+    CurrencyCode:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: EUR
+    CountryCode:
+      type: string
+      pattern: '^[A-Z]{2}$'
+      example: DE

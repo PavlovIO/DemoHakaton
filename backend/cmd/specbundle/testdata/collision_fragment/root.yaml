@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info: { title: t, version: '0' }
+paths:
+  /x:
+    get:
+      operationId: x
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: './a.yaml#/components/schemas/Outer/properties/status' }
+        '400':
+          description: Bad
+          content:
+            application/json:
+              schema: { $ref: './a.yaml#/components/schemas/Other/properties/status' }

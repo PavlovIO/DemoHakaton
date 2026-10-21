@@ -1,0 +1,166 @@
+paths:
+# ───────────────────────── organizations / KYC ─────────────────────────
+  /organizations/me:
+    get:
+      tags: [organizations]
+      operationId: getMyOrganization
+      summary: Профиль своей компании
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
+    patch:
+      tags: [organizations]
+      operationId: updateMyOrganization
+      summary: Редактирование профиля (только в статусах draft / rejected)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/organizations.yaml#/components/schemas/OrganizationUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /organizations/me/documents:
+    get:
+      tags: [organizations]
+      operationId: listMyDocuments
+      summary: Загруженные KYC-документы своей компании
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '../schemas/organizations.yaml#/components/schemas/KycDocument' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+    post:
+      tags: [organizations]
+      operationId: uploadMyDocument
+      summary: Загрузить KYC-документ
+      description: |
+        Допустимые типы файлов: PDF, PNG, JPEG; максимум 10 MB.
+        Тип определяется по содержимому (magic bytes), а не по расширению.
+        Файл хранится вне веб-корня под случайным именем.
+        Только в статусах организации draft / rejected.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [doc_type, file]
+              properties:
+                doc_type: { $ref: '../schemas/enums.yaml#/components/schemas/KycDocumentType' }
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Загружен
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/KycDocument' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+        '413':
+          description: Файл слишком большой
+          content:
+            application/json:
+              schema: { $ref: '../schemas/errors.yaml#/components/schemas/Error' }
+
+  /organizations/me/documents/{documentId}:
+    delete:
+      tags: [organizations]
+      operationId: deleteMyDocument
+      summary: Удалить свой документ (только в статусах draft / rejected)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/DocumentId'
+      responses:
+        '204': { description: Удалён }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /documents/{documentId}/file:
+    get:
+      tags: [organizations]
+      operationId: downloadDocument
+      summary: Скачать файл документа (владелец-организация или admin)
+      parameters:
+        - $ref: '../components.yaml#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Файл (Content-Disposition attachment)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: '../components.yaml#/components/responses/NotFound' }
+
+  /organizations/me/kyc/submit:
+    post:
+      tags: [organizations]
+      operationId: submitKyc
+      summary: Отправить компанию на верификацию
+      description: |
+        `draft|rejected → under_review`. Проверяет, что загружены обязательные документы:
+        - все: `charter`, `registration_certificate`, `address_proof`, `beneficiaries_register`;
+        - кредитор дополнительно: `source_of_funds`.
+        При переходе бэкенд запускает AML-скрининг (санкционные списки, FATF-юрисдикции)
+        и создаёт `AmlFlag` при совпадениях. Админ получает уведомление.
+      responses:
+        '200':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
+
+  /registry/lookup:
+    get:
+      tags: [organizations]
+      operationId: registryLookup
+      summary: Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+      description: Доступно без логина на шаге регистрации; жёсткий rate limit.
+      security: []
+      parameters:
+        - name: country_code
+          in: query
+          required: true
+          schema: { $ref: '../schemas/primitives.yaml#/components/schemas/CountryCode' }
+        - name: number
+          in: query
+          required: true
+          description: ИНН/ОГРН для RU, LEI для остальных стран
+          schema: { type: string, minLength: 8, maxLength: 20 }
+      responses:
+        '200':
+          description: OK (found=false, если ничего не нашли)
+          content:
+            application/json:
+              schema: { $ref: '../schemas/organizations.yaml#/components/schemas/RegistryLookupResult' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
+        '429': { $ref: '../components.yaml#/components/responses/RateLimited' }
+        '502':
+          description: Внешний реестр недоступен
+          content:
+            application/json:
+              schema: { $ref: '../schemas/errors.yaml#/components/schemas/Error' }

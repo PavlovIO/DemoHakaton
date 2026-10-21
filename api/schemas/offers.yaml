@@ -1,0 +1,67 @@
+components:
+  schemas:
+ # ── offers ──
+    OfferCreate:
+      type: object
+      required: [amount, interest_rate_annual, repayment_schedule]
+      properties:
+        amount:
+          allOf:
+            - $ref: './primitives.yaml#/components/schemas/Money'
+          description: ≤ суммы заявки
+        interest_rate_annual: { $ref: './primitives.yaml#/components/schemas/Percent' }
+        fee_percent:
+          allOf:
+            - $ref: './primitives.yaml#/components/schemas/Percent'
+          description: Комиссия за организацию сделки, % от суммы (если применимо)
+        repayment_schedule: { $ref: './enums.yaml#/components/schemas/RepaymentSchedule' }
+        collateral:
+          type: string
+          maxLength: 2000
+          description: Требования к обеспечению
+        additional_terms: { type: string, maxLength: 4000 }
+        valid_until:
+          type: string
+          format: date-time
+          description: Срок действия оффера (опционально)
+    Offer:
+      type: object
+      required:
+        [id, application_id, lender, status, amount, currency, interest_rate_annual, repayment_schedule, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        application_id: { type: string, format: uuid }
+        application_number: { type: string, example: APP-000123 }
+        lender: { $ref: './organizations.yaml#/components/schemas/OrganizationShort' }
+        status: { $ref: './enums.yaml#/components/schemas/OfferStatus' }
+        reject_reason:
+          allOf:
+            - $ref: './enums.yaml#/components/schemas/OfferRejectReason'
+          nullable: true
+        reject_comment: { type: string, nullable: true }
+        amount: { $ref: './primitives.yaml#/components/schemas/Money' }
+        currency: { $ref: './primitives.yaml#/components/schemas/CurrencyCode' }
+        interest_rate_annual: { $ref: './primitives.yaml#/components/schemas/Percent' }
+        fee_percent:
+          allOf:
+            - $ref: './primitives.yaml#/components/schemas/Percent'
+          nullable: true
+        repayment_schedule: { $ref: './enums.yaml#/components/schemas/RepaymentSchedule' }
+        collateral: { type: string, nullable: true }
+        additional_terms: { type: string, nullable: true }
+        valid_until: { type: string, format: date-time, nullable: true }
+        unread_messages:
+          type: integer
+          description: Непрочитанные сообщения чата для текущего пользователя
+        created_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time, nullable: true }
+    OfferPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './offers.yaml#/components/schemas/Offer' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }

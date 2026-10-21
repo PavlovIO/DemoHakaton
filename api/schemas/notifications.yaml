@@ -1,0 +1,25 @@
+components:
+  schemas:
+    # ── notifications ──
+    Notification:
+      type: object
+      required: [id, type, title, entity_type, entity_id, is_read, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { $ref: './enums.yaml#/components/schemas/NotificationType' }
+        title: { type: string, example: Новое предложение по заявке APP-000123 }
+        entity_type: { $ref: './enums.yaml#/components/schemas/EntityType' }
+        entity_id: { type: string }
+        is_read: { type: boolean }
+        created_at: { type: string, format: date-time }
+    NotificationPage:
+      type: object
+      required: [items, total, unread_total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './notifications.yaml#/components/schemas/Notification' }
+        total: { type: integer }
+        unread_total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }

@@ -1,0 +1,10 @@
+components:
+  schemas:
+    Outer:
+      type: object
+      properties:
+        status: { type: string, enum: [a, b] }
+    Other:
+      type: object
+      properties:
+        status: { type: integer }

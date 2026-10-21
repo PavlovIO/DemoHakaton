@@ -1,0 +1,175 @@
+# ============================================================
+# СГЕНЕРИРОВАННЫЙ ФАЙЛ — не редактируйте напрямую.
+# Источник правды: api/root.yaml + api/paths/*.yaml + api/components.yaml + api/schemas/*.yaml.
+# Собирается целью make gen-api (см. Makefile).
+# ============================================================
+openapi: 3.0.3
+info:
+  title: Liquidity Platform API
+  version: 0.1.0
+  description: |
+    Контракт между фронтендом (SPA) и бэкендом платформы ликвидности (MVP).
+    `api/openapi.yaml` — бандл, собранный из `api/openapi.root.yaml`, `api/paths/*.yaml`,
+    `api/components.yaml` и `api/schemas/*.yaml` командой `make bundle-api` — правьте источники, а не бандл.
+    Go-сервер генерируется через oapi-codegen, TS-клиент — через openapi-typescript.
+
+    ## Аутентификация
+    - `POST /auth/login` ставит две cookie:
+      - `session` — HttpOnly, Secure, SameSite=Lax, непрозрачный токен сессии (в БД хранится его хэш);
+      - `csrf_token` — НЕ HttpOnly, фронт читает её и кладёт в заголовок.
+    - Все запросы, кроме GET/HEAD/OPTIONS, обязаны слать заголовок `X-CSRF-Token`,
+      равный значению cookie `csrf_token` (double-submit). Иначе 403 `CSRF_INVALID`.
+    - Фронт ходит с `credentials: "include"`.
+
+    ## Авторизация
+    Роль (`admin` / `borrower` / `lender`) определяет доступ к ручке, но КАЖДЫЙ запрос
+    к конкретной сущности дополнительно проверяет владение (защита от IDOR).
+    Списки (`GET /applications`, `GET /offers`, `GET /deals`) — role-scoped:
+    один и тот же эндпоинт возвращает разный набор данных в зависимости от роли.
+    Компания с `kyc_status != verified` не может создавать заявки и офферы (403 `KYC_NOT_VERIFIED`).
+
+    ## Деньги и проценты
+    Суммы и проценты передаются **строками** в десятичном формате (`"500000.00"`, `"8.00"`),
+    чтобы избежать потери точности float в JSON. В БД — `NUMERIC`.
+    Валюта — ISO 4217, страна — ISO 3166-1 alpha-2.
+
+    ## Ошибки
+    Единый формат `Error`. Коды: `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `CSRF_INVALID`,
+    `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `RATE_LIMITED`, `INTERNAL`,
+    `NOT_IMPLEMENTED` (501, операция ещё не реализована), `UNAVAILABLE` (503, например нет соединения с БД).
+
+    ## Пагинация
+    `page` (с 1) + `page_size` (по умолчанию 20, максимум 100). Ответ: `{items, total, page, page_size}`.
+
+    ## Статусные машины
+    - Организация (KYC): `draft → under_review → verified | rejected`; из `rejected` можно снова в `under_review`.
+    - Заявка: `draft → moderation → published | rejected`; `rejected → moderation` (после правки);
+      `published → agreed` (принят оффер); `draft|moderation|rejected|published → cancelled`.
+    - Оффер: `sent → accepted | rejected | withdrawn`.
+      При принятии одного оффера все остальные `sent`-офферы заявки → `rejected` (reason `another_offer_accepted`),
+      всё в одной транзакции БД с блокировкой строки заявки.
+  contact:
+    name: Liquidity Platform team
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Локальная разработка
+tags:
+  - name: auth
+  - name: organizations
+    description: Профиль компании и KYC со стороны клиента
+  - name: dictionaries
+  - name: applications
+    description: Заявки на ликвидность (создают заёмщики)
+  - name: offers
+    description: Предложения кредиторов
+  - name: deals
+    description: Зафиксированные сделки
+  - name: chat
+  - name: notifications
+  - name: admin
+  - name: system
+
+security:
+  - cookieAuth: []
+
+
+# Оглавление: каждый path item живёт в api/paths/<тег>.yaml.
+# ~1 — это экранированный '/' в JSON-pointer (RFC 6901).
+paths:
+  /admin/organizations:
+    $ref: './paths/admin.yaml#/paths/~1admin~1organizations'
+  /admin/organizations/{organizationId}:
+    $ref: './paths/admin.yaml#/paths/~1admin~1organizations~1{organizationId}'
+  /admin/organizations/{organizationId}/kyc/approve:
+    $ref: './paths/admin.yaml#/paths/~1admin~1organizations~1{organizationId}~1kyc~1approve'
+  /admin/organizations/{organizationId}/kyc/reject:
+    $ref: './paths/admin.yaml#/paths/~1admin~1organizations~1{organizationId}~1kyc~1reject'
+  /admin/applications/{applicationId}/approve:
+    $ref: './paths/admin.yaml#/paths/~1admin~1applications~1{applicationId}~1approve'
+  /admin/applications/{applicationId}/reject:
+    $ref: './paths/admin.yaml#/paths/~1admin~1applications~1{applicationId}~1reject'
+  /admin/users:
+    $ref: './paths/admin.yaml#/paths/~1admin~1users'
+  /admin/users/{userId}/block:
+    $ref: './paths/admin.yaml#/paths/~1admin~1users~1{userId}~1block'
+  /admin/users/{userId}/unblock:
+    $ref: './paths/admin.yaml#/paths/~1admin~1users~1{userId}~1unblock'
+  /admin/aml/flags:
+    $ref: './paths/admin.yaml#/paths/~1admin~1aml~1flags'
+  /admin/aml/flags/{flagId}/resolve:
+    $ref: './paths/admin.yaml#/paths/~1admin~1aml~1flags~1{flagId}~1resolve'
+  /admin/analytics/summary:
+    $ref: './paths/admin.yaml#/paths/~1admin~1analytics~1summary'
+  /admin/audit-log:
+    $ref: './paths/admin.yaml#/paths/~1admin~1audit-log'
+  /applications:
+    $ref: './paths/applications.yaml#/paths/~1applications'
+  /applications/{applicationId}:
+    $ref: './paths/applications.yaml#/paths/~1applications~1{applicationId}'
+  /applications/{applicationId}/submit:
+    $ref: './paths/applications.yaml#/paths/~1applications~1{applicationId}~1submit'
+  /applications/{applicationId}/cancel:
+    $ref: './paths/applications.yaml#/paths/~1applications~1{applicationId}~1cancel'
+  /applications/{applicationId}/reject-offers:
+    $ref: './paths/applications.yaml#/paths/~1applications~1{applicationId}~1reject-offers'
+  /applications/{applicationId}/history:
+    $ref: './paths/applications.yaml#/paths/~1applications~1{applicationId}~1history'
+  /applications/{applicationId}/offers:
+    $ref: './paths/applications.yaml#/paths/~1applications~1{applicationId}~1offers'
+  /auth/register:
+    $ref: './paths/auth.yaml#/paths/~1auth~1register'
+  /auth/login:
+    $ref: './paths/auth.yaml#/paths/~1auth~1login'
+  /auth/logout:
+    $ref: './paths/auth.yaml#/paths/~1auth~1logout'
+  /auth/me:
+    $ref: './paths/auth.yaml#/paths/~1auth~1me'
+  /offers/{offerId}/messages:
+    $ref: './paths/chat.yaml#/paths/~1offers~1{offerId}~1messages'
+  /deals:
+    $ref: './paths/deals.yaml#/paths/~1deals'
+  /deals/{dealId}:
+    $ref: './paths/deals.yaml#/paths/~1deals~1{dealId}'
+  /dictionaries/countries:
+    $ref: './paths/dictionaries.yaml#/paths/~1dictionaries~1countries'
+  /dictionaries/currencies:
+    $ref: './paths/dictionaries.yaml#/paths/~1dictionaries~1currencies'
+  /dictionaries/transfer-methods:
+    $ref: './paths/dictionaries.yaml#/paths/~1dictionaries~1transfer-methods'
+  /notifications:
+    $ref: './paths/notifications.yaml#/paths/~1notifications'
+  /notifications/{notificationId}/read:
+    $ref: './paths/notifications.yaml#/paths/~1notifications~1{notificationId}~1read'
+  /notifications/read-all:
+    $ref: './paths/notifications.yaml#/paths/~1notifications~1read-all'
+  /offers:
+    $ref: './paths/offers.yaml#/paths/~1offers'
+  /offers/{offerId}:
+    $ref: './paths/offers.yaml#/paths/~1offers~1{offerId}'
+  /offers/{offerId}/accept:
+    $ref: './paths/offers.yaml#/paths/~1offers~1{offerId}~1accept'
+  /offers/{offerId}/reject:
+    $ref: './paths/offers.yaml#/paths/~1offers~1{offerId}~1reject'
+  /offers/{offerId}/withdraw:
+    $ref: './paths/offers.yaml#/paths/~1offers~1{offerId}~1withdraw'
+  /organizations/me:
+    $ref: './paths/organizations.yaml#/paths/~1organizations~1me'
+  /organizations/me/documents:
+    $ref: './paths/organizations.yaml#/paths/~1organizations~1me~1documents'
+  /organizations/me/documents/{documentId}:
+    $ref: './paths/organizations.yaml#/paths/~1organizations~1me~1documents~1{documentId}'
+  /documents/{documentId}/file:
+    $ref: './paths/organizations.yaml#/paths/~1documents~1{documentId}~1file'
+  /organizations/me/kyc/submit:
+    $ref: './paths/organizations.yaml#/paths/~1organizations~1me~1kyc~1submit'
+  /registry/lookup:
+    $ref: './paths/organizations.yaml#/paths/~1registry~1lookup'
+  /healthz:
+    $ref: './paths/system.yaml#/paths/~1healthz'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session

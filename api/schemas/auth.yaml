@@ -1,0 +1,60 @@
+components:
+  schemas:
+    # ── auth / users ──
+    RegisterRequest:
+      type: object
+      required: [email, password, role, organization]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          description: Хэшируется argon2id
+        role:
+          type: string
+          enum: [borrower, lender]
+        organization: { $ref: './organizations.yaml#/components/schemas/OrganizationCreate' }
+        captcha_token:
+          type: string
+          description: Токен Yandex SmartCaptcha (если включена)
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        captcha_token: { type: string }
+    User:
+      type: object
+      required: [id, email, role, status, organization_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: './enums.yaml#/components/schemas/Role' }
+        status: { $ref: './enums.yaml#/components/schemas/UserStatus' }
+        organization_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: null для admin
+        created_at: { type: string, format: date-time }
+    Me:
+      type: object
+      required: [user, organization]
+      properties:
+        user: { $ref: './auth.yaml#/components/schemas/User' }
+        organization:
+          allOf:
+            - $ref: './organizations.yaml#/components/schemas/Organization'
+          nullable: true
+    UserPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './auth.yaml#/components/schemas/User' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }

@@ -1,0 +1,15 @@
+# Ruleset для vacuum (Spectral-совместимый). Запуск: make lint-api (в CI — job api-lint).
+# Линтуем бандл api/openapi.yaml. Любое новое предупреждение валит CI: шумные по дизайну
+# правила выключены здесь явно, остальное — ошибка («трещотка»).
+extends: [[vacuum:oas, recommended]]
+rules:
+  # snake_case в JSON — решение проекта (контракт для TS-фронта).
+  camel-case-properties: off
+  # Примеры и описания — отдельная задача документации из бэклога,
+  # пока не гейтим: это 94 + 69 + 47 + 20 предупреждений.
+  oas3-missing-example: off
+  component-description: off
+  operation-description: off
+  oas3-parameter-description: off
+  # Описания ответов намеренно повторяются ("OK" у 30 операций).
+  description-duplication: off

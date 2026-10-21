@@ -1,0 +1,23 @@
+paths:
+  # ───────────────────────── system ─────────────────────────
+  /healthz:
+    get:
+      tags: [system]
+      operationId: healthz
+      summary: Liveness/readiness (проверяет соединение с БД)
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+        '503':
+          description: БД недоступна (UNAVAILABLE)
+          content:
+            application/json:
+              schema: { $ref: '../schemas/errors.yaml#/components/schemas/Error' }

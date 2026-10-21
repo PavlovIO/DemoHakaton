@@ -1,0 +1,30 @@
+components:
+  schemas:
+    # ── AML ──
+    AmlFlag:
+      type: object
+      required: [id, organization, rule, severity, details, status, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        organization: { $ref: './organizations.yaml#/components/schemas/OrganizationShort' }
+        application_id: { type: string, format: uuid, nullable: true }
+        rule: { $ref: './enums.yaml#/components/schemas/AmlRule' }
+        severity: { $ref: './enums.yaml#/components/schemas/AmlSeverity' }
+        details:
+          type: string
+          example: 'Совпадение бенефициара "Ivan Petrov" со списком OFAC SDN (score 0.92)'
+        status: { $ref: './enums.yaml#/components/schemas/AmlFlagStatus' }
+        resolved_by_user_id: { type: string, format: uuid, nullable: true }
+        resolution_comment: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+    AmlFlagPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: './aml.yaml#/components/schemas/AmlFlag' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }

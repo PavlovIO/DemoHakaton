@@ -1,0 +1,48 @@
+# Локальные git-хуки (аналог pre-commit). Установка: make hooks.
+# Это быстрая обратная связь до CI, а не замена ему: make gen и интеграционные
+# тесты проверяет только CI. Пропустить разово: LEFTHOOK=0 git commit ...
+
+# Без спиннера и цветов: коммиты часто идут из VS Code Source Control или консоли Windows,
+# где ANSI-коды выводятся как мусор (←[?25h, ←[38;2;...m).
+no_tty: true
+colors: false
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: gofmt
+      glob: "backend/**/*.go"
+      # Печатает неотформатированные файлы и падает, если они есть (исправить: gofmt -w <файл>).
+      # Без кавычек: на Windows lefthook передаёт команду в sh -c "...", и вложенные " ломаются.
+      run: gofmt -l {staged_files} | (! grep .)
+
+    - name: golangci-lint
+      glob: "backend/**/*.go"
+      root: "backend/"
+      # Только новые проблемы относительно HEAD и только быстрые линтеры.
+      run: golangci-lint run --new-from-rev=HEAD --fast-only ./...
+
+    - name: actionlint
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: actionlint {staged_files}
+
+    - name: vacuum
+      glob: "api/**/*.yaml"
+      # Линтуем бандл, а не отдельные файлы: правила смотрят на документ целиком.
+      # Первый запуск компилирует vacuum (~1 мин), дальше ~2 с из кэша Go.
+      run: make lint-api
+
+pre-push:
+  jobs:
+    - name: go vet
+      root: "backend/"
+      run: go vet ./...
+
+    - name: go mod tidy
+      root: "backend/"
+      run: go mod tidy -diff
+
+    - name: go test
+      root: "backend/"
+      # -short: без БД, интеграционные тесты идут в CI.
+      run: go test -short ./...
