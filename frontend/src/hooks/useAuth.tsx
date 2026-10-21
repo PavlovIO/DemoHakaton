@@ -1,84 +1,143 @@
-/* eslint-disable react-refresh/only-export-components */
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from 'react'
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query'
+import { api, ApiError } from '@/lib/api-client'
+import { handleApiError } from '@/lib/api-errors'
+import type { components } from '@/lib/api-schema'
 
-import { createContext, useContext, useState, type ReactNode } from 'react'
+// Типы из OpenAPI
+export type Me = components['schemas']['Me']
+export type User = NonNullable<Me>['user']
+export type Organization = NonNullable<Me>['organization']
+export type UserRole = User['role']
+export type KycStatus = Organization['kyc_status']
+export type RegisterPayload = components['schemas']['RegisterRequest']
 
-export type UserRole = 'borrower' | 'lender' | 'admin'
-
-export interface User {
-  id: string
-  email: string
-  role: UserRole
-  organizationName: string
-  kycStatus: 'draft' | 'under_review' | 'verified' | 'rejected'
-}
-
-interface AuthContextType {
+interface AuthContextValue {
+  me: Me | null
   user: User | null
-  login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  organization: Organization | null
   isLoading: boolean
+  isAuthenticated: boolean
+  isVerified: boolean
+  needsOnboarding: boolean
+
+  login: (email: string, password: string) => Promise<void>
+  register: (payload: RegisterPayload) => Promise<void>
+  logout: () => Promise<void>
+  refresh: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextValue | null>(null)
 
-// Моковые данные для демонстрации
-const mockUsers: Record<UserRole, User> = {
-  borrower: {
-    id: '1',
-    email: 'borrower@alpha.ru',
-    role: 'borrower',
-    organizationName: 'ООО "Альфа"',
-    kycStatus: 'verified',
-  },
-  lender: {
-    id: '2',
-    email: 'lender@beta.com',
-    role: 'lender',
-    organizationName: 'Beta Corp',
-    kycStatus: 'verified',
-  },
-  admin: {
-    id: '3',
-    email: 'admin@platform.com',
-    role: 'admin',
-    organizationName: 'Platform Admin',
-    kycStatus: 'verified',
-  },
-}
+const ME_KEY = ['me'] as const
+
+const KYC_REQUIRED_ROLES: readonly UserRole[] = ['borrower', 'lender']
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const queryClient = useQueryClient()
 
-  const login = async (email: string, _password: string) => {
-    setIsLoading(true)
-    // Имитация задержки API
-    await new Promise((resolve) => setTimeout(resolve, 500))
+  const { data: me = null, isLoading } = useQuery<Me | null>({
+    queryKey: ME_KEY,
+    queryFn: async () => {
+      try {
+        return await api.get<Me>('/auth/me')
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return null
+        throw err
+      }
+    },
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: true,
+  })
 
-    // Определяем роль по email (для демо)
-    let role: UserRole = 'borrower'
-    if (email.includes('lender')) role = 'lender'
-    if (email.includes('admin')) role = 'admin'
+  const user = me?.user ?? null
+  const organization = me?.organization ?? null
 
-    setUser(mockUsers[role])
-    setIsLoading(false)
-  }
+  const isAuthenticated = !!me && !!user
 
-  const logout = () => {
-    setUser(null)
-  }
+  const isVerified =
+    organization !== null && organization.kyc_status === 'verified'
 
-  return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
-      { children }
-    </AuthContext.Provider>
+  const needsOnboarding =
+    isAuthenticated &&
+    !isVerified &&
+    user !== null &&
+    KYC_REQUIRED_ROLES.includes(user.role)
+
+const loginMutation = useMutation({
+    mutationFn: (payload: { email: string; password: string }) =>
+      api.post<Me>('/auth/login', payload),
+    onSuccess: (data) => queryClient.setQueryData(ME_KEY, data),
+    onError: handleApiError,
+  })
+
+  const registerMutation = useMutation({
+    mutationFn: (payload: RegisterPayload) =>
+      api.post<Me>('/auth/register', payload),
+    onSuccess: (data) => queryClient.setQueryData(ME_KEY, data),
+    onError: handleApiError,
+  })
+
+  const logoutMutation = useMutation({
+    mutationFn: () => api.post<void>('/auth/logout'),
+    onSettled: () => {
+      queryClient.clear()
+    },
+    onError: handleApiError,
+  })
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      await loginMutation.mutateAsync({ email, password })
+    },
+    [loginMutation],
   )
-}
 
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
+  const register = useCallback(
+    async (payload: RegisterPayload) => {
+      await registerMutation.mutateAsync(payload)
+    },
+    [registerMutation],
+  )
+
+  const logout = useCallback(async () => {
+    await logoutMutation.mutateAsync()
+    window.location.href = '/login'
+  }, [logoutMutation])
+
+  const refresh = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ME_KEY })
+  }, [queryClient])
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      me, user, organization,
+      isLoading,
+      isAuthenticated,
+      isVerified,
+      needsOnboarding,
+      login, register, logout, refresh,
+    }),
+    [me, user, organization, isLoading, isAuthenticated,
+     isVerified, needsOnboarding, login, register, logout, refresh],
+  )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+/* eslint-disable react-refresh/only-export-components */
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
+  return ctx
 }

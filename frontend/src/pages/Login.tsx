@@ -1,82 +1,79 @@
-import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useEffect} from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 
-interface LocationState{
-  from?: { pathname: string }
-}
+const loginSchema = z.object({
+  email: z.email('Некорректный email'),
+  password: z.string().min(6, 'Минимум 6 символов')
+})
+
+type LoginForm = z.infer<typeof loginSchema>
 
 export function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const { login, isLoading } = useAuth()
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  
-  const state = location.state as LocationState
-  const from = state?.from?.pathname || '/dashboard'
+  const from = (location.state as { from?: string})?.from ?? '/dashboard'
 
-  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
-    e.preventDefault()
-    await login(email, password)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+  })
+
+  useEffect(() => {
+    if (isAuthenticated) navigate(from, {replace: true})
+  }, [isAuthenticated, navigate, from])
+
+  const onSubmit = async (data: LoginForm) => {
+    await login(data.email, data.password)
     navigate(from, { replace: true })
   }
 
+  if (authLoading) {
+    return <div className="flex min-h-screen items-center justify-center">Загрузка…</div>
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md space-y-8 rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="w-full max-w-sm space-y-4 rounded-lg bg-white p-6 shadow"
+      >
+        <h1 className="text-xl font-semibold">Вход в платформу ликвидности</h1>
+
         <div>
-          <h2 className="text-center text-2xl font-bold text-gray-900">Вход в систему</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Liquidity Platform
-          </p>
+          <label className="text-sm">Email</label>
+          <Input {...register('email')} type="email" autoComplete="email" />
+          {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                placeholder="borrower@alpha.ru"
-              />
-            </div>
+        <div>
+          <label className="text-sm">Пароль</label>
+          <Input {...register('password')} type="password" autoComplete="current-password" />
+          {errors.password && (
+            <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
+          )}
+        </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Пароль
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? 'Вход…' : 'Войти'}
+        </Button>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'Вход...' : 'Войти'}
-          </Button>
-
-          <div className="text-center text-sm">
-            <p className="text-gray-600">
-              Демо-аккаунты: borrower@alpha.ru, lender@beta.com, admin@platform.com
-            </p>
-          </div>
-        </form>
-      </div>
+        <p className="text-center text-sm text-gray-600">
+          Нет аккаунта?{' '}
+          <Link to="/register" className="text-blue-600 hover:underline">
+            Зарегистрироваться
+          </Link>
+        </p>
+      </form>
     </div>
   )
 }

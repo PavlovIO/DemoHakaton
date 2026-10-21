@@ -1,27 +1,46 @@
+import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth, type UserRole } from '@/hooks/useAuth'
-import { type ReactNode } from 'react'
 
-interface PrivateRouteProps {
+interface Props {
   children: ReactNode
-  allowedRoles?: UserRole[]
   requireKyc?: boolean
+  requireRole?: UserRole
 }
 
-export function PrivateRoute({ children, allowedRoles, requireKyc = false }: PrivateRouteProps) {
-  const { user } = useAuth()
+const KYC_REQUIRED_ROLES: readonly UserRole[] = ['borrower', 'lender']
+
+export function PrivateRoute({ children, requireKyc = true, requireRole }: Props) {
+  const { isLoading, isAuthenticated, user, organization } = useAuth()
   const location = useLocation()
 
-  if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-gray-500">
+        Загрузка…
+      </div>
+    )
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  if (!isAuthenticated || !user) {
+    return (
+      <Navigate  to="/login" state={{ from: location.pathname + location.search }} replace/>
+    )
+  }
+
+  if (requireRole && user.role !== requireRole) {
     return <Navigate to="/dashboard" replace />
   }
 
-  if (requireKyc && user.kycStatus !== 'verified') {
-    return <Navigate to="/kyc" replace />
+  const kycRequired =
+    requireKyc && KYC_REQUIRED_ROLES.includes(user.role)
+
+  if (kycRequired && organization?.kyc_status !== 'verified') {
+    if (location.pathname.startsWith('/profile')) {
+      return <>{children}</>
+    }
+    const destination = organization ? '/profile/kyc' : '/profile'
+    return <Navigate to={destination} replace />
   }
 
   return <>{children}</>
