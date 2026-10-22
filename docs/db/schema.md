@@ -19,34 +19,67 @@ psql "$DATABASE_URL" -f backend/migrations/testdata/invariants_test.sql
 goose -dir backend/migrations postgres "$DATABASE_URL" reset
 ```
 
-sqlc умеет читать goose-миграции напрямую. В `sqlc.yaml` достаточно указать `schema: backend/migrations`.
+sqlc читает goose-миграции напрямую: в `backend/sqlc.yaml` указано `schema: migrations`, `queries: queries`. Код генерируется в `backend/internal/repository/sqlc` (пакет `repository`, драйвер `pgx/v5`).
+
+**Описание каждой таблицы** — поля, типы Go, ограничения, связи и sqlc-запросы — лежит в [tables/](tables/README.md).
 
 ## ER-диаграмма
 
+Все внешние ключи. Сплошная линия — FK, пунктир — логическая связь без FK. `|o` — FK допускает NULL.
+
 ```mermaid
 erDiagram
+    %% справочники
     countries ||--o{ organizations : "country_code"
+    countries ||--o{ beneficiaries : "citizenship_country_code"
+    countries ||--o{ applications : "target_country_code"
+    countries ||--o{ deals : "target_country_code"
     currencies ||--o{ applications : "currency"
+    currencies ||--o{ offers : "currency"
+    currencies ||--o{ deals : "currency"
     transfer_methods ||--o{ applications : "transfer_method"
+    transfer_methods ||--o{ deals : "transfer_method"
 
-    organizations ||--o| users : "1 аккаунт на компанию (MVP)"
-    organizations ||--o{ beneficiaries : ""
-    organizations ||--o{ kyc_documents : ""
-    organizations ||--o{ registry_checks : "снапшоты реестров"
-    organizations ||--o{ aml_flags : ""
+    %% организации и пользователи
+    organizations ||--o| users : "organization_id (1 аккаунт, MVP)"
+    organizations ||--o{ beneficiaries : "organization_id"
+    users ||--o{ sessions : "user_id"
 
-    users ||--o{ sessions : ""
-    users ||--o{ notifications : ""
-    users ||--o{ audit_log : ""
+    %% KYC
+    organizations ||--o{ kyc_documents : "organization_id"
+    users ||--o{ kyc_documents : "uploaded_by_user_id"
+    organizations |o--o{ registry_checks : "organization_id"
 
-    organizations ||--o{ applications : "borrower"
-    applications ||--o{ offers : ""
-    organizations ||--o{ offers : "lender"
+    %% маркетплейс
+    organizations ||--o{ applications : "borrower_organization_id"
+    users ||--o{ applications : "created_by_user_id"
+    applications ||--o{ offers : "application_id"
+    organizations ||--o{ offers : "lender_organization_id"
+    users ||--o{ offers : "created_by_user_id"
     applications |o--o| offers : "accepted_offer_id"
-    applications ||--o| deals : ""
-    offers ||--o| deals : ""
-    offers ||--o{ messages : "чат = оффер"
-    offers ||--o{ message_reads : ""
+    applications ||--o| deals : "application_id"
+    offers ||--o| deals : "offer_id"
+    organizations ||--o{ deals : "borrower_ / lender_organization_id"
+
+    %% чат
+    offers ||--o{ messages : "offer_id (чат = оффер)"
+    users ||--o{ messages : "author_user_id"
+    offers ||--o{ message_reads : "offer_id"
+    users ||--o{ message_reads : "user_id"
+    messages ||..o{ message_reads : "last_read_message_id"
+
+    %% служебные
+    users ||--o{ notifications : "user_id"
+    users |o--o{ status_history : "actor_user_id"
+    applications ||..o{ status_history : "entity_id"
+    offers ||..o{ status_history : "entity_id"
+    users |o--o{ audit_log : "user_id"
+
+    %% AML
+    organizations ||--o{ aml_flags : "organization_id"
+    applications |o--o{ aml_flags : "application_id"
+    users |o--o{ aml_flags : "resolved_by_user_id"
+    sanctions_entries ||..o{ aml_flags : "скрининг"
 
     organizations {
         uuid id PK
@@ -98,9 +131,10 @@ erDiagram
     }
 ```
 
-Таблицы без связей на диаграмме:
-- `status_history` — ссылается полиморфно через `entity_type` + `entity_id`;
-- `sanctions_entries` — загруженные санкционные списки.
+Связи без внешних ключей (пунктир на диаграмме):
+- `status_history`, `notifications`, `audit_log` ссылаются на сущности полиморфно через `entity_type` + `entity_id`. На диаграмме показаны только основные случаи `status_history`;
+- `message_reads.last_read_message_id` хранит `messages.id` без FK;
+- `sanctions_entries` не связана ни с чем: это источник данных для флагов `aml_flags` с `rule = sanctions_match`.
 
 ## Таблицы
 
@@ -264,6 +298,41 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - транслитерация кириллицы в латиницу;
 - удаление орг. форм (ООО, LLC, Ltd, GmbH);
 - схлопывание пробелов.
+
+## Покрытие sqlc
+
+74 запроса в 11 файлах `backend/queries/*.sql`. Сгенерированный интерфейс `Querier` (`internal/repository/sqlc/querier.go`) с ними совпадает. Подробно по таблицам — в [tables/](tables/README.md).
+
+| Файл | Таблицы | Запросы |
+|---|---|---|
+| `dictionaries.sql` | countries, currencies, transfer_methods | `ListCountries`, `ListCurrencies`, `ListTransferMethods` |
+| `users.sql` | users | `GetUserByID`, `GetUserByEmail`, `CreateUser`, `UpdateLastLogin`, `BlockUser`, `UnblockUser`, `ListUsers`, `CountUsers` |
+| `sessions.sql` | sessions (+ users) | `CreateSession`, `GetSessionByTokenHash`, `TouchSession`, `DeleteSessionByTokenHash`, `DeleteSessionsByUserID`, `DeleteExpiredSessions` |
+| `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations` |
+| `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
+| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationByID`, `GetApplicationForUpdate`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplications`, `CountApplications`, `CreateStatusHistory` |
+| `offers.sql` | offers | `CreateOffer`, `GetOfferByID`, `ListOffersByApplication`, `ListOffers`, `CountOffers`, `AcceptOffer`, `RejectOtherOffers`, `RejectOffer`, `WithdrawOffer`, `RejectAllOffersForApplication` |
+| `deals.sql` | deals | `CreateDeal`, `GetDealByID`, `ListDeals`, `CountDeals` |
+| `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessages`, `MarkMessagesRead`, `CountUnreadMessages` |
+| `notifications.sql` | notifications | `CreateNotification`, `ListNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
+| `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+
+### Чего не хватает и где запросы расходятся с этим документом
+
+Пробелы (запросов нет):
+- `beneficiaries` — ни одного запроса, хотя `PATCH /organizations/me` должен заменять список;
+- `status_history` — нет чтения для `GET /applications/{id}/history`;
+- `kyc_documents` — нет получения документа по `id` для скачивания;
+- `aml_flags` — нет `Count` и `GetByID`; `audit_log` — нет фильтров и `Count`;
+- `sanctions_entries` — нет запросов загрузчика списков.
+
+Расхождения с примерами выше:
+- **IDOR.** Правило «фильтр по `organization_id` в каждом запросе» выполняется только в `DeleteKycDocument` и `MarkNotificationRead`. `Get*ByID`, `GetApplicationForUpdate`, `ListMessages`, `ListOffersByApplication` и все `UPDATE` статусов фильтруют только по `id`. Владельца проверяет сервис по возвращённым полям — это нужно либо закрепить в коде и тестах, либо добавить фильтр в SQL.
+- **Принятие оффера.** `GetApplicationForUpdate` не проверяет владельца и `status = 'published'`. `RejectOtherOffers` — `:exec` без `RETURNING`, поэтому кредиторам отклонённых офферов не из чего отправить уведомления.
+- **Витрина.** `ListApplications` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
+- **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
+- **Сделка.** `fee_amount` считается в SQL (`CreateDeal`), а не в бэкенде.
+- **Переходы статусов** заявок и KYC не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`). Параллельные запросы могут проскочить проверку сервиса.
 
 ## Что сознательно не делаем в MVP
 
