@@ -1,48 +1,24 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bell, CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-interface Notification {
-  id: string
-  title: string
-  description: string
-  timestamp: string
-  isRead: boolean
-  type: 'offer' | 'application' | 'deal' | 'system'
-}
-
-// Моковые данные
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'Новое предложение',
-    description: 'Beta Corp предложила 500,000 EUR под 8%',
-    timestamp: '14:32',
-    isRead: false,
-    type: 'offer',
-  },
-  {
-    id: '2',
-    title: 'Заявка одобрена',
-    description: 'Заявка APP-000123 одобрена модератором',
-    timestamp: '10:15',
-    isRead: false,
-    type: 'application',
-  },
-  {
-    id: '3',
-    title: 'Сделка создана',
-    description: 'Сделка DEAL-000045 успешно создана',
-    timestamp: 'Вчера',
-    isRead: true,
-    type: 'deal',
-  },
-]
+import type { Notification } from '@/lib/notifications'
 
 export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState(mockNotifications)
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const loadNotifications = () => {
+    const saved = JSON.parse(localStorage.getItem('mock_notifications') || '[]')
+    setNotifications(saved)
+  }
+
+  useEffect(() => {
+    loadNotifications()
+    // Слушаем кастомное событие обновления
+    window.addEventListener('notifications-updated', loadNotifications)
+    return () => window.removeEventListener('notifications-updated', loadNotifications)
+  }, [])
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
 
@@ -57,7 +33,9 @@ export function NotificationsDropdown() {
   }, [])
 
   const markAllAsRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, isRead: true })))
+    const updated = notifications.map((n) => ({ ...n, isRead: true }))
+    setNotifications(updated)
+    localStorage.setItem('mock_notifications', JSON.stringify(updated))
   }
 
   return (

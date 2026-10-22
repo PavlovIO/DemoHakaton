@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { ChatModal } from '@/components/ChatModal'
 
 interface Offer {
   id: string
@@ -20,6 +21,7 @@ interface Offer {
 export function Offers() {
   const { user } = useAuth()
   const [offers, setOffers] = useState<Offer[]>([])
+  const [chatOffer, setChatOffer] = useState<Offer | null>(null) // <-- ДОБАВЛЕН СТЕЙТ ДЛЯ ЧАТА
 
   // Загружаем офферы из localStorage при открытии страницы
   useEffect(() => {
@@ -50,7 +52,7 @@ export function Offers() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Мои предложения</h1>
       </div>
@@ -74,7 +76,7 @@ export function Offers() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => alert('Здесь будет чат (FE-09)')}>Чат</Button>
+                  <Button variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
                   {offer.status === 'sent' && (
                     <Button variant="danger" onClick={() => handleWithdraw(offer.id)}>Отозвать</Button>
                   )}
@@ -89,6 +91,14 @@ export function Offers() {
           )}
         </ul>
       </div>
+
+      <ChatModal
+        isOpen={!!chatOffer}
+        onClose={() => setChatOffer(null)}
+        offerId={chatOffer?.id || ''}
+        offerNumber={chatOffer?.application_number || ''}
+        role="lender"
+      />
     </div>
   )
 }

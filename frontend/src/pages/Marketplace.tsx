@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { addNotification } from '@/lib/notifications' // <-- ДОБАВЛЕН ИМПОРТ
 
 interface Application {
   id: string
@@ -82,6 +83,14 @@ export function Marketplace() {
     localStorage.setItem('mock_offers', JSON.stringify(updatedOffers))
     
     setMyOffers(updatedOffers) 
+
+    // ДОБАВЛЕНО УВЕДОМЛЕНИЕ ДЛЯ ЗАЕМЩИКА
+    addNotification({
+      type: 'offer',
+      title: `Новое предложение по заявке ${selectedApp?.number}`,
+      description: `Кредитор Demo Company LLC отправил оффер на сумму ${offerData.amount} ${selectedApp?.currency}`,
+      entity_id: selectedApp?.id || ''
+    })
 
     alert('Оффер успешно отправлен заемщику!')
     setSelectedApp(null)

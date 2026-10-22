@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { addNotification } from '@/lib/notifications'
+import { ChatModal } from '@/components/ChatModal'
 
 interface Application {
   id: string
   number: string
-  company_name?: string // <-- Добавлено для витрины
+  company_name?: string
   amount: string
   currency: string
   target_country_code: string
@@ -19,6 +21,7 @@ interface Application {
 interface Offer {
   id: string
   application_id: string
+  application_number?: string
   company_name: string
   amount: string
   currency: string
@@ -62,9 +65,11 @@ export function Applications() {
   
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedAppForOffers, setSelectedAppForOffers] = useState<Application | null>(null)
+  
+  const [chatOffer, setChatOffer] = useState<Offer | null>(null) // <-- ДОБАВЛЕН СТЕЙТ ДЛЯ ЧАТА
+  
   const [formData, setFormData] = useState({ amount: '', currency: 'EUR', target_country_code: 'DE', purpose: '', term_months: '6' })
 
-  // Загружаем заявки и офферы из localStorage
   useEffect(() => {
     const savedApps = JSON.parse(localStorage.getItem('mock_applications') || '[]')
     if (savedApps.length === 0) {
@@ -87,13 +92,13 @@ export function Applications() {
     const newApp: Application = {
       id: Math.random().toString(),
       number: `APP-${Math.floor(Math.random() * 10000).toString().padStart(6, '0')}`,
-      company_name: 'Альфа', // <-- Жестко задаем имя компании
+      company_name: 'Альфа',
       amount: formData.amount,
       currency: formData.currency,
       target_country_code: formData.target_country_code,
       purpose: formData.purpose,
       term_months: Number(formData.term_months),
-      status: 'moderation', // <-- Сразу отправляем на модерацию админу
+      status: 'moderation',
       created_at: new Date().toISOString(),
     }
     const updated = [newApp, ...applications]
@@ -113,7 +118,6 @@ export function Applications() {
     setOffers(updatedOffers)
     localStorage.setItem('mock_offers', JSON.stringify(updatedOffers))
 
-    // Обновляем статус заявки и сохраняем в localStorage
     const updatedApps = applications.map(a => 
       a.id === acceptedOffer.application_id ? { ...a, status: 'agreed' as const } : a
     )
@@ -133,6 +137,13 @@ export function Applications() {
     const existingDeals = JSON.parse(localStorage.getItem('mock_deals') || '[]')
     localStorage.setItem('mock_deals', JSON.stringify([newDeal, ...existingDeals]))
 
+    addNotification({
+      type: 'deal',
+      title: `Ваш оффер по заявке ${selectedAppForOffers?.number} принят!`,
+      description: `Заемщик принял ваше предложение. Сделка успешно зафиксирована.`,
+      entity_id: acceptedOffer.application_id
+    })
+
     alert(`Оффер принят! Сделка на сумму ${acceptedOffer.amount} ${acceptedOffer.currency} зафиксирована.`)
     setSelectedAppForOffers(null)
   }
@@ -149,7 +160,7 @@ export function Applications() {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" className="divide-y divide-gray-200">
           {applications.map((app) => {
-            const appOffersCount = offers.filter(o => o.application_id === app.id && o.status === 'sent').length
+            const appOffersCount = offers.filter(o => o.application_id === app.id).length
             
             return (
               <li key={app.id} className="p-4 hover:bg-gray-50">
@@ -251,9 +262,13 @@ export function Applications() {
                         Ставка: <span className="font-medium">{offer.interest_rate_annual}%</span> | Комиссия: {offer.fee_percent}%
                       </p>
                     </div>
-                    {offer.status === 'sent' && selectedAppForOffers.status === 'published' && (
-                      <Button onClick={() => handleAcceptOffer(offer)}>Принять</Button>
-                    )}
+                    {/* ДОБАВЛЕНА КНОПКА ЧАТА РЯДОМ С ПРИНЯТЬ */}
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
+                      {offer.status === 'sent' && selectedAppForOffers.status === 'published' && (
+                        <Button onClick={() => handleAcceptOffer(offer)}>Принять</Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -261,6 +276,14 @@ export function Applications() {
           </div>
         </div>
       )}
+
+      <ChatModal
+        isOpen={!!chatOffer}
+        onClose={() => setChatOffer(null)}
+        offerId={chatOffer?.id || ''}
+        offerNumber={chatOffer?.application_number || selectedAppForOffers?.number || ''}
+        role="borrower"
+      />
     </div>
   )
 }
