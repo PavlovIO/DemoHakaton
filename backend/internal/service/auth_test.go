@@ -3,7 +3,9 @@ package service_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,8 @@ type fakeAuthStore struct {
 	sessions  map[string]repository.GetSessionByTokenHashRow
 	deleted   [][]byte
 	lastLogin map[uuid.UUID]bool
+	audit     []repository.CreateAuditLogParams
+	auditErr  error
 }
 
 func newFakeAuthStore() *fakeAuthStore {
@@ -129,6 +133,11 @@ func (s *fakeAuthStore) CreateSession(ctx context.Context, arg repository.Create
 	}
 	s.sessions[string(arg.TokenHash)] = row
 	return repository.CreateSessionRow{TokenHash: arg.TokenHash, UserID: arg.UserID, ExpiresAt: arg.ExpiresAt, CreatedAt: row.CreatedAt}, nil
+}
+
+func (s *fakeAuthStore) CreateAuditLog(_ context.Context, arg repository.CreateAuditLogParams) (repository.AuditLog, error) {
+	s.audit = append(s.audit, arg)
+	return repository.AuditLog{}, s.auditErr
 }
 
 func (s *fakeAuthStore) GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (repository.GetSessionByTokenHashRow, error) {
@@ -304,6 +313,146 @@ func TestAuthLogin(t *testing.T) {
 	if _, ok := store.sessions[session.Token]; ok {
 		t.Fatal("Login() stored raw token as session key")
 	}
+}
+
+func TestAuthLoginAudit(t *testing.T) {
+	const (
+		email    = "audit-login@example.com"
+		password = "auditSecretPassword1"
+	)
+	ip := netip.MustParseAddr("192.0.2.42")
+	meta := service.ClientMeta{IP: &ip, UserAgent: "auth-test-agent"}
+
+	passwordHash, err := service.HashPassword(context.Background(), password)
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+
+	cases := []struct {
+		name          string
+		loginEmail    string
+		loginPassword string
+		status        repository.UserStatus
+		wantAction    string
+		wantReason    string
+		wantUserID    bool
+		wantErrCode   apperr.Code
+	}{
+		{name: "success", loginEmail: email, loginPassword: password, status: repository.UserStatusActive, wantAction: "auth.login", wantUserID: true},
+		{name: "bad password", loginEmail: email, loginPassword: "incorrect-password", status: repository.UserStatusActive, wantAction: "auth.login_failed", wantReason: "bad_password", wantUserID: true, wantErrCode: apperr.CodeUnauthorized},
+		{name: "unknown email", loginEmail: "unknown@example.com", loginPassword: password, status: repository.UserStatusActive, wantAction: "auth.login_failed", wantReason: "unknown_email", wantErrCode: apperr.CodeUnauthorized},
+		{name: "blocked", loginEmail: email, loginPassword: password, status: repository.UserStatusBlocked, wantAction: "auth.login_failed", wantReason: "blocked", wantUserID: true, wantErrCode: apperr.CodeForbidden},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeAuthStore()
+			userID := uuid.New()
+			store.users[email] = repository.User{
+				ID:           userID,
+				Email:        email,
+				PasswordHash: passwordHash,
+				Role:         repository.UserRoleBorrower,
+				Status:       tc.status,
+			}
+			auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+
+			session, loginErr := auth.Login(context.Background(), tc.loginEmail, tc.loginPassword, meta)
+			if tc.wantErrCode == "" {
+				if loginErr != nil || session == nil || session.Token == "" {
+					t.Fatalf("Login() = (%v, %v), want session", session, loginErr)
+				}
+			} else if appErr, ok := apperr.As(loginErr); !ok || appErr.Code != tc.wantErrCode {
+				t.Fatalf("Login() error = %v, want code %s", loginErr, tc.wantErrCode)
+			}
+			if len(store.audit) != 1 {
+				t.Fatalf("audit entries = %d, want exactly 1", len(store.audit))
+			}
+			entry := store.audit[0]
+			if entry.Action != tc.wantAction {
+				t.Errorf("audit action = %q, want %q", entry.Action, tc.wantAction)
+			}
+			if entry.UserID.Valid != tc.wantUserID {
+				t.Errorf("audit UserID.Valid = %v, want %v", entry.UserID.Valid, tc.wantUserID)
+			}
+			if tc.wantUserID && uuid.UUID(entry.UserID.Bytes) != userID {
+				t.Errorf("audit user id = %s, want %s", uuid.UUID(entry.UserID.Bytes), userID)
+			}
+			if entry.EntityType.Valid != tc.wantUserID {
+				t.Errorf("audit EntityType.Valid = %v, want %v", entry.EntityType.Valid, tc.wantUserID)
+			}
+			if tc.wantUserID {
+				if entry.EntityType.EntityType != repository.EntityTypeUser {
+					t.Errorf("audit entity type = %q, want user", entry.EntityType.EntityType)
+				}
+				if !entry.EntityID.Valid || entry.EntityID.String != userID.String() {
+					t.Errorf("audit entity id = %+v, want %s", entry.EntityID, userID)
+				}
+			} else if entry.EntityID.Valid {
+				t.Errorf("audit entity id = %+v, want NULL", entry.EntityID)
+			}
+			if entry.Ip == nil || *entry.Ip != ip {
+				t.Errorf("audit IP = %v, want %v", entry.Ip, ip)
+			}
+			if !entry.UserAgent.Valid || entry.UserAgent.String != meta.UserAgent {
+				t.Errorf("audit user agent = %+v, want %q", entry.UserAgent, meta.UserAgent)
+			}
+			var gotMeta map[string]string
+			if len(entry.Meta) == 0 || string(entry.Meta) == "null" {
+				t.Fatalf("audit meta = %s, want non-null JSON", entry.Meta)
+			}
+			if err := json.Unmarshal(entry.Meta, &gotMeta); err != nil {
+				t.Fatalf("decode audit meta %s: %v", entry.Meta, err)
+			}
+			if tc.wantReason != "" {
+				if gotMeta["reason"] != tc.wantReason {
+					t.Errorf("audit reason = %q, want %q", gotMeta["reason"], tc.wantReason)
+				}
+			} else if string(entry.Meta) != "{}" {
+				t.Errorf("audit meta = %s, want {}", entry.Meta)
+			}
+			if strings.Contains(string(entry.Meta), password) || strings.Contains(string(entry.Meta), email) {
+				t.Errorf("audit meta contains credentials: %s", entry.Meta)
+			}
+		})
+	}
+
+	t.Run("audit failures do not change login result", func(t *testing.T) {
+		for _, tc := range []struct {
+			name          string
+			loginPassword string
+			wantSuccess   bool
+		}{
+			{name: "success", loginPassword: password, wantSuccess: true},
+			{name: "bad password", loginPassword: "incorrect-password"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store := newFakeAuthStore()
+				userID := uuid.New()
+				store.users[email] = repository.User{
+					ID:           userID,
+					Email:        email,
+					PasswordHash: passwordHash,
+					Role:         repository.UserRoleBorrower,
+					Status:       repository.UserStatusActive,
+				}
+				store.auditErr = errors.New("audit storage unavailable")
+				auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+
+				session, loginErr := auth.Login(context.Background(), email, tc.loginPassword, meta)
+				if tc.wantSuccess {
+					if loginErr != nil || session == nil {
+						t.Fatalf("Login() = (%v, %v), want successful session", session, loginErr)
+					}
+					return
+				}
+				appErr, ok := apperr.As(loginErr)
+				if !ok || appErr.Code != apperr.CodeUnauthorized {
+					t.Fatalf("Login() error = %v, want unauthorized", loginErr)
+				}
+			})
+		}
+	})
 }
 
 func TestAuthAuthenticateAndLogout(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/netip"
@@ -91,6 +92,7 @@ type AuthStore interface {
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (repository.Organization, error)
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 	CreateSession(ctx context.Context, arg repository.CreateSessionParams) (repository.CreateSessionRow, error)
+	CreateAuditLog(ctx context.Context, arg repository.CreateAuditLogParams) (repository.AuditLog, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (repository.GetSessionByTokenHashRow, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
@@ -232,6 +234,7 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 		if _, verifyErr := VerifyPassword(ctx, password, a.fakePassword); verifyErr != nil {
 			return nil, verifyErr
 		}
+		a.audit(ctx, nil, "auth.login_failed", "unknown_email", meta)
 		return nil, apperr.Unauthorized("Неверный email или пароль")
 	}
 
@@ -240,9 +243,13 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 		return nil, verifyErr
 	}
 	if !ok {
+		userID := userRow.ID
+		a.audit(ctx, &userID, "auth.login_failed", "bad_password", meta)
 		return nil, apperr.Unauthorized("Неверный email или пароль")
 	}
 	if userRow.Status == repository.UserStatusBlocked {
+		userID := userRow.ID
+		a.audit(ctx, &userID, "auth.login_failed", "blocked", meta)
 		return nil, apperr.Forbidden("Аккаунт заблокирован")
 	}
 
@@ -265,6 +272,8 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 	if err != nil {
 		return nil, err
 	}
+	userID := userRow.ID
+	a.audit(ctx, &userID, "auth.login", "", meta)
 
 	me := &Me{User: userFromRepositoryUser(userRow)}
 	if userRow.OrganizationID.Valid {
@@ -277,6 +286,33 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 	}
 
 	return &Session{Token: token, CSRFToken: csrfToken, ExpiresAt: expiresAt, Me: me}, nil
+}
+
+func (a *Auth) audit(ctx context.Context, userID *uuid.UUID, action, reason string, meta ClientMeta) {
+	fields := make(map[string]string)
+	if reason != "" {
+		fields["reason"] = reason
+	}
+	metaJSON, err := json.Marshal(fields)
+	if err != nil {
+		slog.Warn("audit write failed", "action", action, "err", err)
+		return
+	}
+
+	arg := repository.CreateAuditLogParams{
+		Action:    action,
+		Ip:        meta.IP,
+		UserAgent: pgtype.Text{String: meta.UserAgent, Valid: meta.UserAgent != ""},
+		Meta:      metaJSON,
+	}
+	if userID != nil {
+		arg.UserID = uuidToPgUUID(*userID)
+		arg.EntityType = repository.NullEntityType{EntityType: repository.EntityTypeUser, Valid: true}
+		arg.EntityID = pgtype.Text{String: userID.String(), Valid: true}
+	}
+	if _, err := a.store.CreateAuditLog(ctx, arg); err != nil {
+		slog.Warn("audit write failed", "action", action, "err", err)
+	}
 }
 
 // Authenticate возвращает Principal по токену сессии.
