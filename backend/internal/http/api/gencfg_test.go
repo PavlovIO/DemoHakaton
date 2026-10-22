@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// Конфиги oapi-codegen пишут в один пакет api, поэтому настройки, влияющие на имена
-// и типы (compatibility, output-options), обязаны совпадать дословно: иначе server.gen.go
-// сошлётся на типы, которых в models.gen.go нет. extends у oapi-codegen нет — блок дублируется
+// server.gen.go каждого <tag>api ссылается на типы models.gen.go (dot-import пакета api),
+// поэтому настройки, влияющие на имена и типы (compatibility, output-options), обязаны
+// совпадать дословно в обоих конфигах: иначе он сошлётся на типы, которых в models.gen.go нет. extends у oapi-codegen нет — блок дублируется
 // между маркерами, а этот тест следит, чтобы копии не разъехались.
 func TestGeneratorConfigsShareCommonBlock(t *testing.T) {
 	const (

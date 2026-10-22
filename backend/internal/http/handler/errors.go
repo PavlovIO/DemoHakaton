@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
@@ -79,29 +81,7 @@ func requestError(w http.ResponseWriter, r *http.Request, err error) {
 
 // paramError переводит ошибки сгенерированного парсера параметров в VALIDATION_ERROR с полем.
 func paramError(err error) error {
-	field := ""
-	var (
-		invalidFormat *api.InvalidParamFormatError
-		required      *api.RequiredParamError
-		requiredHdr   *api.RequiredHeaderError
-		unmarshal     *api.UnmarshalingParamError
-		tooMany       *api.TooManyValuesForParamError
-		cookie        *api.UnescapedCookieParamError
-	)
-	switch {
-	case errors.As(err, &invalidFormat):
-		field = invalidFormat.ParamName
-	case errors.As(err, &required):
-		field = required.ParamName
-	case errors.As(err, &requiredHdr):
-		field = requiredHdr.ParamName
-	case errors.As(err, &unmarshal):
-		field = unmarshal.ParamName
-	case errors.As(err, &tooMany):
-		field = tooMany.ParamName
-	case errors.As(err, &cookie):
-		field = cookie.ParamName
-	}
+	field := paramName(err)
 	if field == "" {
 		// Ошибка декодирования тела запроса (strict-сервер).
 		return apperr.Wrap(apperr.CodeValidation, "Некорректное тело запроса", err)
@@ -109,6 +89,30 @@ func paramError(err error) error {
 	e := apperr.Validation("Некорректный параметр запроса", apperr.FieldError{Field: field, Message: "некорректное значение"})
 	e.Err = err
 	return e
+}
+
+// generatedPkgPrefix — пакеты internal/http/api/<tag>api, сгенерированные oapi-codegen.
+const generatedPkgPrefix = "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/"
+
+// paramName достаёт имя параметра из ошибки сгенерированного парсера (InvalidParamFormatError,
+// RequiredParamError, RequiredHeaderError, UnmarshalingParamError, TooManyValuesForParamError,
+// UnescapedCookieParamError). Эти типы генерируются заново в каждый <tag>api (ADR-0003), так что
+// errors.As по конкретному типу потребовал бы 6 × 10 веток. У всех них есть поле ParamName string —
+// его и читаем, но только у типов из сгенерированных пакетов. "" — ошибка не про параметр.
+func paramName(err error) string {
+	for ; err != nil; err = errors.Unwrap(err) {
+		v := reflect.ValueOf(err)
+		if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+			continue
+		}
+		if !strings.HasPrefix(v.Elem().Type().PkgPath(), generatedPkgPrefix) {
+			continue
+		}
+		if f := v.Elem().FieldByName("ParamName"); f.IsValid() && f.Kind() == reflect.String {
+			return f.String()
+		}
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

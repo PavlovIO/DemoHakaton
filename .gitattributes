@@ -19,3 +19,8 @@ go.sum      text eol=lf
 *.jpg       binary
 *.jpeg      binary
 *.pdf       binary
+# Сгенерированный код (make gen): GitHub сворачивает его в диффах PR и не учитывает в статистике.
+*.gen.go                               linguist-generated=true
+backend/internal/repository/sqlc/*.go  linguist-generated=true
+api/openapi.yaml                       linguist-generated=true
+backend/internal/openapi/openapi.yaml  linguist-generated=true

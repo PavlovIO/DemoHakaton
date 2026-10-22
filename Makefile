@@ -92,12 +92,14 @@ API_PARTS := $(API_ROOT) $(wildcard api/paths/*.yaml) api/components.yaml $(wild
 bundle-api:
 	go -C backend run ./cmd/specbundle -o $(abspath $(API_SPEC)) -o $(abspath $(API_SPEC_EMBED)) $(abspath $(API_ROOT))
 
-# HTTP-слой из api/openapi.yaml (oapi-codegen — go tool из backend/go.mod).
-# Два конфига -> два файла в одном пакете: models.gen.go, server.gen.go.
+# HTTP-слой из api/openapi.yaml (oapi-codegen — go tool из backend/go.mod), ADR-0003:
+#   models.yaml -> internal/http/api/models.gen.go (все схемы, общий пакет api);
+#   server.yaml -> internal/http/api/<tag>api/server.gen.go, по пакету на тег; тег и пакет
+#   задаёт //go:generate в <tag>api/gen.go, поэтому новый тег не требует правок здесь.
 # Отдельные строки вместо $(foreach) и "&& true": так работает и в cmd.exe (Windows), и в sh (CI).
 gen-api: bundle-api
 	go -C backend tool oapi-codegen -config oapi-codegen/models.yaml ../api/openapi.yaml
-	go -C backend tool oapi-codegen -config oapi-codegen/server.yaml ../api/openapi.yaml
+	go -C backend generate ./internal/http/api/...
 
 gen-sqlc:
 	docker run --rm -v "$(CURDIR):/src" -w /src sqlc/sqlc:$(SQLC_VERSION) generate -f backend/sqlc.yaml

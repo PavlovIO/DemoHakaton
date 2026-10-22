@@ -1,21 +1,26 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/v2.8.0/configuration-schema.json
-# Кодогенерация HTTP-слоя из контракта (ADR-0001: контракт-first).
-# Роутинг, парсинг параметров и StrictServerInterface — его реализуем в internal/http/handler.
+# Кодогенерация HTTP-слоя из контракта (ADR-0001: контракт-first, ADR-0003: пакет на тег).
+# Сервер ОДНОГО тега: роутинг, парсинг параметров и StrictServerInterface на операции тега.
+# package, output и include-tags задаёт //go:generate в internal/http/api/<tag>api/gen.go,
+# так что конфиг общий для всех тегов. Реализация — internal/http/handler.
 # std-http-server и strict-server разнести по разным файлам нельзя: strict-код
 # генерируется только вместе с типом сервера.
 # Запуск: make gen (из корня репо). Сгенерированные файлы не редактировать.
-package: api
-output: internal/http/api/server.gen.go
 generate:
   # Сервер на стандартном net/http (ServeMux из Go 1.22+), без сторонних роутеров.
   std-http-server: true
   # Strict server: на каждую операцию — типизированные Request/Response,
   # несоответствие спеке не компилируется.
   strict-server: true
+# Модели — общий пакет api (models.gen.go). Dot-import: сгенерированный код ссылается
+# на Error, Offer, OfferID без префикса, как если бы они лежали в том же пакете.
+additional-imports:
+  - package: github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api
+    alias: "."
 
 # ───── общее начало: ДОЛЖНО СОВПАДАТЬ ДОСЛОВНО во всех конфигах (проверяется
-# internal/http/api/gencfg_test.go). Конфиги пишут в один пакет: разные настройки
-# имён или типов — и server.gen.go сошлётся на типы, которых в models.gen.go нет. ─────
+# internal/http/api/gencfg_test.go). server.gen.go каждого <tag>api ссылается на типы
+# models.gen.go: разные настройки имён или типов — и он сошлётся на типы, которых нет. ─────
 compatibility:
   # Иначе AmlSeverity даёт константы High/Low/Medium на весь пакет.
   always-prefix-enum-values: true

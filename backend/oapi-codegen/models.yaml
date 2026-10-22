@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/v2.8.0/configuration-schema.json
 # Кодогенерация HTTP-слоя из контракта (ADR-0001: контракт-first).
 # Модели (схемы, параметры, enum'ы).
-# Два конфига (models, server) пишут в один пакет api — так файлы меньше и их проще читать.
+# Модели — один пакет api: схемы ссылаются друг на друга по кругу, а Go запрещает циклы импортов.
 # Запуск: make gen (из корня репо). Сгенерированные файлы не редактировать.
 package: api
 output: internal/http/api/models.gen.go
@@ -9,8 +9,8 @@ generate:
   models: true
 
 # ───── общее начало: ДОЛЖНО СОВПАДАТЬ ДОСЛОВНО во всех конфигах (проверяется
-# internal/http/api/gencfg_test.go). Конфиги пишут в один пакет: разные настройки
-# имён или типов — и server.gen.go сошлётся на типы, которых в models.gen.go нет. ─────
+# internal/http/api/gencfg_test.go). server.gen.go каждого <tag>api ссылается на типы
+# models.gen.go: разные настройки имён или типов — и он сошлётся на типы, которых нет. ─────
 compatibility:
   # Иначе AmlSeverity даёт константы High/Low/Medium на весь пакет.
   always-prefix-enum-values: true

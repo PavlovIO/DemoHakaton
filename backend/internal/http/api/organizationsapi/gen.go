@@ -1,0 +1,6 @@
+// Package organizationsapi — сгенерированный HTTP-сервер операций тега organizations из api/openapi.yaml
+// (ADR-0003). Модели — общий пакет api, реализация — internal/http/handler.
+// server.gen.go не редактировать: make gen.
+package organizationsapi
+
+//go:generate go tool oapi-codegen -config ../../../../oapi-codegen/server.yaml -package organizationsapi -include-tags organizations -o server.gen.go ../../../../../api/openapi.yaml
