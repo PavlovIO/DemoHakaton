@@ -30,11 +30,11 @@ var (
 			"/api/v1/dictionaries/countries":        {},
 			"/api/v1/dictionaries/currencies":       {},
 			"/api/v1/dictionaries/transfer-methods": {},
+			"/api/v1/registry/lookup":               {},
 		},
 		http.MethodPost: {
-			"/api/v1/auth/register":   {},
-			"/api/v1/auth/login":      {},
-			"/api/v1/registry/lookup": {},
+			"/api/v1/auth/register": {},
+			"/api/v1/auth/login":    {},
 		},
 	}
 )

@@ -24,6 +24,8 @@ func TestCSRFMiddleware(t *testing.T) {
 		{name: "mismatched tokens", method: http.MethodPost, path: "/api/v1/transfers", cookie: "cookie-token", header: "header-token", wantStatus: http.StatusForbidden, wantCode: string(apperr.CodeCSRFInvalid)},
 		{name: "matching tokens", method: http.MethodPost, path: "/api/v1/transfers", cookie: "same", header: "same", wantStatus: http.StatusNoContent},
 		{name: "safe get", method: http.MethodGet, path: "/api/v1/transfers", wantStatus: http.StatusNoContent},
+		{name: "registry lookup post without csrf", method: http.MethodPost, path: "/api/v1/registry/lookup", wantStatus: http.StatusForbidden, wantCode: string(apperr.CodeCSRFInvalid)},
+		{name: "registry lookup get", method: http.MethodGet, path: "/api/v1/registry/lookup", wantStatus: http.StatusNoContent},
 		{name: "public login", method: http.MethodPost, path: "/api/v1/auth/login", wantStatus: http.StatusNoContent},
 	}
 	for _, tc := range cases {

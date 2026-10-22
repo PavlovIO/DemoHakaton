@@ -29,6 +29,7 @@ func TestAuthenticateMiddleware(t *testing.T) {
 	orgID := uuid.New()
 	cases := []struct {
 		name       string
+		method     string
 		path       string
 		cookie     string
 		authErr    error
@@ -37,6 +38,8 @@ func TestAuthenticateMiddleware(t *testing.T) {
 		wantNext   bool
 	}{
 		{name: "public without cookie", path: "/api/v1/healthz", wantStatus: http.StatusNoContent, wantNext: true},
+		{name: "registry lookup GET without cookie", method: http.MethodGet, path: "/api/v1/registry/lookup", wantStatus: http.StatusNoContent, wantNext: true},
+		{name: "registry lookup POST without cookie", method: http.MethodPost, path: "/api/v1/registry/lookup", wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
 		{name: "protected without cookie", path: "/api/v1/users/me", wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
 		{name: "authentication error", path: "/api/v1/users/me", cookie: "bad", authErr: apperr.Unauthorized("expired"), wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
 		{name: "non application error", path: "/api/v1/users/me", cookie: "bad", authErr: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantCode: string(apperr.CodeInternal)},
@@ -65,7 +68,11 @@ func TestAuthenticateMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			})
 			handler := Authenticate(authenticator)(next)
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			method := tc.method
+			if method == "" {
+				method = http.MethodGet
+			}
+			req := httptest.NewRequest(method, tc.path, nil)
 			if tc.cookie != "" {
 				req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: tc.cookie})
 			}

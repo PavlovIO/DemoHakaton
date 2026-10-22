@@ -30,6 +30,7 @@ func TestRequestValidation(t *testing.T) {
 	}{
 		// Позитивные: путь / query / тело — доходят до хендлера или заглушки.
 		{name: "ok путь", method: "GET", path: "/api/v1/dictionaries/countries", wantStatus: 200},
+		{name: "registry lookup без сессии", method: "GET", path: "/api/v1/registry/lookup", wantStatus: 400, wantCode: "VALIDATION_ERROR"},
 		{name: "ok query -> заглушка", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
 		{name: "ok тело -> заглушка", method: "PATCH", path: "/api/v1/organizations/me", body: `{"name":"Acme GmbH"}`, ctype: "application/json", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
 		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 501},
@@ -129,17 +130,32 @@ func TestRequestValidation(t *testing.T) {
 	})
 }
 
+func TestRegistryLookupWithoutSession(t *testing.T) {
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService()})
+	resp, body := request(t, srv, http.MethodGet, "/api/v1/registry/lookup?country_code=RU&number=7707083893", "")
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body %s", resp.StatusCode, http.StatusNotImplemented, body)
+	}
+	var e api.Error
+	if err := json.Unmarshal(body, &e); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	if e.Error.Code != "NOT_IMPLEMENTED" {
+		t.Fatalf("code = %s, want NOT_IMPLEMENTED; body %s", e.Error.Code, body)
+	}
+}
+
 func needsTestAuthentication(method, path string) bool {
 	switch {
 	case method == http.MethodGet && path == "/api/v1/healthz":
 		return false
 	case method == http.MethodGet && (path == "/api/v1/dictionaries/countries" ||
 		path == "/api/v1/dictionaries/currencies" ||
-		path == "/api/v1/dictionaries/transfer-methods"):
+		path == "/api/v1/dictionaries/transfer-methods" ||
+		path == "/api/v1/registry/lookup"):
 		return false
 	case method == http.MethodPost && (path == "/api/v1/auth/register" ||
-		path == "/api/v1/auth/login" ||
-		path == "/api/v1/registry/lookup"):
+		path == "/api/v1/auth/login"):
 		return false
 	default:
 		return true
