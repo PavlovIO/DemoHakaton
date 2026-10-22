@@ -78,7 +78,7 @@ func TestEveryCodeHasStatus(t *testing.T) {
 
 // Ошибки, которые возникают до вызова хендлера, тоже приходят в формате Error.
 func TestRouterErrors(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, DB: okDB{}})
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, DB: okDB{}, Auth: testAuthService()})
 
 	tests := []struct {
 		name       string
@@ -94,7 +94,7 @@ func TestRouterErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, body := get(t, srv, tt.path)
+			resp, body := get(t, srv, tt.path, true)
 			if resp.StatusCode != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, tt.wantStatus, body)
 			}

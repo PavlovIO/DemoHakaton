@@ -15,7 +15,7 @@ import (
 // получает 400 с полем в details ещё до хендлера, а для нереализованных операций
 // корректный запрос доходит до заглушки (501).
 func TestRequestValidation(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}})
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService()})
 
 	tests := []struct {
 		name       string
@@ -74,6 +74,9 @@ func TestRequestValidation(t *testing.T) {
 			if tt.ctype != "" {
 				req.Header.Set("Content-Type", tt.ctype)
 			}
+			if needsTestAuthentication(tt.method, tt.path) {
+				addValidTestSession(req)
+			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -113,6 +116,7 @@ func TestRequestValidation(t *testing.T) {
 		// мусорное тело доходит до заглушки — 501, а не 400.
 		req, _ := http.NewRequest("POST", srv.URL+"/api/v1/organizations/me/documents", strings.NewReader("garbage"))
 		req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+		addValidTestSession(req)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -123,4 +127,21 @@ func TestRequestValidation(t *testing.T) {
 			t.Fatalf("status = %d, want 501; body %s", resp.StatusCode, raw)
 		}
 	})
+}
+
+func needsTestAuthentication(method, path string) bool {
+	switch {
+	case method == http.MethodGet && path == "/api/v1/healthz":
+		return false
+	case method == http.MethodGet && (path == "/api/v1/dictionaries/countries" ||
+		path == "/api/v1/dictionaries/currencies" ||
+		path == "/api/v1/dictionaries/transfer-methods"):
+		return false
+	case method == http.MethodPost && (path == "/api/v1/auth/register" ||
+		path == "/api/v1/auth/login" ||
+		path == "/api/v1/registry/lookup"):
+		return false
+	default:
+		return true
+	}
 }

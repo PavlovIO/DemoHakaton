@@ -1,5 +1,4 @@
 // Package middleware — обёртки net/http вокруг всего API.
-// Сюда же позже лягут auth (сессия из cookie), CSRF и rate limit.
 package middleware
 
 import (
