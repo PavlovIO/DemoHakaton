@@ -8,7 +8,8 @@
 | Что | Где |
 |---|---|
 | Контракт API (источник правды для фронта и бэка) | [`api/openapi.yaml`](api/openapi.yaml) — бандл, собирается из [`api/openapi.root.yaml`](api/openapi.root.yaml), [`api/paths/`](api/paths), [`api/components.yaml`](api/components.yaml) и [`api/schemas/`](api/schemas) |
-| Архитектура и ключевые решения | [`docs/adr/0001-architecture-and-api-contract.md`](docs/adr/0001-architecture-and-api-contract.md), [`docs/adr/0002-spec-layout-and-request-validation.md`](docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация запросов) |
+| Архитектура и ключевые решения | [`docs/adr/0001-architecture-and-api-contract.md`](docs/adr/0001-architecture-and-api-contract.md), [`docs/adr/0002-spec-layout-and-request-validation.md`](docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация запросов), [`docs/adr/0003-server-package-per-tag.md`](docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег) |
+| REST API: аутентификация, ошибки, все эндпоинты, сценарий от регистрации до сделки, устройство кода | [`backend/README.md`](backend/README.md) |
 | Схема БД, ER-диаграмма, ключевые запросы | [`docs/db/schema.md`](docs/db/schema.md) |
 | Миграции (goose) | [`backend/migrations`](backend/migrations) |
 | Бэклог (источник для issues) | [`scripts/issues.yaml`](scripts/issues.yaml) |
