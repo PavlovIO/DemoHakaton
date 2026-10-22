@@ -216,7 +216,7 @@ function getMockUser(email: string, forcedRole?: 'borrower' | 'lender' | 'admin'
       id: 'mock-org-1',
       name: role === 'admin' ? 'Platform Admin' : (role === 'borrower' ? 'Рога и копыта' : 'Beta Corp'),
       country_code: role === 'borrower' ? 'RU' : 'CY',
-      kyc_status: 'verified', // Сразу verified, чтобы не застревать на экране KYC при разработке
+      kyc_status: 'verified',
       legal_address: 'г. Москва, ул. Тверская, д. 1',
       registration_number: '1234567890',
     }

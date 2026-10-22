@@ -28,7 +28,7 @@ const navigationConfig: Record<UserRole, NavItem[]> = {
   ],
   lender: [
     { to: '/dashboard', label: 'Дашборд', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { to: '/applications', label: 'Витрина заявок', icon: <FileText className="h-4 w-4" /> },
+    { to: '/marketplace', label: 'Витрина заявок', icon: <FileText className="h-4 w-4" /> },
     { to: '/offers', label: 'Мои предложения', icon: <MessageSquare className="h-4 w-4" /> },
     { to: '/deals', label: 'Сделки', icon: <Briefcase className="h-4 w-4" /> },
   ],

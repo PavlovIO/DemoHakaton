@@ -9,6 +9,7 @@ import { Offers } from '@/pages/Offers'
 import { Deals } from '@/pages/Deals'
 import { KycStub } from '@/pages/KycStub'
 import { ProfileStub } from '@/pages/ProfileStub'
+import { Marketplace } from '@/pages/Marketplace' // <-- ДОБАВЛЕН ИМПОРТ
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -48,6 +49,7 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'applications', element: <Applications /> },
       { path: 'applications/:id', element: <div>Детали заявки</div> },
+      { path: 'marketplace', element: <Marketplace /> }, // <-- ДОБАВЛЕН МАРШРУТ
       { path: 'offers', element: <Offers /> },
       { path: 'deals', element: <Deals /> },
     ],
