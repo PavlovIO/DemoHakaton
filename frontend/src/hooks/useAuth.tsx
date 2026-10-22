@@ -75,11 +75,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user !== null &&
     KYC_REQUIRED_ROLES.includes(user.role)
 
-const loginMutation = useMutation({
-    mutationFn: (payload: { email: string; password: string }) =>
-      api.post<Me>('/auth/login', payload),
-    onSuccess: (data) => queryClient.setQueryData(ME_KEY, data),
-    onError: handleApiError,
+  const loginMutation = useMutation({
+    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      try {
+        // Пытаемся сделать реальный запрос
+        return await api.post<Me>('/auth/login', { email, password })
+      } catch (err) {
+        // ⚠️ FALLBACK ДЛЯ РАЗРАБОТКИ:
+        // Если бэкенд ещё не реализовал auth (501), упал (500) или эндпоинт не найден (404)
+        // И мы в режиме разработки (Vite dev server), возвращаем мокового пользователя.
+        if (import.meta.env.DEV && err instanceof ApiError && [404, 500, 501].includes(err.status)) {
+          console.warn('⚠️ Бэкенд auth недоступен. Используем MOCK-пользователя для разработки.')
+          return getMockUser(email)
+        }
+        throw err
+      }
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(ME_KEY, data)
+    },
+    onError: (err) => {
+      // Показываем toast только если это НЕ fallback-сценарий
+      if (!(import.meta.env.DEV && err instanceof ApiError && [404, 500, 501].includes(err.status))) {
+        handleApiError(err)
+      }
+    },
   })
 
   const registerMutation = useMutation({
@@ -140,4 +160,26 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
   return ctx
+}
+
+function getMockUser(email: string): Me {
+  let role: 'borrower' | 'lender' | 'admin' = 'borrower'
+  if (email.includes('lender')) role = 'lender'
+  if (email.includes('admin')) role = 'admin'
+
+  return {
+    user: {
+      id: 'mock-user-1',
+      email: email,
+      role: role,
+    },
+    organization: {
+      id: 'mock-org-1',
+      name: role === 'admin' ? 'Platform Admin' : 'Demo Company LLC',
+      country_code: role === 'borrower' ? 'RU' : 'US',
+      kyc_status: 'verified', // Сразу verified, чтобы не застревать на экране KYC при разработке
+      legal_address: 'Mock Address, 1',
+      registration_number: '123456789',
+    }
+  } as unknown as Me // Приведение типа, так как моковые данные могут не иметь всех опциональных полей
 }
