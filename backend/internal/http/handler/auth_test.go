@@ -184,6 +184,23 @@ func TestAuthErrorsAreMapped(t *testing.T) {
 		}
 	})
 
+	t.Run("login rate limited", func(t *testing.T) {
+		auth, deps := authFixture()
+		auth.loginErr = apperr.RateLimitedAfter(30 * time.Second)
+		server := newTestServer(t, deps)
+		resp, body := request(t, server, http.MethodPost, "/api/v1/auth/login", loginBody)
+		if resp.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429; body: %s", resp.StatusCode, body)
+		}
+		if got := resp.Header.Get("Retry-After"); got != "30" {
+			t.Fatalf("Retry-After = %q, want %q", got, "30")
+		}
+		decoded := decodeError(t, body)
+		if decoded.Error.Code != string(apperr.CodeRateLimited) {
+			t.Fatalf("error code = %q, want %q", decoded.Error.Code, apperr.CodeRateLimited)
+		}
+	})
+
 	t.Run("register conflict", func(t *testing.T) {
 		auth, deps := authFixture()
 		auth.registerErr = apperr.Conflict("Уже существует")
