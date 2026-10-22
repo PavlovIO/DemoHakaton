@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge'
 interface Application {
   id: string
   number: string
+  company_name?: string // <-- Добавлено для витрины
   amount: string
   currency: string
   target_country_code: string
@@ -18,7 +19,7 @@ interface Application {
 interface Offer {
   id: string
   application_id: string
-  company_name: string // Имя кредитора
+  company_name: string
   amount: string
   currency: string
   interest_rate_annual: string
@@ -31,6 +32,7 @@ const INITIAL_APPLICATIONS: Application[] = [
   {
     id: '1',
     number: 'APP-000001',
+    company_name: 'Альфа',
     amount: '500000.00',
     currency: 'EUR',
     target_country_code: 'DE',
@@ -55,20 +57,25 @@ const getStatusBadge = (status: Application['status']) => {
 
 export function Applications() {
   const { user } = useAuth()
-  const [applications, setApplications] = useState<Application[]>(INITIAL_APPLICATIONS)
+  const [applications, setApplications] = useState<Application[]>([])
   const [offers, setOffers] = useState<Offer[]>([])
   
-  // Модалки
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedAppForOffers, setSelectedAppForOffers] = useState<Application | null>(null)
-
-  // Форма создания заявки
   const [formData, setFormData] = useState({ amount: '', currency: 'EUR', target_country_code: 'DE', purpose: '', term_months: '6' })
 
-  // Загружаем офферы из localStorage при старте
+  // Загружаем заявки и офферы из localStorage
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('mock_offers') || '[]')
-    setOffers(saved)
+    const savedApps = JSON.parse(localStorage.getItem('mock_applications') || '[]')
+    if (savedApps.length === 0) {
+      localStorage.setItem('mock_applications', JSON.stringify(INITIAL_APPLICATIONS))
+      setApplications(INITIAL_APPLICATIONS)
+    } else {
+      setApplications(savedApps)
+    }
+
+    const savedOffers = JSON.parse(localStorage.getItem('mock_offers') || '[]')
+    setOffers(savedOffers)
   }, [])
 
   if (user?.role !== 'borrower') {
@@ -80,21 +87,24 @@ export function Applications() {
     const newApp: Application = {
       id: Math.random().toString(),
       number: `APP-${Math.floor(Math.random() * 10000).toString().padStart(6, '0')}`,
+      company_name: 'Альфа', // <-- Жестко задаем имя компании
       amount: formData.amount,
       currency: formData.currency,
       target_country_code: formData.target_country_code,
       purpose: formData.purpose,
       term_months: Number(formData.term_months),
-      status: 'draft',
+      status: 'moderation', // <-- Сразу отправляем на модерацию админу
       created_at: new Date().toISOString(),
     }
-    setApplications([newApp, ...applications])
+    const updated = [newApp, ...applications]
+    setApplications(updated)
+    localStorage.setItem('mock_applications', JSON.stringify(updated))
+    
     setIsCreateModalOpen(false)
     setFormData({ amount: '', currency: 'EUR', target_country_code: 'DE', purpose: '', term_months: '6' })
   }
 
   const handleAcceptOffer = (acceptedOffer: Offer) => {
-    // 1. Обновляем офферы (принятый -> accepted, остальные -> rejected)
     const updatedOffers = offers.map(o => {
       if (o.id === acceptedOffer.id) return { ...o, status: 'accepted' }
       if (o.application_id === acceptedOffer.application_id && o.status === 'sent') return { ...o, status: 'rejected' }
@@ -103,13 +113,13 @@ export function Applications() {
     setOffers(updatedOffers)
     localStorage.setItem('mock_offers', JSON.stringify(updatedOffers))
 
-    // 2. Обновляем статус заявки на "Согласована"
+    // Обновляем статус заявки и сохраняем в localStorage
     const updatedApps = applications.map(a => 
       a.id === acceptedOffer.application_id ? { ...a, status: 'agreed' as const } : a
     )
     setApplications(updatedApps)
+    localStorage.setItem('mock_applications', JSON.stringify(updatedApps))
 
-    // 3. Создаем сделку и сохраняем в localStorage
     const newDeal = {
       id: Math.random().toString(),
       application_number: selectedAppForOffers?.number,
@@ -124,10 +134,9 @@ export function Applications() {
     localStorage.setItem('mock_deals', JSON.stringify([newDeal, ...existingDeals]))
 
     alert(`Оффер принят! Сделка на сумму ${acceptedOffer.amount} ${acceptedOffer.currency} зафиксирована.`)
-    setSelectedAppForOffers(null) // Закрываем модалку
+    setSelectedAppForOffers(null)
   }
 
-  // Фильтруем офферы для выбранной заявки
   const currentAppOffers = offers.filter(o => o.application_id === selectedAppForOffers?.id)
 
   return (
@@ -172,7 +181,7 @@ export function Applications() {
         </ul>
       </div>
 
-      {/* Модалка создания заявки (осталась без изменений) */}
+      {/* Модалка создания заявки */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
@@ -203,14 +212,14 @@ export function Applications() {
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>Отмена</Button>
-                <Button type="submit">Создать</Button>
+                <Button type="submit">Отправить на модерацию</Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Модалка просмотра офферов по заявке */}
+      {/* Модалка просмотра офферов */}
       {selectedAppForOffers && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">

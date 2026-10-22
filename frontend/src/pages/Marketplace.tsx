@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 
@@ -11,24 +11,18 @@ interface Application {
   target_country_code: string
   purpose: string
   term_months: number
-  status: 'published'
+  status: string
 }
 
-const MOCK_MARKETPLACE: Application[] = [
-  { id: '1', number: 'APP-000001', company_name: 'Альфа', amount: '500000.00', currency: 'EUR', target_country_code: 'DE', purpose: 'Закупка промышленного оборудования в Германии', term_months: 6, status: 'published' },
-  { id: '2', number: 'APP-000003', company_name: 'Вектор', amount: '1200000.00', currency: 'USD', target_country_code: 'CN', purpose: 'Оплата контракта на поставку комплектующих', term_months: 12, status: 'published' },
-  { id: '3', number: 'APP-000004', company_name: 'СтройИнвест', amount: '250000.00', currency: 'EUR', target_country_code: 'TR', purpose: 'Строительство логистического хаба', term_months: 9, status: 'published' }
-]
-
 export function Marketplace() {
-  const [applications] = useState<Application[]>(MOCK_MARKETPLACE)
+  const [applications, setApplications] = useState<Application[]>([])
+
+  const [myOffers, setMyOffers] = useState<any[]>([])
   
-  // Фильтры
   const [filterCountry, setFilterCountry] = useState('')
   const [filterCurrency, setFilterCurrency] = useState('')
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
-  // Стейт для модалки оффера
   const [selectedApp, setSelectedApp] = useState<Application | null>(null)
   const [offerData, setOfferData] = useState({
     amount: '',
@@ -38,6 +32,14 @@ export function Marketplace() {
     collateral: '',
     additional_terms: ''
   })
+
+  useEffect(() => {
+    const saved = JSON.parse(localStorage.getItem('mock_applications') || '[]')
+    const publishedOnly = saved.filter((a: Application) => a.status === 'published')
+    setApplications(publishedOnly)
+    const savedOffers = JSON.parse(localStorage.getItem('mock_offers') || '[]')
+    setMyOffers(savedOffers)
+  }, [])
 
   const filteredApps = applications.filter(app => {
     if (filterCountry && app.target_country_code !== filterCountry) return false
@@ -49,7 +51,7 @@ export function Marketplace() {
   const openOfferModal = (app: Application) => {
     setSelectedApp(app)
     setOfferData({
-      amount: app.amount, // По умолчанию предлагаем всю сумму
+      amount: app.amount,
       interest_rate_annual: '8.00',
       fee_percent: '1.00',
       repayment_schedule: 'bullet',
@@ -61,27 +63,28 @@ export function Marketplace() {
   const handleCreateOffer = (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Создаем объект оффера
     const newOffer = {
       id: Math.random().toString(),
       application_id: selectedApp?.id,
       application_number: selectedApp?.number,
-      company_name: selectedApp?.company_name,
+      company_name: 'Demo Company LLC',
       amount: offerData.amount,
       currency: selectedApp?.currency,
       interest_rate_annual: offerData.interest_rate_annual,
       fee_percent: offerData.fee_percent,
       repayment_schedule: offerData.repayment_schedule,
-      status: 'sent', // Отправлен заемщику
+      status: 'sent',
       created_at: new Date().toISOString()
     }
 
-    // Сохраняем в localStorage (имитация базы данных)
     const existingOffers = JSON.parse(localStorage.getItem('mock_offers') || '[]')
-    localStorage.setItem('mock_offers', JSON.stringify([newOffer, ...existingOffers]))
+    const updatedOffers = [newOffer, ...existingOffers]
+    localStorage.setItem('mock_offers', JSON.stringify(updatedOffers))
+    
+    setMyOffers(updatedOffers) 
 
     alert('Оффер успешно отправлен заемщику!')
-    setSelectedApp(null) // Закрываем модалку
+    setSelectedApp(null)
   }
 
   return (
@@ -91,7 +94,6 @@ export function Marketplace() {
         <p className="mt-1 text-sm text-gray-500">Опубликованные заявки на привлечение ликвидности</p>
       </div>
 
-      {/* Фильтры */}
       <div className="bg-white p-4 rounded-lg shadow border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Страна</label>
@@ -119,7 +121,6 @@ export function Marketplace() {
         </div>
       </div>
 
-      {/* Список заявок */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" className="divide-y divide-gray-200">
           {filteredApps.map((app) => (
@@ -139,18 +140,22 @@ export function Marketplace() {
                   </div>
                 </div>
                 <div>
-                  <Button onClick={() => openOfferModal(app)}>Предложить финансирование</Button>
+                  {myOffers.some(o => o.application_id === app.id && o.status === 'sent') ? (
+                    <Badge variant="success">Оффер отправлен</Badge>
+                  ) : (
+                    <Button onClick={() => openOfferModal(app)}>Предложить финансирование</Button>
+                  )}
                 </div>
               </div>
             </li>
           ))}
           {filteredApps.length === 0 && (
-            <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено.</li>
+            <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено. Опубликуйте заявки через админку.</li>
           )}
         </ul>
       </div>
 
-      {/* Модальное окно создания оффера */}
+      {/* Модалка создания оффера */}
       {selectedApp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">

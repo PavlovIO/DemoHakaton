@@ -9,7 +9,8 @@ import { Offers } from '@/pages/Offers'
 import { Deals } from '@/pages/Deals'
 import { KycStub } from '@/pages/KycStub'
 import { ProfileStub } from '@/pages/ProfileStub'
-import { Marketplace } from '@/pages/Marketplace' // <-- ДОБАВЛЕН ИМПОРТ
+import { Marketplace } from '@/pages/Marketplace'
+import { AdminPanel } from '@/pages/AdminPanel' // <-- ДОБАВЛЕН ИМПОРТ АДМИНКИ
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -34,7 +35,11 @@ const router = createBrowserRouter([
       </PrivateRoute>
     ),
     children: [
-      { index: true, element: <div>Админ-панель (Фаза 6)</div> },
+      { index: true, element: <AdminPanel /> },
+      // Добавляем wildcard (*), чтобы ссылки из меню админа 
+      // (/admin/organizations, /admin/applications и т.д.) 
+      // не выдавали 404, а открывали нашу единую панель
+      { path: '*', element: <AdminPanel /> }, 
     ],
   },
   {
@@ -49,7 +54,7 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'applications', element: <Applications /> },
       { path: 'applications/:id', element: <div>Детали заявки</div> },
-      { path: 'marketplace', element: <Marketplace /> }, // <-- ДОБАВЛЕН МАРШРУТ
+      { path: 'marketplace', element: <Marketplace /> },
       { path: 'offers', element: <Offers /> },
       { path: 'deals', element: <Deals /> },
     ],
