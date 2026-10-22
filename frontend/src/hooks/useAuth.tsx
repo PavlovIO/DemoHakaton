@@ -43,6 +43,11 @@ const ME_KEY = ['me'] as const
 
 const KYC_REQUIRED_ROLES: readonly UserRole[] = ['borrower', 'lender']
 
+// Список статусов, при которых мы включаем мок-режим для разработки
+// 404/500/501 - бэкенд не готов
+// 502 Bad Gateway - Vite не может достучаться до бэкенда (он выключен)
+const MOCK_FALLBACK_STATUSES = [404, 500, 501, 502]
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
@@ -75,17 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user !== null &&
     KYC_REQUIRED_ROLES.includes(user.role)
 
+  // ==========================================
+  // ЛОГИН
+  // ==========================================
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       try {
-        // Пытаемся сделать реальный запрос
         return await api.post<Me>('/auth/login', { email, password })
       } catch (err) {
-        // ⚠️ FALLBACK ДЛЯ РАЗРАБОТКИ:
-        // Если бэкенд ещё не реализовал auth (501), упал (500) или эндпоинт не найден (404)
-        // И мы в режиме разработки (Vite dev server), возвращаем мокового пользователя.
-        if (import.meta.env.DEV && err instanceof ApiError && [404, 500, 501].includes(err.status)) {
-          console.warn('⚠️ Бэкенд auth недоступен. Используем MOCK-пользователя для разработки.')
+        // ⚠️ FALLBACK ДЛЯ РАЗРАБОТКИ
+        if (import.meta.env.DEV && err instanceof ApiError && MOCK_FALLBACK_STATUSES.includes(err.status)) {
+          console.warn('⚠️ Бэкенд auth недоступен. Используем MOCK-пользователя для входа.')
           return getMockUser(email)
         }
         throw err
@@ -95,20 +100,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.setQueryData(ME_KEY, data)
     },
     onError: (err) => {
-      // Показываем toast только если это НЕ fallback-сценарий
-      if (!(import.meta.env.DEV && err instanceof ApiError && [404, 500, 501].includes(err.status))) {
+      if (!(import.meta.env.DEV && err instanceof ApiError && MOCK_FALLBACK_STATUSES.includes(err.status))) {
         handleApiError(err)
       }
     },
   })
 
+  // ==========================================
+  // РЕГИСТРАЦИЯ
+  // ==========================================
   const registerMutation = useMutation({
-    mutationFn: (payload: RegisterPayload) =>
-      api.post<Me>('/auth/register', payload),
-    onSuccess: (data) => queryClient.setQueryData(ME_KEY, data),
-    onError: handleApiError,
+    mutationFn: async (payload: RegisterPayload) => {
+      try {
+        return await api.post<Me>('/auth/register', payload)
+      } catch (err) {
+        // ⚠️ FALLBACK ДЛЯ РАЗРАБОТКИ
+        if (import.meta.env.DEV && err instanceof ApiError && MOCK_FALLBACK_STATUSES.includes(err.status)) {
+          console.warn('⚠️ Бэкенд auth недоступен. Используем MOCK-регистрацию.')
+          // Передаем роль из формы (borrower/lender), чтобы мок создал правильную компанию
+          return getMockUser(payload.email, payload.role)
+        }
+        throw err
+      }
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(ME_KEY, data)
+    },
+    onError: (err) => {
+      if (!(import.meta.env.DEV && err instanceof ApiError && MOCK_FALLBACK_STATUSES.includes(err.status))) {
+        handleApiError(err)
+      }
+    },
   })
 
+  // ==========================================
+  // ВЫХОД
+  // ==========================================
   const logoutMutation = useMutation({
     mutationFn: () => api.post<void>('/auth/logout'),
     onSettled: () => {
@@ -132,7 +159,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(async () => {
-    await logoutMutation.mutateAsync()
+    try {
+      await logoutMutation.mutateAsync()
+    } catch (err) {
+      // Игнорируем ошибку logout в мок-режиме, чтобы просто выкинуть на логин
+      if (import.meta.env.DEV) console.warn('Mock logout', err)
+    }
     window.location.href = '/login'
   }, [logoutMutation])
 
@@ -162,10 +194,17 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
-function getMockUser(email: string): Me {
-  let role: 'borrower' | 'lender' | 'admin' = 'borrower'
-  if (email.includes('lender')) role = 'lender'
-  if (email.includes('admin')) role = 'admin'
+// ==========================================
+// ГЕНЕРАТОР МОКОВЫХ ДАННЫХ
+// ==========================================
+function getMockUser(email: string, forcedRole?: 'borrower' | 'lender' | 'admin'): Me {
+  let role: 'borrower' | 'lender' | 'admin' = forcedRole || 'borrower'
+  
+  // Если роль не передали явно (например, при логине), угадываем по email
+  if (!forcedRole) {
+    if (email.includes('lender')) role = 'lender'
+    if (email.includes('admin')) role = 'admin'
+  }
 
   return {
     user: {
@@ -175,11 +214,11 @@ function getMockUser(email: string): Me {
     },
     organization: {
       id: 'mock-org-1',
-      name: role === 'admin' ? 'Platform Admin' : 'Demo Company LLC',
-      country_code: role === 'borrower' ? 'RU' : 'US',
+      name: role === 'admin' ? 'Platform Admin' : (role === 'borrower' ? 'Рога и копыта' : 'Beta Corp'),
+      country_code: role === 'borrower' ? 'RU' : 'CY',
       kyc_status: 'verified', // Сразу verified, чтобы не застревать на экране KYC при разработке
-      legal_address: 'Mock Address, 1',
-      registration_number: '123456789',
+      legal_address: 'г. Москва, ул. Тверская, д. 1',
+      registration_number: '1234567890',
     }
-  } as unknown as Me // Приведение типа, так как моковые данные могут не иметь всех опциональных полей
+  } as unknown as Me
 }
