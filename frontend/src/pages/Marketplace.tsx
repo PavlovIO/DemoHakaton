@@ -14,52 +14,31 @@ interface Application {
   status: 'published'
 }
 
-// Моковые данные для витрины
 const MOCK_MARKETPLACE: Application[] = [
-  {
-    id: '1',
-    number: 'APP-000001',
-    company_name: 'Альфа',
-    amount: '500000.00',
-    currency: 'EUR',
-    target_country_code: 'DE',
-    purpose: 'Закупка промышленного оборудования в Германии',
-    term_months: 6,
-    status: 'published',
-  },
-  {
-    id: '2',
-    number: 'APP-000003',
-    company_name: 'Вектор',
-    amount: '1200000.00',
-    currency: 'USD',
-    target_country_code: 'CN',
-    purpose: 'Оплата контракта на поставку комплектующих',
-    term_months: 12,
-    status: 'published',
-  },
-  {
-    id: '3',
-    number: 'APP-000004',
-    company_name: 'СтройИнвест',
-    amount: '250000.00',
-    currency: 'EUR',
-    target_country_code: 'TR',
-    purpose: 'Строительство логистического хаба',
-    term_months: 9,
-    status: 'published',
-  }
+  { id: '1', number: 'APP-000001', company_name: 'Альфа', amount: '500000.00', currency: 'EUR', target_country_code: 'DE', purpose: 'Закупка промышленного оборудования в Германии', term_months: 6, status: 'published' },
+  { id: '2', number: 'APP-000003', company_name: 'Вектор', amount: '1200000.00', currency: 'USD', target_country_code: 'CN', purpose: 'Оплата контракта на поставку комплектующих', term_months: 12, status: 'published' },
+  { id: '3', number: 'APP-000004', company_name: 'СтройИнвест', amount: '250000.00', currency: 'EUR', target_country_code: 'TR', purpose: 'Строительство логистического хаба', term_months: 9, status: 'published' }
 ]
 
 export function Marketplace() {
   const [applications] = useState<Application[]>(MOCK_MARKETPLACE)
   
-  // Состояние фильтров
+  // Фильтры
   const [filterCountry, setFilterCountry] = useState('')
   const [filterCurrency, setFilterCurrency] = useState('')
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
-  // Логика фильтрации (на клиенте, так как бэкенд выключен)
+  // Стейт для модалки оффера
+  const [selectedApp, setSelectedApp] = useState<Application | null>(null)
+  const [offerData, setOfferData] = useState({
+    amount: '',
+    interest_rate_annual: '8.00',
+    fee_percent: '1.00',
+    repayment_schedule: 'bullet',
+    collateral: '',
+    additional_terms: ''
+  })
+
   const filteredApps = applications.filter(app => {
     if (filterCountry && app.target_country_code !== filterCountry) return false
     if (filterCurrency && app.currency !== filterCurrency) return false
@@ -67,22 +46,56 @@ export function Marketplace() {
     return true
   })
 
+  const openOfferModal = (app: Application) => {
+    setSelectedApp(app)
+    setOfferData({
+      amount: app.amount, // По умолчанию предлагаем всю сумму
+      interest_rate_annual: '8.00',
+      fee_percent: '1.00',
+      repayment_schedule: 'bullet',
+      collateral: '',
+      additional_terms: ''
+    })
+  }
+
+  const handleCreateOffer = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Создаем объект оффера
+    const newOffer = {
+      id: Math.random().toString(),
+      application_id: selectedApp?.id,
+      application_number: selectedApp?.number,
+      company_name: selectedApp?.company_name,
+      amount: offerData.amount,
+      currency: selectedApp?.currency,
+      interest_rate_annual: offerData.interest_rate_annual,
+      fee_percent: offerData.fee_percent,
+      repayment_schedule: offerData.repayment_schedule,
+      status: 'sent', // Отправлен заемщику
+      created_at: new Date().toISOString()
+    }
+
+    // Сохраняем в localStorage (имитация базы данных)
+    const existingOffers = JSON.parse(localStorage.getItem('mock_offers') || '[]')
+    localStorage.setItem('mock_offers', JSON.stringify([newOffer, ...existingOffers]))
+
+    alert('Оффер успешно отправлен заемщику!')
+    setSelectedApp(null) // Закрываем модалку
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Витрина заявок</h1>
         <p className="mt-1 text-sm text-gray-500">Опубликованные заявки на привлечение ликвидности</p>
       </div>
 
-      {/* Панель фильтров */}
+      {/* Фильтры */}
       <div className="bg-white p-4 rounded-lg shadow border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Страна</label>
-          <select 
-            value={filterCountry} 
-            onChange={e => setFilterCountry(e.target.value)}
-            className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"
-          >
+          <select value={filterCountry} onChange={e => setFilterCountry(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
             <option value="">Все страны</option>
             <option value="DE">Германия (DE)</option>
             <option value="CN">Китай (CN)</option>
@@ -91,11 +104,7 @@ export function Marketplace() {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Валюта</label>
-          <select 
-            value={filterCurrency} 
-            onChange={e => setFilterCurrency(e.target.value)}
-            className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"
-          >
+          <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
             <option value="">Любая</option>
             <option value="EUR">EUR</option>
             <option value="USD">USD</option>
@@ -103,22 +112,10 @@ export function Marketplace() {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Сумма от</label>
-          <input 
-            type="number" 
-            value={filterAmountMin}
-            onChange={e => setFilterAmountMin(e.target.value)}
-            placeholder="0"
-            className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"
-          />
+          <input type="number" value={filterAmountMin} onChange={e => setFilterAmountMin(e.target.value)} placeholder="0" className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
         </div>
         <div className="flex items-end">
-          <Button 
-            variant="outline" 
-            className="w-full" 
-            onClick={() => { setFilterCountry(''); setFilterCurrency(''); setFilterAmountMin(''); }}
-          >
-            Сбросить
-          </Button>
+          <Button variant="outline" className="w-full" onClick={() => { setFilterCountry(''); setFilterCurrency(''); setFilterAmountMin(''); }}>Сбросить</Button>
         </div>
       </div>
 
@@ -142,20 +139,71 @@ export function Marketplace() {
                   </div>
                 </div>
                 <div>
-                  <Button onClick={() => alert('Здесь будет форма создания оффера (FE-07)')}>
-                    Предложить финансирование
-                  </Button>
+                  <Button onClick={() => openOfferModal(app)}>Предложить финансирование</Button>
                 </div>
               </div>
             </li>
           ))}
           {filteredApps.length === 0 && (
-            <li className="p-8 text-center text-gray-500">
-              По вашему запросу ничего не найдено. Попробуйте изменить фильтры.
-            </li>
+            <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено.</li>
           )}
         </ul>
       </div>
+
+      {/* Модальное окно создания оффера */}
+      {selectedApp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold">Предложение по заявке {selectedApp.number}</h2>
+              <p className="text-sm text-gray-500 mt-1">{selectedApp.company_name} запрашивает {selectedApp.amount} {selectedApp.currency}</p>
+            </div>
+            
+            <form onSubmit={handleCreateOffer} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Сумма ({selectedApp.currency})</label>
+                  <input required type="number" max={selectedApp.amount} step="0.01" value={offerData.amount} onChange={e => setOfferData({...offerData, amount: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ставка (% годовых)</label>
+                  <input required type="number" step="0.1" value={offerData.interest_rate_annual} onChange={e => setOfferData({...offerData, interest_rate_annual: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Комиссия за организацию (%)</label>
+                  <input type="number" step="0.1" value={offerData.fee_percent} onChange={e => setOfferData({...offerData, fee_percent: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">График погашения</label>
+                  <select value={offerData.repayment_schedule} onChange={e => setOfferData({...offerData, repayment_schedule: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                    <option value="bullet">В конце срока (Bullet)</option>
+                    <option value="annuity">Аннуитетный</option>
+                    <option value="interest_monthly_principal_bullet">Проценты ежемесячно, тело в конце</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Обеспечение (опционально)</label>
+                <input type="text" value={offerData.collateral} onChange={e => setOfferData({...offerData, collateral: e.target.value})} placeholder="Например: залог оборудования" className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Доп. условия</label>
+                <textarea rows={2} value={offerData.additional_terms} onChange={e => setOfferData({...offerData, additional_terms: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></textarea>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button type="button" variant="outline" onClick={() => setSelectedApp(null)}>Отмена</Button>
+                <Button type="submit">Отправить предложение</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -13,6 +13,18 @@ interface Application {
   term_months: number
   status: 'draft' | 'moderation' | 'published' | 'agreed' | 'rejected' | 'cancelled'
   created_at: string
+}
+
+interface Offer {
+  id: string
+  application_id: string
+  company_name: string // Имя кредитора
+  amount: string
+  currency: string
+  interest_rate_annual: string
+  fee_percent: string
+  repayment_schedule: string
+  status: 'sent' | 'accepted' | 'rejected' | 'withdrawn'
 }
 
 const INITIAL_APPLICATIONS: Application[] = [
@@ -44,16 +56,20 @@ const getStatusBadge = (status: Application['status']) => {
 export function Applications() {
   const { user } = useAuth()
   const [applications, setApplications] = useState<Application[]>(INITIAL_APPLICATIONS)
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [offers, setOffers] = useState<Offer[]>([])
+  
+  // Модалки
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [selectedAppForOffers, setSelectedAppForOffers] = useState<Application | null>(null)
 
-  // Состояние формы
-  const [formData, setFormData] = useState({
-    amount: '',
-    currency: 'EUR',
-    target_country_code: 'DE',
-    purpose: '',
-    term_months: '6'
-  })
+  // Форма создания заявки
+  const [formData, setFormData] = useState({ amount: '', currency: 'EUR', target_country_code: 'DE', purpose: '', term_months: '6' })
+
+  // Загружаем офферы из localStorage при старте
+  useEffect(() => {
+    const saved = JSON.parse(localStorage.getItem('mock_offers') || '[]')
+    setOffers(saved)
+  }, [])
 
   if (user?.role !== 'borrower') {
     return <div className="p-6">Доступно только для заемщиков.</div>
@@ -73,42 +89,91 @@ export function Applications() {
       created_at: new Date().toISOString(),
     }
     setApplications([newApp, ...applications])
-    setIsModalOpen(false)
+    setIsCreateModalOpen(false)
     setFormData({ amount: '', currency: 'EUR', target_country_code: 'DE', purpose: '', term_months: '6' })
   }
+
+  const handleAcceptOffer = (acceptedOffer: Offer) => {
+    // 1. Обновляем офферы (принятый -> accepted, остальные -> rejected)
+    const updatedOffers = offers.map(o => {
+      if (o.id === acceptedOffer.id) return { ...o, status: 'accepted' }
+      if (o.application_id === acceptedOffer.application_id && o.status === 'sent') return { ...o, status: 'rejected' }
+      return o
+    })
+    setOffers(updatedOffers)
+    localStorage.setItem('mock_offers', JSON.stringify(updatedOffers))
+
+    // 2. Обновляем статус заявки на "Согласована"
+    const updatedApps = applications.map(a => 
+      a.id === acceptedOffer.application_id ? { ...a, status: 'agreed' as const } : a
+    )
+    setApplications(updatedApps)
+
+    // 3. Создаем сделку и сохраняем в localStorage
+    const newDeal = {
+      id: Math.random().toString(),
+      application_number: selectedAppForOffers?.number,
+      lender_name: acceptedOffer.company_name,
+      amount: acceptedOffer.amount,
+      currency: acceptedOffer.currency,
+      interest_rate: acceptedOffer.interest_rate_annual,
+      fee_percent: acceptedOffer.fee_percent,
+      agreed_at: new Date().toISOString()
+    }
+    const existingDeals = JSON.parse(localStorage.getItem('mock_deals') || '[]')
+    localStorage.setItem('mock_deals', JSON.stringify([newDeal, ...existingDeals]))
+
+    alert(`Оффер принят! Сделка на сумму ${acceptedOffer.amount} ${acceptedOffer.currency} зафиксирована.`)
+    setSelectedAppForOffers(null) // Закрываем модалку
+  }
+
+  // Фильтруем офферы для выбранной заявки
+  const currentAppOffers = offers.filter(o => o.application_id === selectedAppForOffers?.id)
 
   return (
     <div className="space-y-6 relative">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Мои заявки</h1>
-        <Button onClick={() => setIsModalOpen(true)}>+ Создать заявку</Button>
+        <Button onClick={() => setIsCreateModalOpen(true)}>+ Создать заявку</Button>
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" className="divide-y divide-gray-200">
-          {applications.map((app) => (
-            <li key={app.id} className="p-4 hover:bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm text-gray-500">{app.number}</span>
-                    {getStatusBadge(app.status)}
+          {applications.map((app) => {
+            const appOffersCount = offers.filter(o => o.application_id === app.id && o.status === 'sent').length
+            
+            return (
+              <li key={app.id} className="p-4 hover:bg-gray-50">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm text-gray-500">{app.number}</span>
+                      {getStatusBadge(app.status)}
+                    </div>
+                    <p className="mt-1 text-sm font-medium text-gray-900">{app.purpose}</p>
+                    <div className="mt-1 text-sm text-gray-500 flex gap-4">
+                      <span>{app.amount} {app.currency}</span>
+                      <span>Срок: {app.term_months} мес.</span>
+                      <span>Страна: {app.target_country_code}</span>
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm font-medium text-gray-900">{app.purpose}</p>
-                  <div className="mt-1 text-sm text-gray-500 flex gap-4">
-                    <span>{app.amount} {app.currency}</span>
-                    <span>Срок: {app.term_months} мес.</span>
-                    <span>Страна: {app.target_country_code}</span>
+                  <div>
+                    <Button 
+                      variant={appOffersCount > 0 && app.status === 'published' ? 'primary' : 'outline'}
+                      onClick={() => setSelectedAppForOffers(app)}
+                    >
+                      Предложения ({appOffersCount})
+                    </Button>
                   </div>
                 </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
       </div>
 
-      {/* Модальное окно создания заявки */}
-      {isModalOpen && (
+      {/* Модалка создания заявки (осталась без изменений) */}
+      {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h2 className="text-xl font-semibold mb-4">Создание заявки</h2>
@@ -118,18 +183,14 @@ export function Applications() {
                 <div className="mt-1 flex gap-2">
                   <input required type="number" min="1" step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="500000.00" />
                   <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})} className="rounded-md border-gray-300 shadow-sm p-2 border">
-                    <option value="EUR">EUR</option>
-                    <option value="USD">USD</option>
-                    <option value="RUB">RUB</option>
+                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="RUB">RUB</option>
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Целевая юрисдикция</label>
                 <select value={formData.target_country_code} onChange={e => setFormData({...formData, target_country_code: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                  <option value="DE">Германия (DE)</option>
-                  <option value="CN">Китай (CN)</option>
-                  <option value="TR">Турция (TR)</option>
+                  <option value="DE">Германия (DE)</option><option value="CN">Китай (CN)</option><option value="TR">Турция (TR)</option>
                 </select>
               </div>
               <div>
@@ -141,10 +202,53 @@ export function Applications() {
                 <textarea required rows={3} value={formData.purpose} onChange={e => setFormData({...formData, purpose: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Закупка оборудования..."></textarea>
               </div>
               <div className="flex justify-end gap-3 mt-6">
-                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Отмена</Button>
+                <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>Отмена</Button>
                 <Button type="submit">Создать</Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка просмотра офферов по заявке */}
+      {selectedAppForOffers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Предложения по заявке {selectedAppForOffers.number}</h2>
+                <p className="text-sm text-gray-500">Запрошено: {selectedAppForOffers.amount} {selectedAppForOffers.currency}</p>
+              </div>
+              <Button variant="outline" onClick={() => setSelectedAppForOffers(null)}>Закрыть</Button>
+            </div>
+
+            {currentAppOffers.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">Пока нет предложений от кредиторов.</div>
+            ) : (
+              <div className="space-y-4">
+                {currentAppOffers.map(offer => (
+                  <div key={offer.id} className="border rounded-lg p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-900">{offer.company_name}</span>
+                        {offer.status === 'sent' && <Badge variant="warning">Активен</Badge>}
+                        {offer.status === 'accepted' && <Badge variant="success">Принят</Badge>}
+                        {offer.status === 'rejected' && <Badge variant="danger">Отклонен</Badge>}
+                      </div>
+                      <p className="text-sm text-gray-900">
+                        Сумма: <span className="font-medium">{Number(offer.amount).toLocaleString('ru-RU')} {offer.currency}</span>
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Ставка: <span className="font-medium">{offer.interest_rate_annual}%</span> | Комиссия: {offer.fee_percent}%
+                      </p>
+                    </div>
+                    {offer.status === 'sent' && selectedAppForOffers.status === 'published' && (
+                      <Button onClick={() => handleAcceptOffer(offer)}>Принять</Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
