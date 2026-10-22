@@ -72,7 +72,7 @@ func skipValidation(r *http.Request) bool {
 // apperr (единственный источник правды в errors.go) — не добавляйте сюда opts.StatusCode.
 func validationError(_ context.Context, err error, w http.ResponseWriter, r *http.Request, opts nethttpmiddleware.ErrorHandlerOpts) {
 	if opts.MatchedRoute == nil {
-		// Путь или метод не из спеки — ровно как catch-all в NewRouter: 404, а не 400.
+		// Путь или метод не из спеки — ровно как catch-all в routes(): 404, а не 400.
 		WriteError(w, r, apperr.NotFound("Ресурс не найден"))
 		return
 	}

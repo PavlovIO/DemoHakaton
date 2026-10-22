@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -91,25 +90,48 @@ func paramError(err error) error {
 	return e
 }
 
-// generatedPkgPrefix — пакеты internal/http/api/<tag>api, сгенерированные oapi-codegen.
-const generatedPkgPrefix = "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/"
+// generatedPkgPrefix — родитель пакетов internal/http/api/<tag>api, сгенерированных oapi-codegen.
+// Берётся из пакета моделей, а не строкой: переименование модуля его не ломает.
+var generatedPkgPrefix = reflect.TypeOf(api.Error{}).PkgPath() + "/"
+
+// isGeneratedPkg — прямой подпакет api с именем <tag>api; прочие подпакеты (вложенные или
+// с другим суффиксом) — нет.
+func isGeneratedPkg(pkgPath string) bool {
+	tag, ok := strings.CutPrefix(pkgPath, generatedPkgPrefix)
+	return ok && !strings.Contains(tag, "/") && strings.HasSuffix(tag, "api")
+}
 
 // paramName достаёт имя параметра из ошибки сгенерированного парсера (InvalidParamFormatError,
 // RequiredParamError, RequiredHeaderError, UnmarshalingParamError, TooManyValuesForParamError,
 // UnescapedCookieParamError). Эти типы генерируются заново в каждый <tag>api (ADR-0003), так что
 // errors.As по конкретному типу потребовал бы 6 × 10 веток. У всех них есть поле ParamName string —
 // его и читаем, но только у типов из сгенерированных пакетов. "" — ошибка не про параметр.
+// Дерево ошибок обходится через Unwrap() error и Unwrap() []error (errors.Join, %w: %w);
+// методы As(any) bool, в отличие от errors.As, не вызываются.
 func paramName(err error) string {
-	for ; err != nil; err = errors.Unwrap(err) {
-		v := reflect.ValueOf(err)
-		if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
-			continue
+	if err == nil {
+		return ""
+	}
+	v := reflect.ValueOf(err)
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			// Типизированный nil: сгенерированный Unwrap читает e.Err без проверки и запаникует.
+			return ""
 		}
-		if !strings.HasPrefix(v.Elem().Type().PkgPath(), generatedPkgPrefix) {
-			continue
+		if v.Elem().Kind() == reflect.Struct && isGeneratedPkg(v.Elem().Type().PkgPath()) {
+			if f := v.Elem().FieldByName("ParamName"); f.IsValid() && f.Kind() == reflect.String {
+				return f.String()
+			}
 		}
-		if f := v.Elem().FieldByName("ParamName"); f.IsValid() && f.Kind() == reflect.String {
-			return f.String()
+	}
+	switch u := err.(type) { //nolint:errorlint // ручной обход цепочки ошибок
+	case interface{ Unwrap() error }:
+		return paramName(u.Unwrap())
+	case interface{ Unwrap() []error }:
+		for _, e := range u.Unwrap() {
+			if name := paramName(e); name != "" {
+				return name
+			}
 		}
 	}
 	return ""

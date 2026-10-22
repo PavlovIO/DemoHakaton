@@ -9,7 +9,7 @@
 //     Все методы принадлежат одному типу *Handler, Go разрешает раскладывать их по файлам.
 //     Вход и выход — типы пакета тега (offersapi.AcceptOfferRequestObject), модели — пакет api.
 //  2. Новый тег в спеке = новый пакет <tag>api (скопировать gen.go и register.go соседнего),
-//     строки в generatedTags (routes_test.go), в NewRouter и в проверках ниже.
+//     строки в generatedTags (routes_test.go), в routes() (router.go) и в проверках ниже.
 //  3. Бизнес-логику держать в internal/service; хендлер только переводит api-типы ⇄ доменные.
 //  4. Ошибки НЕ собирать через типизированные XxxNNNJSONResponse: вернуть nil, apperr.X(...).
 //     Маппинг код → HTTP-статус централизован в errors.go (WriteError).

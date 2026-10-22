@@ -5,6 +5,7 @@ Go-сервер (net/http, PostgreSQL), который реализует кон
 - Запуск локально, команды `make` — [корневой README](../README.md#запуск-бэкенда).
 - Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег).
 - Схема БД — [`docs/db/schema.md`](../docs/db/schema.md).
+- Пишете код бэкенда — начните с [«Как устроен код»](#как-устроен-код): где пишем руками, а что генерируется.
 
 ## Быстрый старт
 
@@ -289,9 +290,11 @@ internal/
       router.go               цепочка middleware + роутинг всех тегов
       errors.go               apperr.Code → HTTP-статус: одно место на весь API
       validate.go             валидация запроса по спеке → VALIDATION_ERROR с полями
-    api/                      ГЕНЕРИРУЕТСЯ (make gen), не редактировать
+    api/                      *.gen.go ГЕНЕРИРУЮТСЯ (make gen), не редактировать
       models.gen.go           модели контракта — один пакет на весь контракт
       <tag>api/server.gen.go  сервер одного тега: роутинг, разбор параметров, интерфейс
+      <tag>api/gen.go         руками: doc пакета + go:generate тега
+      <tag>api/register.go    руками: Register(mux, …) — вызывается из routes()
   service/                    СЛОЙ 2 — бизнес-логика, статусные машины, транзакции; модульные тесты
   repository/                 СЛОЙ 3 — данные
     sqlc/                     ГЕНЕРИРУЕТСЯ из queries/*.sql (sqlc)
@@ -302,6 +305,14 @@ internal/
 migrations/                   goose
 queries/                      SQL для sqlc
 ```
+
+При работе над фичей руками пишут в четырёх местах: контракт `api/paths/*.yaml` + `api/schemas/*.yaml`, `handler/<tag>.go`, `service/`, `queries/*.sql` (плюс `migrations/`, если меняется схема БД). Каркас — `middleware/`, `router.go`, `errors.go`, `validate.go`, а в `internal/http/api/` — `doc.go`, `gencfg_test.go` и `<tag>api/{gen,register}.go` — тоже рукописный, но меняется только при добавлении тега. Всё остальное, что занимает больше всего строк (`*.gen.go`, `repository/sqlc/`, бандлы `openapi.yaml`), — выход генераторов: его не читают целиком, как не читают скомпилированный бинарник. Из `<tag>api/server.gen.go` нужно три вещи:
+
+- `StrictServerInterface` — список методов тега, которые реализует `*Handler` (поиск по `type StrictServerInterface`);
+- `<Op>RequestObject` — что пришло: path- и query-параметры, тело (`Body`);
+- `<Op>ResponseObject` и его реализации `<Op><статус>JSONResponse` — какие ответы разрешены спекой. Чужой статус не скомпилируется.
+
+К ним ведёт F12 из `handler/<tag>.go`. Модели (`Offer`, `Error`, enum'ы) — в `internal/http/api/models.gen.go`.
 
 Путь запроса `GET /api/v1/dictionaries/countries`: `RequestLog → Recover → MaxBody → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
 

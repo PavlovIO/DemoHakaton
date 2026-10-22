@@ -27,14 +27,37 @@ func TestParamName(t *testing.T) {
 		{"too many", &offersapi.TooManyValuesForParamError{ParamName: "status", Count: 2}, "status"},
 		{"cookie", &authapi.UnescapedCookieParamError{ParamName: "session", Err: errors.New("%zz")}, "session"},
 		{"обёрнутая", fmt.Errorf("parse: %w", &offersapi.InvalidParamFormatError{ParamName: "offerId", Err: errors.New("x")}), "offerId"},
+		{"errors.Join", errors.Join(errors.New("ctx"), &offersapi.InvalidParamFormatError{ParamName: "offerId", Err: errors.New("x")}), "offerId"},
+		{"%w: %w", fmt.Errorf("%w: %w", errors.New("a"), &offersapi.RequiredParamError{ParamName: "offerId"}), "offerId"},
 		{"тело запроса", errors.New("invalid character '}'"), ""},
 		{"чужой тип с ParamName", fmt.Errorf("x: %w", &foreignParamError{ParamName: "nope"}), ""},
 		{"nil", nil, ""},
+		{"типизированный nil", fmt.Errorf("x: %w", (*offersapi.InvalidParamFormatError)(nil)), ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := paramName(tt.err); got != tt.want {
 				t.Fatalf("paramName = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsGeneratedPkg(t *testing.T) {
+	tests := []struct {
+		pkg  string
+		want bool
+	}{
+		{generatedPkgPrefix + "offersapi", true},
+		{generatedPkgPrefix + "testutil", false},
+		{generatedPkgPrefix + "offersapi/internal", false},
+		{generatedPkgPrefix, false},
+		{"example.com/other/offersapi", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pkg, func(t *testing.T) {
+			if got := isGeneratedPkg(tt.pkg); got != tt.want {
+				t.Fatalf("isGeneratedPkg(%q) = %v, want %v", tt.pkg, got, tt.want)
 			}
 		})
 	}
