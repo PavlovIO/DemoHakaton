@@ -13,10 +13,11 @@ import (
 
 type fakeTx struct {
 	pgx.Tx
-	commitCalls   int
-	rollbackCalls int
-	commitErr     error
-	rollbackErr   error
+	commitCalls    int
+	rollbackCalls  int
+	commitErr      error
+	rollbackErr    error
+	rollbackCtxErr error
 }
 
 func (tx *fakeTx) Commit(context.Context) error {
@@ -24,8 +25,9 @@ func (tx *fakeTx) Commit(context.Context) error {
 	return tx.commitErr
 }
 
-func (tx *fakeTx) Rollback(context.Context) error {
+func (tx *fakeTx) Rollback(ctx context.Context) error {
 	tx.rollbackCalls++
+	tx.rollbackCtxErr = ctx.Err()
 	return tx.rollbackErr
 }
 
@@ -43,12 +45,14 @@ func (b *fakeTxBeginner) Begin(context.Context) (pgx.Tx, error) {
 func TestTxManagerInTx(t *testing.T) {
 	beginErr := errors.New("begin failed")
 	callbackErr := errors.New("callback failed")
+	commitErr := errors.New("commit failed")
 
 	tests := []struct {
 		name          string
 		beginErr      error
 		callback      func(repository.Querier) error
 		wantErr       error
+		commitErr     error
 		rollbackErr   error
 		wantCommit    int
 		wantRollback  int
@@ -77,6 +81,17 @@ func TestTxManagerInTx(t *testing.T) {
 			wantBeginCall: 1,
 		},
 		{
+			name: "commit error is returned",
+			callback: func(repository.Querier) error {
+				return nil
+			},
+			commitErr:     commitErr,
+			wantErr:       commitErr,
+			wantCommit:    1,
+			wantRollback:  1,
+			wantBeginCall: 1,
+		},
+		{
 			name: "panic rolls back and propagates",
 			callback: func(repository.Querier) error {
 				panic("callback panic")
@@ -95,7 +110,7 @@ func TestTxManagerInTx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tx := &fakeTx{rollbackErr: tt.rollbackErr}
+			tx := &fakeTx{commitErr: tt.commitErr, rollbackErr: tt.rollbackErr}
 			beginner := &fakeTxBeginner{tx: tx, err: tt.beginErr}
 			manager := service.NewTxManager(beginner)
 
@@ -123,6 +138,29 @@ func TestTxManagerInTx(t *testing.T) {
 				t.Errorf("Rollback() calls = %d, want %d", tx.rollbackCalls, tt.wantRollback)
 			}
 		})
+	}
+}
+
+func TestTxManagerRollbackWithCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	callbackErr := errors.New("callback failed")
+	tx := &fakeTx{}
+	beginner := &fakeTxBeginner{tx: tx}
+	manager := service.NewTxManager(beginner)
+
+	err := manager.InTx(ctx, func(repository.Querier) error {
+		return callbackErr
+	})
+	if !errors.Is(err, callbackErr) {
+		t.Fatalf("InTx() error = %v, want %v", err, callbackErr)
+	}
+	if tx.rollbackCalls != 1 {
+		t.Fatalf("Rollback() calls = %d, want 1", tx.rollbackCalls)
+	}
+	if tx.rollbackCtxErr != nil {
+		t.Errorf("Rollback() context error = %v, want nil", tx.rollbackCtxErr)
 	}
 }
 

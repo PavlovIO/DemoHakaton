@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -11,26 +12,43 @@ import (
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
 	passwordMemory      = 64 * 1024
-	passwordIterations  = 1
+	passwordIterations  = 3
 	passwordParallelism = 4
 	passwordSaltLength  = 16
 	passwordKeyLength   = 32
-	MinPasswordLength   = 10
+	maxParseMemory      = 256 * 1024
+	maxParseIterations  = 10
+	maxParseParallelism = 16
+	maxConcurrentHashes = 4
 )
 
-// HashPassword хэширует пароль с использованием алгоритма Argon2id.
-// Возвращает строку в стандартном формате PHC: $argon2id$v=19$m=...,t=...,p=...$salt$hash.
-func HashPassword(plain string) (string, error) {
+const (
+	// MinPasswordLength — минимальная длина пароля в символах.
+	MinPasswordLength = 10
+	// MaxPasswordLength — максимальная длина пароля в символах.
+	MaxPasswordLength = 128
+)
+
+var hashSlots = make(chan struct{}, maxConcurrentHashes)
+
+// HashPassword хэширует NFC-нормализованный пароль алгоритмом Argon2id в формате PHC.
+func HashPassword(ctx context.Context, plain string) (string, error) {
+	if err := acquireHashSlot(ctx); err != nil {
+		return "", err
+	}
+	defer releaseHashSlot()
+
 	salt := make([]byte, passwordSaltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate password salt: %w", err)
 	}
 
-	hash := argon2.IDKey([]byte(plain), salt, passwordIterations, passwordMemory, passwordParallelism, passwordKeyLength)
+	hash := argon2.IDKey([]byte(norm.NFC.String(plain)), salt, passwordIterations, passwordMemory, passwordParallelism, passwordKeyLength)
 	encoding := base64.RawStdEncoding
 	return fmt.Sprintf(
 		"$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
@@ -42,20 +60,28 @@ func HashPassword(plain string) (string, error) {
 	), nil
 }
 
-// VerifyPassword сравнивает открытый пароль с хэшем в формате PHC, возвращая true при совпадении.
-func VerifyPassword(plain, encoded string) (bool, error) {
+// VerifyPassword сверяет NFC-нормализованный пароль с Argon2id-хэшем в формате PHC.
+func VerifyPassword(ctx context.Context, plain, encoded string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	params, salt, expected, err := parsePasswordHash(encoded)
 	if err != nil {
 		return false, err
 	}
 
-	actual := argon2.IDKey([]byte(plain), salt, params.iterations, params.memory, params.parallelism, uint32(len(expected)))
+	if err := acquireHashSlot(ctx); err != nil {
+		return false, err
+	}
+	defer releaseHashSlot()
+
+	actual := argon2.IDKey([]byte(norm.NFC.String(plain)), salt, params.iterations, params.memory, params.parallelism, uint32(len(expected)))
 	return subtle.ConstantTimeCompare(actual, expected) == 1, nil
 }
 
-// ValidatePassword проверяет пароль на соответствие требованиям безопасности (длина от MinPasswordLength до 128 символов).
+// ValidatePassword проверяет NFC-нормализованную длину пароля в рунах.
 func ValidatePassword(plain string) error {
-	length := utf8.RuneCountInString(plain)
+	length := utf8.RuneCountInString(norm.NFC.String(plain))
 
 	if length < MinPasswordLength {
 		return apperr.Validation(
@@ -64,14 +90,34 @@ func ValidatePassword(plain string) error {
 		)
 	}
 
-	if length > 128 {
+	if length > MaxPasswordLength {
 		return apperr.Validation(
-			"Пароль слишком длинный",
-			apperr.FieldError{Field: "password", Message: "максимум 128 символов"},
+			fmt.Sprintf("Пароль должен содержать не более %d символов", MaxPasswordLength),
+			apperr.FieldError{Field: "password", Message: fmt.Sprintf("максимум %d символов", MaxPasswordLength)},
 		)
 	}
 
 	return nil
+}
+
+func acquireHashSlot(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case hashSlots <- struct{}{}:
+	}
+	if err := ctx.Err(); err != nil {
+		releaseHashSlot()
+		return err
+	}
+	return nil
+}
+
+func releaseHashSlot() {
+	<-hashSlots
 }
 
 type argon2Params struct {
@@ -97,7 +143,7 @@ func parsePasswordHash(encoded string) (argon2Params, []byte, []byte, error) {
 		return argon2Params{}, nil, nil, fmt.Errorf("invalid Argon2id password hash salt")
 	}
 	hash, err := encoding.DecodeString(parts[5])
-	if err != nil || len(hash) == 0 || len(hash) > 64 {
+	if err != nil || len(hash) < 16 || len(hash) > 64 {
 		return argon2Params{}, nil, nil, fmt.Errorf("invalid Argon2id password hash key")
 	}
 	return params, salt, hash, nil
@@ -124,9 +170,9 @@ func parseArgon2Params(encoded string) (argon2Params, error) {
 	iterations, hasIterations := values["t"]
 	parallelism, hasParallelism := values["p"]
 	if !hasMemory || !hasIterations || !hasParallelism ||
-		memory < 8*parallelism || memory > passwordMemory ||
-		iterations == 0 || iterations > 10 ||
-		parallelism == 0 || parallelism > passwordParallelism {
+		memory < 8*parallelism || memory > maxParseMemory ||
+		iterations == 0 || iterations > maxParseIterations ||
+		parallelism == 0 || parallelism > maxParseParallelism {
 		return argon2Params{}, fmt.Errorf("unsupported Argon2id password hash parameters")
 	}
 	return argon2Params{

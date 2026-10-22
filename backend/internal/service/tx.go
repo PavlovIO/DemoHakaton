@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/jackc/pgx/v5"
@@ -30,14 +31,20 @@ func (m *TxManager) InTx(ctx context.Context, fn func(q repository.Querier) erro
 		return err
 	}
 
+	rollback := func() {
+		rbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = tx.Rollback(rbCtx)
+	}
+
 	committed := false
 	defer func() {
 		if panicValue := recover(); panicValue != nil {
-			_ = tx.Rollback(ctx)
+			rollback()
 			panic(panicValue)
 		}
 		if !committed {
-			_ = tx.Rollback(ctx)
+			rollback()
 		}
 	}()
 

@@ -1,22 +1,26 @@
 package service_test
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"golang.org/x/crypto/argon2"
 )
 
 func TestPasswordHashAndVerify(t *testing.T) {
 	const password = "correct horse battery staple"
-	encoded, err := service.HashPassword(password)
+	encoded, err := service.HashPassword(context.Background(), password)
 	if err != nil {
 		t.Fatalf("HashPassword() error = %v", err)
 	}
 
-	if !strings.HasPrefix(encoded, "$argon2id$v=19$m=65536,t=1,p=4$") {
+	if !strings.HasPrefix(encoded, "$argon2id$v=19$m=65536,t=3,p=4$") {
 		t.Fatalf("HashPassword() = %q, want the expected Argon2id PHC prefix", encoded)
 	}
 	parts := strings.Split(encoded, "$")
@@ -50,7 +54,7 @@ func TestPasswordHashAndVerify(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := service.VerifyPassword(tt.password, tt.encoded)
+			got, err := service.VerifyPassword(context.Background(), tt.password, tt.encoded)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("VerifyPassword() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -62,17 +66,98 @@ func TestPasswordHashAndVerify(t *testing.T) {
 }
 
 func TestHashPasswordUsesRandomSalt(t *testing.T) {
-	first, err := service.HashPassword("same password")
+	first, err := service.HashPassword(context.Background(), "same password")
 	if err != nil {
 		t.Fatalf("first HashPassword() error = %v", err)
 	}
-	second, err := service.HashPassword("same password")
+	second, err := service.HashPassword(context.Background(), "same password")
 	if err != nil {
 		t.Fatalf("second HashPassword() error = %v", err)
 	}
 	if first == second {
 		t.Fatal("HashPassword() returned the same hash twice")
 	}
+}
+
+func TestPasswordFunctionsRespectCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := service.HashPassword(ctx, "some password"); !errors.Is(err, context.Canceled) {
+		t.Errorf("HashPassword() error = %v, want context.Canceled", err)
+	}
+	if got, err := service.VerifyPassword(ctx, "some password", "invalid"); got || !errors.Is(err, context.Canceled) {
+		t.Errorf("VerifyPassword() = (%v, %v), want (false, context.Canceled)", got, err)
+	}
+}
+
+func TestPasswordHashNormalizesNFC(t *testing.T) {
+	composed, err := service.HashPassword(context.Background(), "й")
+	if err != nil {
+		t.Fatalf("HashPassword(composed) error = %v", err)
+	}
+	decomposed, err := service.HashPassword(context.Background(), "и\u0306")
+	if err != nil {
+		t.Fatalf("HashPassword(decomposed) error = %v", err)
+	}
+
+	for _, tt := range []struct {
+		name    string
+		plain   string
+		encoded string
+	}{
+		{name: "decomposed password verifies composed hash", plain: "и\u0306", encoded: composed},
+		{name: "composed password verifies decomposed hash", plain: "й", encoded: decomposed},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := service.VerifyPassword(context.Background(), tt.plain, tt.encoded)
+			if err != nil || !got {
+				t.Fatalf("VerifyPassword() = (%v, %v), want (true, nil)", got, err)
+			}
+		})
+	}
+}
+
+func TestVerifyPasswordParseParameterLimits(t *testing.T) {
+	const password = "password used for parameter test"
+	const memory = 131072
+	salt := []byte("0123456789abcdef")
+	hash := argon2.IDKey([]byte(password), salt, 1, memory, 4, 16)
+	encoded := makePHC(memory, 1, 4, salt, hash)
+
+	got, err := service.VerifyPassword(context.Background(), password, encoded)
+	if err != nil || !got {
+		t.Fatalf("VerifyPassword() for m=131072 = (%v, %v), want (true, nil)", got, err)
+	}
+
+	overLimit := makePHC(256*1024+1, 1, 4, salt, hash)
+	if got, err := service.VerifyPassword(context.Background(), password, overLimit); got || err == nil {
+		t.Errorf("VerifyPassword() for memory above parse ceiling = (%v, %v), want (false, error)", got, err)
+	}
+}
+
+func TestVerifyPasswordRejectsShortKeys(t *testing.T) {
+	salt := []byte("0123456789abcdef")
+	for _, keyLength := range []int{1, 15} {
+		t.Run(fmt.Sprintf("%d bytes", keyLength), func(t *testing.T) {
+			encoded := makePHC(65536, 1, 4, salt, make([]byte, keyLength))
+			if got, err := service.VerifyPassword(context.Background(), "password", encoded); got || err == nil {
+				t.Errorf("VerifyPassword() = (%v, %v), want (false, error)", got, err)
+			}
+		})
+	}
+}
+
+func makePHC(memory, iterations, parallelism int, salt, hash []byte) string {
+	encoding := base64.RawStdEncoding
+	return fmt.Sprintf(
+		"$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
+		memory,
+		iterations,
+		parallelism,
+		encoding.EncodeToString(salt),
+		encoding.EncodeToString(hash),
+	)
 }
 
 func TestValidatePassword(t *testing.T) {
@@ -85,6 +170,10 @@ func TestValidatePassword(t *testing.T) {
 		{name: "ten ASCII characters", plain: "1234567890"},
 		{name: "nine Cyrillic characters", plain: "парольный", wantErr: true},
 		{name: "ten Cyrillic characters", plain: "парольныйа"},
+		{name: "128 characters", plain: strings.Repeat("a", 128)},
+		{name: "129 characters", plain: strings.Repeat("a", 129), wantErr: true},
+		{name: "NFC-normalized length below minimum", plain: strings.Repeat("a", 8) + "и\u0306", wantErr: true},
+		{name: "NFC-normalized length at minimum", plain: strings.Repeat("a", 9) + "и\u0306"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
