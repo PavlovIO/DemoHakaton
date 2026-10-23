@@ -20,6 +20,7 @@ var statusByCode = map[apperr.Code]int{
 	apperr.CodeForbidden:         http.StatusForbidden,
 	apperr.CodeCSRFInvalid:       http.StatusForbidden,
 	apperr.CodeKYCNotVerified:    http.StatusForbidden,
+	apperr.CodeFileTooLarge:      http.StatusRequestEntityTooLarge,
 	apperr.CodeNotFound:          http.StatusNotFound,
 	apperr.CodeConflict:          http.StatusConflict,
 	apperr.CodeInvalidTransition: http.StatusConflict,

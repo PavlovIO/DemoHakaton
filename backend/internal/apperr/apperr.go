@@ -27,6 +27,7 @@ const (
 	CodeInternal          Code = "INTERNAL"
 	CodeNotImplemented    Code = "NOT_IMPLEMENTED"
 	CodeUnavailable       Code = "UNAVAILABLE"
+	CodeFileTooLarge      Code = "FILE_TOO_LARGE"
 )
 
 // FieldError — ошибка конкретного поля запроса (попадает в error.details).
@@ -97,7 +98,11 @@ func KYCNotVerified() *Error {
 }
 func NotFound(msg string) *Error { return New(CodeNotFound, msg) }
 func Conflict(msg string) *Error { return New(CodeConflict, msg) }
-func RateLimited() *Error        { return New(CodeRateLimited, "Слишком много запросов") }
+
+// FileTooLarge — загружаемый файл больше лимита (10 МБ для KYC-документов).
+func FileTooLarge() *Error { return New(CodeFileTooLarge, "Файл больше 10 МБ") }
+
+func RateLimited() *Error { return New(CodeRateLimited, "Слишком много запросов") }
 func RateLimitedAfter(retryAfter time.Duration) *Error {
 	return &Error{Code: CodeRateLimited, Message: "Слишком много запросов", RetryAfter: retryAfter}
 }

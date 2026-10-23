@@ -30,8 +30,9 @@ components:
         registration_number: { type: string, maxLength: 50 }
         lei:
           type: string
-          pattern: '^[A-Z0-9]{20}$'
+          pattern: '^([A-Z0-9]{20})?$'
           nullable: true
+          description: '`""` очищает LEI; отсутствие поля или `null` — оставить как есть.'
         legal_address: { type: string, maxLength: 1000 }
         beneficiaries:
           type: array

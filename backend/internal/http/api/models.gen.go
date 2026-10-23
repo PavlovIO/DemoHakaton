@@ -1023,11 +1023,13 @@ type OrganizationType string
 
 // OrganizationUpdate defines model for OrganizationUpdate.
 type OrganizationUpdate struct {
-	Beneficiaries      []Beneficiary `json:"beneficiaries,omitempty"`
-	LegalAddress       *string       `json:"legal_address,omitempty"`
-	LEI                *string       `json:"lei,omitempty"`
-	Name               *string       `json:"name,omitempty"`
-	RegistrationNumber *string       `json:"registration_number,omitempty"`
+	Beneficiaries []Beneficiary `json:"beneficiaries,omitempty"`
+	LegalAddress  *string       `json:"legal_address,omitempty"`
+
+	// LEI `""` очищает LEI; отсутствие поля или `null` — оставить как есть.
+	LEI                *string `json:"lei,omitempty"`
+	Name               *string `json:"name,omitempty"`
+	RegistrationNumber *string `json:"registration_number,omitempty"`
 }
 
 // Percent Проценты, например "8.00" = 8%
