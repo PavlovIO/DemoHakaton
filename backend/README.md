@@ -169,7 +169,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/applications` | Список (по роли): заёмщику — свои в любом статусе, кредитору — витрина `published` и заявки с его офферами (архив), admin — все. Фильтры `status`, `currency`, `amount_min`/`amount_max` (только вместе с `currency`), пагинация | авториз. |
+| GET | `/applications` | Список (по роли): заёмщику — свои в любом статусе, кредитору — витрина `published` и заявки с его офферами (архив), admin — все. Фильтры: `status` и `target_country` (несколько значений — ИЛИ), `currency`, `amount_min`/`amount_max` (только вместе с `currency`), `term_min`/`term_max`, `created_from`/`created_to`; кредитору — `has_my_offer` (архив откликов), admin — `borrower_organization_id`. Сортировка `sort` (по дате создания или публикации, сумме, сроку), пагинация | авториз. |
 | POST | `/applications` | Создать заявку в статусе `draft` (KYC verified) → `201` | B |
 | GET | `/applications/{applicationId}` | Карточка заявки | авториз. |
 | PATCH | `/applications/{applicationId}` | Редактировать (владелец, `draft` / `rejected`) | B |
@@ -194,7 +194,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/deals` | Сделки: стороны сделки или admin | авториз. |
+| GET | `/deals` | Сделки: стороны сделки или admin. Период `created_from`/`created_to` — по `agreed_at`; admin — `borrower_organization_id`, `lender_organization_id`; пагинация | авториз. |
 | GET | `/deals/{dealId}` | Карточка сделки | стороны, A |
 
 ### chat — переписка по офферу
@@ -222,7 +222,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | POST | `/admin/organizations/{organizationId}/kyc/reject` | Отклонить с причиной (`under_review` → `rejected`) | A |
 | POST | `/admin/applications/{applicationId}/approve` | Опубликовать заявку (`moderation` → `published`) | A |
 | POST | `/admin/applications/{applicationId}/reject` | Вернуть на доработку с причиной (`moderation` → `rejected`) | A |
-| GET | `/admin/aml/flags` | AML-флаги rule-based скрининга (санкции, FATF, порог суммы) | A |
+| GET | `/admin/aml/flags` | AML-флаги rule-based скрининга (санкции, FATF, порог суммы). Фильтры `status`, `severity`, `organization_id`, `application_id`; пагинация | A |
 | POST | `/admin/aml/flags/{flagId}/resolve` | Закрыть AML-флаг | A |
 | GET | `/admin/users` | Пользователи | A |
 | POST | `/admin/users/{userId}/block` | Заблокировать (удаляет все его сессии) | A |
