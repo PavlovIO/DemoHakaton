@@ -7,11 +7,22 @@ INSERT INTO kyc_documents (
 
 -- name: ListKycDocumentsByOrg :many
 SELECT * FROM kyc_documents
-WHERE organization_id = $1;
+WHERE organization_id = $1
+ORDER BY uploaded_at, id;
 
--- name: DeleteKycDocument :exec
+-- name: GetKycDocumentVisible :one
+-- Документ, если пользователь его видит: admin — любой, остальные — своей организации.
+-- Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR). Admin передаёт uuid.Nil.
+SELECT * FROM kyc_documents
+WHERE id = sqlc.arg('id')
+  AND (sqlc.arg('viewer_role')::user_role = 'admin'
+       OR organization_id = sqlc.arg('viewer_org')::uuid);
+
+-- name: DeleteKycDocument :one
+-- storage_key — чтобы после коммита удалить файл; нет строки (чужой, уже удалён) → 404.
 DELETE FROM kyc_documents
-WHERE id = $1 AND organization_id = $2;
+WHERE id = $1 AND organization_id = $2
+RETURNING storage_key;
 
 -- name: CreateRegistryCheck :one
 INSERT INTO registry_checks (

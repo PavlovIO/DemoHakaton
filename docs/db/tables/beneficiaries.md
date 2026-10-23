@@ -33,10 +33,10 @@ erDiagram
 
 - Ссылается на: [`organizations`](organizations.md), [`countries`](countries.md).
 
-## sqlc-запросы
+## sqlc-запросы (`queries/organizations.sql`)
 
-**Нет.** Таблица заполняется только демо-сидом `testdata/seed_demo.sql`. Для `PATCH /organizations/me` нужно добавить в `queries/organizations.sql` (или отдельный `beneficiaries.sql`):
-
-- `ListBeneficiariesByOrg :many`
-- `DeleteBeneficiariesByOrg :exec`
-- `CreateBeneficiary :one` (или `:copyfrom` для пакетной вставки)
+| Запрос | Тип | Что делает |
+|---|---|---|
+| `ListBeneficiariesByOrg` | `:many` | Бенефициары компании, `ORDER BY created_at, id` |
+| `DeleteBeneficiariesByOrg` | `:exec` | Очистка списка перед заменой |
+| `CreateBeneficiary` | `:one` | Вставка одного (до 50 в цикле, `:copyfrom` не нужен) |

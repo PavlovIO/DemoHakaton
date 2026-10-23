@@ -308,8 +308,8 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `dictionaries.sql` | countries, currencies, transfer_methods | `ListCountries`, `ListCurrencies`, `ListTransferMethods` |
 | `users.sql` | users | `GetUserByID`, `GetUserByEmail`, `CreateUser`, `UpdateLastLogin`, `BlockUser`, `UnblockUser`, `ListUsers`, `CountUsers` |
 | `sessions.sql` | sessions (+ users, organizations) | `CreateSession`, `GetSessionByTokenHash`, `TouchSession`, `DeleteSessionByTokenHash`, `DeleteSessionsByUserID`, `DeleteExpiredSessions` |
-| `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations` |
-| `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
+| `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `GetOrganizationForUpdate`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations`, `ListBeneficiariesByOrg`, `DeleteBeneficiariesByOrg`, `CreateBeneficiary` |
+| `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `GetKycDocumentVisible`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
 | `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationVisible`, `GetApplicationForUpdate`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplicationsVisible`, `CountApplicationsVisible`, `CreateStatusHistory` |
 | `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListOffersByApplication`, `ListOffersVisible`, `CountOffersVisible`, `AcceptOffer`, `RejectOtherOffers`, `RejectOffer`, `WithdrawOffer`, `RejectAllOffersForApplication` |
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
@@ -320,9 +320,7 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 ### Чего не хватает и где запросы расходятся с этим документом
 
 Пробелы (запросов нет):
-- `beneficiaries` — ни одного запроса, хотя `PATCH /organizations/me` должен заменять список;
 - `status_history` — нет чтения для `GET /applications/{id}/history`;
-- `kyc_documents` — нет получения документа по `id` для скачивания;
 - `aml_flags` — нет `Count` и `GetByID`; `audit_log` — нет фильтров и `Count`;
 - `sanctions_entries` — нет запросов загрузчика списков.
 
@@ -332,7 +330,7 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
 - **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
 - **Сделка.** `fee_amount` считается в SQL (`CreateDeal`), а не в бэкенде.
-- **Переходы статусов** заявок и KYC не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`). Параллельные запросы могут проскочить проверку сервиса.
+- **Переходы статусов** заявок и решения админа по KYC (`ApproveKyc`, `RejectKyc`) не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`, у `UpdateOrganization` и `SubmitKycForReview` — `kyc_status IN ('draft','rejected')` плюс `GetOrganizationForUpdate`). Параллельные запросы могут проскочить проверку сервиса.
 
 ## Что сознательно не делаем в MVP
 

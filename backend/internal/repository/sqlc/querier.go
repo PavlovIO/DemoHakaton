@@ -29,6 +29,7 @@ type Querier interface {
 	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
+	CreateBeneficiary(ctx context.Context, arg CreateBeneficiaryParams) (Beneficiary, error)
 	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
 	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
@@ -39,8 +40,11 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
 	CreateStatusHistory(ctx context.Context, arg CreateStatusHistoryParams) (StatusHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
+	// Список бенефициаров заменяется целиком: delete + insert в одной транзакции.
+	DeleteBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) error
 	DeleteExpiredSessions(ctx context.Context) error
-	DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) error
+	// storage_key — чтобы после коммита удалить файл; нет строки (чужой, уже удалён) → 404.
+	DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) (string, error)
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
 	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
@@ -53,12 +57,18 @@ type Querier interface {
 	// Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
 	// несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
 	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error)
+	// Документ, если пользователь его видит: admin — любой, остальные — своей организации.
+	// Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR). Admin передаёт uuid.Nil.
+	GetKycDocumentVisible(ctx context.Context, arg GetKycDocumentVisibleParams) (KycDocument, error)
 	GetLatestRegistryCheck(ctx context.Context, organizationID pgtype.UUID) (RegistryCheck, error)
 	// Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
 	// свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
 	// EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
 	GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (Offer, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
+	// Блокирует строку организации до конца транзакции: правка профиля, загрузка и удаление
+	// документа и submit KYC сериализуются, и проверка статуса в сервисе не устаревает.
+	GetOrganizationForUpdate(ctx context.Context, id uuid.UUID) (Organization, error)
 	// kyc_status читается на каждом запросе и не кэшируется: одобрение KYC действует со следующего.
 	// LEFT JOIN: у admin organization_id IS NULL (users_admin_org_chk), с INNER JOIN он не вошёл бы.
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
@@ -70,6 +80,7 @@ type Querier interface {
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]Application, error)
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
+	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]Beneficiary, error)
 	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
 	// fatf_high_risk: страна в чёрном или сером списке FATF.
 	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
@@ -99,11 +110,13 @@ type Querier interface {
 	// Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
 	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SanctionsEntry, error)
 	SubmitApplication(ctx context.Context, id uuid.UUID) (Application, error)
-	SubmitKycForReview(ctx context.Context, id uuid.UUID) (SubmitKycForReviewRow, error)
+	SubmitKycForReview(ctx context.Context, id uuid.UUID) (Organization, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UnblockUser(ctx context.Context, id uuid.UUID) (UnblockUserRow, error)
 	UpdateApplication(ctx context.Context, arg UpdateApplicationParams) (Application, error)
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
+	// lei: NULL — не трогать, пустая строка — очистить (DECISIONS п. 7), иначе — записать.
+	// Охрана статуса в WHERE — вторая линия после блокировки и проверки в сервисе.
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
 	WithdrawOffer(ctx context.Context, id uuid.UUID) (Offer, error)
 }
