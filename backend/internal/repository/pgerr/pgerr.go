@@ -2,7 +2,9 @@
 //
 // Используется в service поверх вызовов sqlc:
 //
-//	app, err := q.GetApplicationByID(ctx, id)
+//	app, err := q.GetApplicationVisible(ctx, repository.GetApplicationVisibleParams{
+//		ID: id, ViewerRole: p.ViewerRole(), ViewerOrg: p.ViewerOrg(),
+//	})
 //	if err != nil {
 //		return nil, pgerr.Map(err, "Заявка не найдена")
 //	}

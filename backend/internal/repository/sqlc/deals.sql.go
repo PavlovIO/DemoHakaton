@@ -13,20 +13,26 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const countDeals = `-- name: CountDeals :one
+const countDealsVisible = `-- name: CountDealsVisible :one
 SELECT count(*) FROM deals
 WHERE
-  ($1::uuid IS NULL OR borrower_organization_id = $1::uuid)
-  AND ($2::uuid IS NULL OR lender_organization_id = $2::uuid)
+  -- Блок видимости — символ в символ как в GetDealVisible (sqlc не умеет общие фрагменты).
+  (
+       $1::user_role = 'admin'
+    OR ($1::user_role = 'borrower'
+        AND borrower_organization_id = $2::uuid)
+    OR ($1::user_role = 'lender'
+        AND lender_organization_id = $2::uuid)
+  )
 `
 
-type CountDealsParams struct {
-	BorrowerOrgID pgtype.UUID `json:"borrower_org_id"`
-	LenderOrgID   pgtype.UUID `json:"lender_org_id"`
+type CountDealsVisibleParams struct {
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
 }
 
-func (q *Queries) CountDeals(ctx context.Context, arg CountDealsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countDeals, arg.BorrowerOrgID, arg.LenderOrgID)
+func (q *Queries) CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDealsVisible, arg.ViewerRole, arg.ViewerOrg)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -106,12 +112,28 @@ func (q *Queries) CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, e
 	return i, err
 }
 
-const getDealByID = `-- name: GetDealByID :one
-SELECT id, number, application_id, offer_id, borrower_organization_id, lender_organization_id, amount, currency, interest_rate_annual, fee_percent, fee_amount, term_months, target_country_code, transfer_method, repayment_schedule, collateral, additional_terms, agreed_at FROM deals WHERE id = $1
+const getDealVisible = `-- name: GetDealVisible :one
+SELECT id, number, application_id, offer_id, borrower_organization_id, lender_organization_id, amount, currency, interest_rate_annual, fee_percent, fee_amount, term_months, target_country_code, transfer_method, repayment_schedule, collateral, additional_terms, agreed_at FROM deals
+WHERE id = $1
+  AND (
+       $2::user_role = 'admin'
+    OR ($2::user_role = 'borrower'
+        AND borrower_organization_id = $3::uuid)
+    OR ($2::user_role = 'lender'
+        AND lender_organization_id = $3::uuid)
+  )
 `
 
-func (q *Queries) GetDealByID(ctx context.Context, id uuid.UUID) (Deal, error) {
-	row := q.db.QueryRow(ctx, getDealByID, id)
+type GetDealVisibleParams struct {
+	ID         uuid.UUID `json:"id"`
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
+}
+
+// Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
+// несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
+func (q *Queries) GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error) {
+	row := q.db.QueryRow(ctx, getDealVisible, arg.ID, arg.ViewerRole, arg.ViewerOrg)
 	var i Deal
 	err := row.Scan(
 		&i.ID,
@@ -136,28 +158,34 @@ func (q *Queries) GetDealByID(ctx context.Context, id uuid.UUID) (Deal, error) {
 	return i, err
 }
 
-const listDeals = `-- name: ListDeals :many
+const listDealsVisible = `-- name: ListDealsVisible :many
 SELECT id, number, application_id, offer_id, borrower_organization_id, lender_organization_id, amount, currency, interest_rate_annual, fee_percent, fee_amount, term_months, target_country_code, transfer_method, repayment_schedule, collateral, additional_terms, agreed_at FROM deals
 WHERE
-  ($3::uuid IS NULL OR borrower_organization_id = $3::uuid)
-  AND ($4::uuid IS NULL OR lender_organization_id = $4::uuid)
+  -- Блок видимости — символ в символ как в GetDealVisible (sqlc не умеет общие фрагменты).
+  (
+       $3::user_role = 'admin'
+    OR ($3::user_role = 'borrower'
+        AND borrower_organization_id = $4::uuid)
+    OR ($3::user_role = 'lender'
+        AND lender_organization_id = $4::uuid)
+  )
 ORDER BY agreed_at DESC
 LIMIT $1 OFFSET $2
 `
 
-type ListDealsParams struct {
-	Limit         int32       `json:"limit"`
-	Offset        int32       `json:"offset"`
-	BorrowerOrgID pgtype.UUID `json:"borrower_org_id"`
-	LenderOrgID   pgtype.UUID `json:"lender_org_id"`
+type ListDealsVisibleParams struct {
+	Limit      int32     `json:"limit"`
+	Offset     int32     `json:"offset"`
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
 }
 
-func (q *Queries) ListDeals(ctx context.Context, arg ListDealsParams) ([]Deal, error) {
-	rows, err := q.db.Query(ctx, listDeals,
+func (q *Queries) ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]Deal, error) {
+	rows, err := q.db.Query(ctx, listDealsVisible,
 		arg.Limit,
 		arg.Offset,
-		arg.BorrowerOrgID,
-		arg.LenderOrgID,
+		arg.ViewerRole,
+		arg.ViewerOrg,
 	)
 	if err != nil {
 		return nil, err

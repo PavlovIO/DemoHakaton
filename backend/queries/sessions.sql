@@ -4,11 +4,15 @@ VALUES ($1, $2, $3, $4, $5)
 RETURNING token_hash, user_id, expires_at, created_at;
 
 -- name: GetSessionByTokenHash :one
+-- kyc_status читается на каждом запросе и не кэшируется: одобрение KYC действует со следующего.
+-- LEFT JOIN: у admin organization_id IS NULL (users_admin_org_chk), с INNER JOIN он не вошёл бы.
 SELECT s.token_hash, s.user_id, s.expires_at, s.created_at, s.last_seen_at,
        s.ip, s.user_agent,
-       u.email, u.role, u.status, u.organization_id
+       u.email, u.role, u.status, u.organization_id,
+       o.kyc_status
 FROM sessions s
 JOIN users u ON u.id = s.user_id
+LEFT JOIN organizations o ON o.id = u.organization_id
 WHERE s.token_hash = $1
   AND s.expires_at > now()
   AND u.status = 'active';
