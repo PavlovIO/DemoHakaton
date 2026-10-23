@@ -62,10 +62,10 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateOffer` | `:one` | Новый оффер в статусе `sent` |
-| `GetOfferByID` | `:one` | Оффер по `id` |
+| `GetOfferVisible` | `:one` | Оффер по `id`, если его видит `viewer_role`/`viewer_org`: `lender` — свой, `borrower` — на свою заявку, `admin` — любой. Чужой и несуществующий → 0 строк → `404` |
 | `ListOffersByApplication` | `:many` | Офферы заявки, опционально по `statuses[]` (для заёмщика) |
-| `ListOffers` | `:many` | Фильтры `lender_org_id`, `application_id`, `statuses[]`, пагинация |
-| `CountOffers` | `:one` | Счётчик для того же фильтра |
+| `ListOffersVisible` | `:many` | То же правило видимости (обязательные `viewer_role`, `viewer_org`), фильтры `application_id`, `statuses[]`, пагинация |
+| `CountOffersVisible` | `:one` | Счётчик для того же фильтра |
 | `AcceptOffer` | `:one` | `sent` → `accepted`. 0 строк = оффер уже не активен (409) |
 | `RejectOtherOffers` | `:exec` | Остальные `sent`-офферы заявки → `rejected` (`another_offer_accepted`) |
 | `RejectOffer` | `:one` | Заёмщик отклоняет: → `rejected` (`rejected_by_borrower`) с комментарием |
@@ -78,4 +78,4 @@ erDiagram
 
 Замечания:
 - `RejectOtherOffers` и `RejectAllOffersForApplication` — `:exec`, они не возвращают `id, lender_organization_id` отклонённых офферов. Чтобы отправить кредиторам уведомления, нужно сделать их `:many` с `RETURNING`.
-- `GetOfferByID` и `ListOffersByApplication` не фильтруют по организации. Доступ (кредитор — свой оффер, заёмщик — офферы своей заявки) проверяет сервис.
+- `ListOffersByApplication` пока не фильтрует по организации: видимость (заёмщик-владелец и admin — все, кредитор — только свой) добавляет BE-08.

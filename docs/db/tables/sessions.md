@@ -38,7 +38,7 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateSession` | `:one` | Создаёт сессию при логине |
-| `GetSessionByTokenHash` | `:one` | Сессия + `email, role, status, organization_id` пользователя (JOIN `users`). Отсекает просроченные и заблокированных |
+| `GetSessionByTokenHash` | `:one` | Сессия + `email, role, status, organization_id` пользователя (JOIN `users`) и `kyc_status` его организации (LEFT JOIN `organizations`: у admin организации нет, `kyc_status` — `NULL`). Отсекает просроченные и заблокированных |
 | `TouchSession` | `:exec` | `last_seen_at = now()` |
 | `DeleteSessionByTokenHash` | `:exec` | Logout |
 | `DeleteSessionsByUserID` | `:exec` | Выход со всех устройств, блокировка пользователя |
