@@ -152,14 +152,26 @@ jobs:
           --health-interval 3s
           --health-timeout 3s
           --health-retries 10
+    # Пароли ролей — dev-значения: БД одноразовая, живёт только в этой джобе.
     env:
-      DATABASE_URL: postgres://lp:lp_dev_password@localhost:5432/liquidity_platform?sslmode=disable
+      LP_APP_PASSWORD: lp_app_dev_password
+      LP_MIGRATOR_PASSWORD: lp_migrator_dev_password
+      DATABASE_URL: postgres://lp_app:lp_app_dev_password@localhost:5432/liquidity_platform?sslmode=disable
+      MIGRATE_DATABASE_URL: postgres://lp_migrator:lp_migrator_dev_password@localhost:5432/liquidity_platform?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      # Роли создаёт суперпользователь контейнера; миграции и тесты дальше идут уже под ними.
+      - name: db roles
+        run: >-
+          psql "postgres://lp:lp_dev_password@localhost:5432/liquidity_platform"
+          -v ON_ERROR_STOP=1
+          -v app_password="$LP_APP_PASSWORD"
+          -v migrator_password="$LP_MIGRATOR_PASSWORD"
+          -f backend/db/roles.sql
       - name: migrate
         run: make migrate-up
       - name: load sanctions
