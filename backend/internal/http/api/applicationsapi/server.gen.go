@@ -605,6 +605,20 @@ func (response ListApplications401JSONResponse) VisitListApplicationsResponse(w 
 	return err
 }
 
+type ListApplications403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListApplications403JSONResponse) VisitListApplicationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateApplicationRequestObject struct {
 	Body *CreateApplicationJSONRequestBody
 }
@@ -705,6 +719,20 @@ func (response GetApplication401JSONResponse) VisitGetApplicationResponse(w http
 	return err
 }
 
+type GetApplication403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetApplication403JSONResponse) VisitGetApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetApplication404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetApplication404JSONResponse) VisitGetApplicationResponse(w http.ResponseWriter) error {
@@ -766,6 +794,20 @@ func (response UpdateApplication401JSONResponse) VisitUpdateApplicationResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateApplication403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateApplication403JSONResponse) VisitUpdateApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -834,6 +876,20 @@ func (response CancelApplication401JSONResponse) VisitCancelApplicationResponse(
 	return err
 }
 
+type CancelApplication403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CancelApplication403JSONResponse) VisitCancelApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CancelApplication404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response CancelApplication404JSONResponse) VisitCancelApplicationResponse(w http.ResponseWriter) error {
@@ -898,6 +954,20 @@ func (response GetApplicationHistory401JSONResponse) VisitGetApplicationHistoryR
 	return err
 }
 
+type GetApplicationHistory403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetApplicationHistory403JSONResponse) VisitGetApplicationHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetApplicationHistory404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response GetApplicationHistory404JSONResponse) VisitGetApplicationHistoryResponse(w http.ResponseWriter) error {
@@ -946,6 +1016,20 @@ func (response RejectAllOffers401JSONResponse) VisitRejectAllOffersResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectAllOffers403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RejectAllOffers403JSONResponse) VisitRejectAllOffersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1010,6 +1094,20 @@ func (response SubmitApplication401JSONResponse) VisitSubmitApplicationResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitApplication403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SubmitApplication403JSONResponse) VisitSubmitApplicationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

@@ -39,6 +39,7 @@ paths:
             application/json:
               schema: { $ref: '../schemas/offers.yaml#/components/schemas/OfferPage' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
 
   /offers/{offerId}:
     get:
@@ -54,6 +55,7 @@ paths:
             application/json:
               schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
 
   /offers/{offerId}/accept:
@@ -75,6 +77,7 @@ paths:
             application/json:
               schema: { $ref: '../schemas/deals.yaml#/components/schemas/Deal' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
 
@@ -100,6 +103,7 @@ paths:
             application/json:
               schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
 
@@ -117,5 +121,6 @@ paths:
             application/json:
               schema: { $ref: '../schemas/offers.yaml#/components/schemas/Offer' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }

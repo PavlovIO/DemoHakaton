@@ -417,6 +417,20 @@ func (response DownloadDocument401JSONResponse) VisitDownloadDocumentResponse(w 
 	return err
 }
 
+type DownloadDocument403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DownloadDocument403JSONResponse) VisitDownloadDocumentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DownloadDocument404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response DownloadDocument404JSONResponse) VisitDownloadDocumentResponse(w http.ResponseWriter) error {
@@ -530,6 +544,20 @@ func (response UpdateMyOrganization401JSONResponse) VisitUpdateMyOrganizationRes
 	return err
 }
 
+type UpdateMyOrganization403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateMyOrganization403JSONResponse) VisitUpdateMyOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateMyOrganization409JSONResponse struct{ InvalidTransitionJSONResponse }
 
 func (response UpdateMyOrganization409JSONResponse) VisitUpdateMyOrganizationResponse(w http.ResponseWriter) error {
@@ -575,6 +603,20 @@ func (response ListMyDocuments401JSONResponse) VisitListMyDocumentsResponse(w ht
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyDocuments403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListMyDocuments403JSONResponse) VisitListMyDocumentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -625,6 +667,20 @@ func (response UploadMyDocument401JSONResponse) VisitUploadMyDocumentResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadMyDocument403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UploadMyDocument403JSONResponse) VisitUploadMyDocumentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -683,6 +739,20 @@ func (response DeleteMyDocument401JSONResponse) VisitDeleteMyDocumentResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyDocument403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteMyDocument403JSONResponse) VisitDeleteMyDocumentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -760,6 +830,20 @@ func (response SubmitKYC401JSONResponse) VisitSubmitKYCResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitKYC403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SubmitKYC403JSONResponse) VisitSubmitKYCResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

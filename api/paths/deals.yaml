@@ -17,6 +17,7 @@ paths:
             application/json:
               schema: { $ref: '../schemas/deals.yaml#/components/schemas/DealPage' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
 
   /deals/{dealId}:
     get:
@@ -35,4 +36,5 @@ paths:
             application/json:
               schema: { $ref: '../schemas/deals.yaml#/components/schemas/Deal' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }

@@ -26,6 +26,7 @@ paths:
                 type: array
                 items: { $ref: '../schemas/chat.yaml#/components/schemas/Message' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
     post:
       tags: [chat]
@@ -47,6 +48,7 @@ paths:
               schema: { $ref: '../schemas/chat.yaml#/components/schemas/Message' }
         '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
         '429': { $ref: '../components.yaml#/components/responses/RateLimited' }

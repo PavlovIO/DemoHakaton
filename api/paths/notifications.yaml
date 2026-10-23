@@ -18,6 +18,7 @@ paths:
             application/json:
               schema: { $ref: '../schemas/notifications.yaml#/components/schemas/NotificationPage' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
 
   /notifications/{notificationId}/read:
     post:
@@ -31,6 +32,7 @@ paths:
       responses:
         '204': { description: OK }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
 
   /notifications/read-all:
@@ -40,3 +42,4 @@ paths:
       responses:
         '204': { description: OK }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
