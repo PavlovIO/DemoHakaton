@@ -6,7 +6,16 @@ paths:
       operationId: listDeals
       x-roles: [borrower, lender, admin]
       summary: Сделки (role-scoped — стороны сделки или admin)
+      description: Период `created_from`/`created_to` фильтрует по `agreed_at`.
       parameters:
+        - name: borrower_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
+        - name: lender_organization_id
+          in: query
+          description: Только для admin
+          schema: { type: string, format: uuid }
         - $ref: '../components.yaml#/components/parameters/CreatedFrom'
         - $ref: '../components.yaml#/components/parameters/CreatedTo'
         - $ref: '../components.yaml#/components/parameters/Page'

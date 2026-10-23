@@ -78,13 +78,26 @@ func (siw *ServerInterfaceWrapper) ListApplications(w http.ResponseWriter, r *ht
 
 	// ------------- Optional query parameter "target_country" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_country", r.URL.Query(), &params.TargetCountry, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_country", r.URL.Query(), &params.TargetCountry, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_country"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_country", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "has_my_offer" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "has_my_offer", r.URL.Query(), &params.HasMyOffer, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "has_my_offer"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "has_my_offer", Err: err})
 		}
 		return
 	}

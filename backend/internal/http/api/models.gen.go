@@ -453,12 +453,14 @@ func (e AdminResolveAMLFlagJSONBodyResolution) Valid() bool {
 
 // Defines values for ListApplicationsParamsSort.
 const (
-	ListApplicationsParamsSortAmountAsc     ListApplicationsParamsSort = "amount_asc"
-	ListApplicationsParamsSortAmountDesc    ListApplicationsParamsSort = "amount_desc"
-	ListApplicationsParamsSortCreatedAtAsc  ListApplicationsParamsSort = "created_at_asc"
-	ListApplicationsParamsSortCreatedAtDesc ListApplicationsParamsSort = "created_at_desc"
-	ListApplicationsParamsSortTermAsc       ListApplicationsParamsSort = "term_asc"
-	ListApplicationsParamsSortTermDesc      ListApplicationsParamsSort = "term_desc"
+	ListApplicationsParamsSortAmountAsc       ListApplicationsParamsSort = "amount_asc"
+	ListApplicationsParamsSortAmountDesc      ListApplicationsParamsSort = "amount_desc"
+	ListApplicationsParamsSortCreatedAtAsc    ListApplicationsParamsSort = "created_at_asc"
+	ListApplicationsParamsSortCreatedAtDesc   ListApplicationsParamsSort = "created_at_desc"
+	ListApplicationsParamsSortPublishedAtAsc  ListApplicationsParamsSort = "published_at_asc"
+	ListApplicationsParamsSortPublishedAtDesc ListApplicationsParamsSort = "published_at_desc"
+	ListApplicationsParamsSortTermAsc         ListApplicationsParamsSort = "term_asc"
+	ListApplicationsParamsSortTermDesc        ListApplicationsParamsSort = "term_desc"
 )
 
 // Valid indicates whether the value is a known member of the ListApplicationsParamsSort enum.
@@ -471,6 +473,10 @@ func (e ListApplicationsParamsSort) Valid() bool {
 	case ListApplicationsParamsSortCreatedAtAsc:
 		return true
 	case ListApplicationsParamsSortCreatedAtDesc:
+		return true
+	case ListApplicationsParamsSortPublishedAtAsc:
+		return true
+	case ListApplicationsParamsSortPublishedAtDesc:
 		return true
 	case ListApplicationsParamsSortTermAsc:
 		return true
@@ -1172,8 +1178,11 @@ type AdminListAMLFlagsParams struct {
 	Status         *AMLFlagStatus      `form:"status,omitempty" json:"status,omitempty"`
 	Severity       *AMLSeverity        `form:"severity,omitempty" json:"severity,omitempty"`
 	OrganizationID *openapi_types.UUID `form:"organization_id,omitempty" json:"organization_id,omitempty"`
-	Page           *Page               `form:"page,omitempty" json:"page,omitempty"`
-	PageSize       *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
+
+	// ApplicationID Флаги конкретной заявки (экран модерации)
+	ApplicationID *openapi_types.UUID `form:"application_id,omitempty" json:"application_id,omitempty"`
+	Page          *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize      *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // AdminResolveAMLFlagJSONBody defines parameters for AdminResolveAMLFlag.
@@ -1229,11 +1238,17 @@ type AdminListUsersParams struct {
 
 // ListApplicationsParams defines parameters for ListApplications.
 type ListApplicationsParams struct {
-	Status        []ApplicationStatus `form:"status,omitempty" json:"status,omitempty"`
-	TargetCountry *CountryCode        `form:"target_country,omitempty" json:"target_country,omitempty"`
-	Currency      *CurrencyCode       `form:"currency,omitempty" json:"currency,omitempty"`
-	AmountMin     *string             `form:"amount_min,omitempty" json:"amount_min,omitempty"`
-	AmountMax     *string             `form:"amount_max,omitempty" json:"amount_max,omitempty"`
+	Status []ApplicationStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// TargetCountry Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ
+	TargetCountry []CountryCode `form:"target_country,omitempty" json:"target_country,omitempty"`
+
+	// HasMyOffer Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
+	// `false` — только без моего оффера. Для других ролей игнорируется.
+	HasMyOffer *bool         `form:"has_my_offer,omitempty" json:"has_my_offer,omitempty"`
+	Currency   *CurrencyCode `form:"currency,omitempty" json:"currency,omitempty"`
+	AmountMin  *string       `form:"amount_min,omitempty" json:"amount_min,omitempty"`
+	AmountMax  *string       `form:"amount_max,omitempty" json:"amount_max,omitempty"`
 
 	// TermMin Минимальный срок, месяцев
 	TermMin *int `form:"term_min,omitempty" json:"term_min,omitempty"`
@@ -1258,10 +1273,15 @@ type ListApplicationOffersParams struct {
 
 // ListDealsParams defines parameters for ListDeals.
 type ListDealsParams struct {
-	CreatedFrom *CreatedFrom `form:"created_from,omitempty" json:"created_from,omitempty"`
-	CreatedTo   *CreatedTo   `form:"created_to,omitempty" json:"created_to,omitempty"`
-	Page        *Page        `form:"page,omitempty" json:"page,omitempty"`
-	PageSize    *PageSize    `form:"page_size,omitempty" json:"page_size,omitempty"`
+	// BorrowerOrganizationID Только для admin
+	BorrowerOrganizationID *openapi_types.UUID `form:"borrower_organization_id,omitempty" json:"borrower_organization_id,omitempty"`
+
+	// LenderOrganizationID Только для admin
+	LenderOrganizationID *openapi_types.UUID `form:"lender_organization_id,omitempty" json:"lender_organization_id,omitempty"`
+	CreatedFrom          *CreatedFrom        `form:"created_from,omitempty" json:"created_from,omitempty"`
+	CreatedTo            *CreatedTo          `form:"created_to,omitempty" json:"created_to,omitempty"`
+	Page                 *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize             *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // ListNotificationsParams defines parameters for ListNotifications.
