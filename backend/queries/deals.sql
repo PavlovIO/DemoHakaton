@@ -13,19 +13,41 @@ INSERT INTO deals (
     $9, $10, $11, $12, $13, $14
 ) RETURNING *;
 
--- name: GetDealByID :one
-SELECT * FROM deals WHERE id = $1;
+-- name: GetDealVisible :one
+-- Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
+-- несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
+SELECT * FROM deals
+WHERE id = sqlc.arg('id')
+  AND (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND borrower_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND lender_organization_id = sqlc.arg('viewer_org')::uuid)
+  );
 
--- name: ListDeals :many
+-- name: ListDealsVisible :many
 SELECT * FROM deals
 WHERE
-  (sqlc.narg('borrower_org_id')::uuid IS NULL OR borrower_organization_id = sqlc.narg('borrower_org_id')::uuid)
-  AND (sqlc.narg('lender_org_id')::uuid IS NULL OR lender_organization_id = sqlc.narg('lender_org_id')::uuid)
+  -- Блок видимости — символ в символ как в GetDealVisible (sqlc не умеет общие фрагменты).
+  (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND borrower_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND lender_organization_id = sqlc.arg('viewer_org')::uuid)
+  )
 ORDER BY agreed_at DESC
 LIMIT $1 OFFSET $2;
 
--- name: CountDeals :one
+-- name: CountDealsVisible :one
 SELECT count(*) FROM deals
 WHERE
-  (sqlc.narg('borrower_org_id')::uuid IS NULL OR borrower_organization_id = sqlc.narg('borrower_org_id')::uuid)
-  AND (sqlc.narg('lender_org_id')::uuid IS NULL OR lender_organization_id = sqlc.narg('lender_org_id')::uuid);
+  -- Блок видимости — символ в символ как в GetDealVisible (sqlc не умеет общие фрагменты).
+  (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND borrower_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND lender_organization_id = sqlc.arg('viewer_org')::uuid)
+  );

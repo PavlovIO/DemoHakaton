@@ -7,8 +7,22 @@ INSERT INTO applications (
     $1, $2, 'draft', $3, $4, $5, $6, $7, $8, $9
 ) RETURNING *;
 
--- name: GetApplicationByID :one
-SELECT * FROM applications WHERE id = $1;
+-- name: GetApplicationVisible :one
+-- Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
+-- одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
+-- Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
+SELECT * FROM applications
+WHERE applications.id = sqlc.arg('id')
+  AND (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND borrower_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND (status = 'published'
+             OR EXISTS (SELECT 1 FROM offers o
+                         WHERE o.application_id = applications.id
+                           AND o.lender_organization_id = sqlc.arg('viewer_org')::uuid)))
+  );
 
 -- name: GetApplicationForUpdate :one
 -- Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
@@ -70,15 +84,21 @@ UPDATE applications SET
 WHERE id = $1
 RETURNING *;
 
--- name: ListApplications :many
+-- name: ListApplicationsVisible :many
+-- Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 SELECT * FROM applications
 WHERE
-  (sqlc.narg('borrower_org_id')::uuid IS NULL OR borrower_organization_id = sqlc.narg('borrower_org_id')::uuid)
-  AND (sqlc.narg('lender_org_id')::uuid IS NULL OR 
-       (status = 'published' OR EXISTS (
-           SELECT 1 FROM offers o 
-           WHERE o.application_id = applications.id AND o.lender_organization_id = sqlc.narg('lender_org_id')::uuid
-       )))
+  -- Блок видимости — символ в символ как в GetApplicationVisible и Count/List (sqlc не умеет общие фрагменты).
+  (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND borrower_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND (status = 'published'
+             OR EXISTS (SELECT 1 FROM offers o
+                         WHERE o.application_id = applications.id
+                           AND o.lender_organization_id = sqlc.arg('viewer_org')::uuid)))
+  )
   AND (sqlc.narg('statuses')::application_status[] IS NULL OR status = ANY(sqlc.narg('statuses')::application_status[]))
   AND (sqlc.narg('target_country_code')::char(2) IS NULL OR target_country_code = sqlc.narg('target_country_code')::char(2))
   AND (sqlc.narg('currency')::char(3) IS NULL OR currency = sqlc.narg('currency')::char(3))
@@ -95,15 +115,20 @@ ORDER BY
   created_at DESC
 LIMIT $1 OFFSET $2;
 
--- name: CountApplications :one
+-- name: CountApplicationsVisible :one
 SELECT count(*) FROM applications
 WHERE
-  (sqlc.narg('borrower_org_id')::uuid IS NULL OR borrower_organization_id = sqlc.narg('borrower_org_id')::uuid)
-  AND (sqlc.narg('lender_org_id')::uuid IS NULL OR 
-       (status = 'published' OR EXISTS (
-           SELECT 1 FROM offers o 
-           WHERE o.application_id = applications.id AND o.lender_organization_id = sqlc.narg('lender_org_id')::uuid
-       )))
+  -- Блок видимости — символ в символ как в GetApplicationVisible и Count/List (sqlc не умеет общие фрагменты).
+  (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND borrower_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND (status = 'published'
+             OR EXISTS (SELECT 1 FROM offers o
+                         WHERE o.application_id = applications.id
+                           AND o.lender_organization_id = sqlc.arg('viewer_org')::uuid)))
+  )
   AND (sqlc.narg('statuses')::application_status[] IS NULL OR status = ANY(sqlc.narg('statuses')::application_status[]))
   AND (sqlc.narg('target_country_code')::char(2) IS NULL OR target_country_code = sqlc.narg('target_country_code')::char(2))
   AND (sqlc.narg('currency')::char(3) IS NULL OR currency = sqlc.narg('currency')::char(3))

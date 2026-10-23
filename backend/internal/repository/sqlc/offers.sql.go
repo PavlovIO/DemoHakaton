@@ -47,22 +47,37 @@ func (q *Queries) AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error) 
 	return i, err
 }
 
-const countOffers = `-- name: CountOffers :one
+const countOffersVisible = `-- name: CountOffersVisible :one
 SELECT count(*) FROM offers
 WHERE
-  ($1::uuid IS NULL OR lender_organization_id = $1::uuid)
-  AND ($2::uuid IS NULL OR application_id = $2::uuid)
-  AND ($3::offer_status[] IS NULL OR status = ANY($3::offer_status[]))
+  -- Блок видимости — символ в символ как в GetOfferVisible (sqlc не умеет общие фрагменты).
+  (
+       $1::user_role = 'admin'
+    OR ($1::user_role = 'lender'
+        AND lender_organization_id = $2::uuid)
+    OR ($1::user_role = 'borrower'
+        AND EXISTS (SELECT 1 FROM applications a
+                     WHERE a.id = offers.application_id
+                       AND a.borrower_organization_id = $2::uuid))
+  )
+  AND ($3::uuid IS NULL OR application_id = $3::uuid)
+  AND ($4::offer_status[] IS NULL OR status = ANY($4::offer_status[]))
 `
 
-type CountOffersParams struct {
-	LenderOrgID   pgtype.UUID   `json:"lender_org_id"`
+type CountOffersVisibleParams struct {
+	ViewerRole    UserRole      `json:"viewer_role"`
+	ViewerOrg     uuid.UUID     `json:"viewer_org"`
 	ApplicationID pgtype.UUID   `json:"application_id"`
 	Statuses      []OfferStatus `json:"statuses"`
 }
 
-func (q *Queries) CountOffers(ctx context.Context, arg CountOffersParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countOffers, arg.LenderOrgID, arg.ApplicationID, arg.Statuses)
+func (q *Queries) CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOffersVisible,
+		arg.ViewerRole,
+		arg.ViewerOrg,
+		arg.ApplicationID,
+		arg.Statuses,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -129,12 +144,31 @@ func (q *Queries) CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer
 	return i, err
 }
 
-const getOfferByID = `-- name: GetOfferByID :one
-SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers WHERE id = $1
+const getOfferVisible = `-- name: GetOfferVisible :one
+SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers
+WHERE offers.id = $1
+  AND (
+       $2::user_role = 'admin'
+    OR ($2::user_role = 'lender'
+        AND lender_organization_id = $3::uuid)
+    OR ($2::user_role = 'borrower'
+        AND EXISTS (SELECT 1 FROM applications a
+                     WHERE a.id = offers.application_id
+                       AND a.borrower_organization_id = $3::uuid))
+  )
 `
 
-func (q *Queries) GetOfferByID(ctx context.Context, id uuid.UUID) (Offer, error) {
-	row := q.db.QueryRow(ctx, getOfferByID, id)
+type GetOfferVisibleParams struct {
+	ID         uuid.UUID `json:"id"`
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
+}
+
+// Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
+// свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
+// EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
+func (q *Queries) GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (Offer, error) {
+	row := q.db.QueryRow(ctx, getOfferVisible, arg.ID, arg.ViewerRole, arg.ViewerOrg)
 	var i Offer
 	err := row.Scan(
 		&i.ID,
@@ -158,32 +192,20 @@ func (q *Queries) GetOfferByID(ctx context.Context, id uuid.UUID) (Offer, error)
 	return i, err
 }
 
-const listOffers = `-- name: ListOffers :many
-SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers
-WHERE
-  ($3::uuid IS NULL OR lender_organization_id = $3::uuid)
-  AND ($4::uuid IS NULL OR application_id = $4::uuid)
-  AND ($5::offer_status[] IS NULL OR status = ANY($5::offer_status[]))
+const listOffersByApplication = `-- name: ListOffersByApplication :many
+SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers 
+WHERE application_id = $1
+  AND ($2::offer_status[] IS NULL OR status = ANY($2::offer_status[]))
 ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
 `
 
-type ListOffersParams struct {
-	Limit         int32         `json:"limit"`
-	Offset        int32         `json:"offset"`
-	LenderOrgID   pgtype.UUID   `json:"lender_org_id"`
-	ApplicationID pgtype.UUID   `json:"application_id"`
+type ListOffersByApplicationParams struct {
+	ApplicationID uuid.UUID     `json:"application_id"`
 	Statuses      []OfferStatus `json:"statuses"`
 }
 
-func (q *Queries) ListOffers(ctx context.Context, arg ListOffersParams) ([]Offer, error) {
-	rows, err := q.db.Query(ctx, listOffers,
-		arg.Limit,
-		arg.Offset,
-		arg.LenderOrgID,
-		arg.ApplicationID,
-		arg.Statuses,
-	)
+func (q *Queries) ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error) {
+	rows, err := q.db.Query(ctx, listOffersByApplication, arg.ApplicationID, arg.Statuses)
 	if err != nil {
 		return nil, err
 	}
@@ -220,20 +242,44 @@ func (q *Queries) ListOffers(ctx context.Context, arg ListOffersParams) ([]Offer
 	return items, nil
 }
 
-const listOffersByApplication = `-- name: ListOffersByApplication :many
-SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers 
-WHERE application_id = $1
-  AND ($2::offer_status[] IS NULL OR status = ANY($2::offer_status[]))
+const listOffersVisible = `-- name: ListOffersVisible :many
+SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers
+WHERE
+  -- Блок видимости — символ в символ как в GetOfferVisible (sqlc не умеет общие фрагменты).
+  (
+       $3::user_role = 'admin'
+    OR ($3::user_role = 'lender'
+        AND lender_organization_id = $4::uuid)
+    OR ($3::user_role = 'borrower'
+        AND EXISTS (SELECT 1 FROM applications a
+                     WHERE a.id = offers.application_id
+                       AND a.borrower_organization_id = $4::uuid))
+  )
+  AND ($5::uuid IS NULL OR application_id = $5::uuid)
+  AND ($6::offer_status[] IS NULL OR status = ANY($6::offer_status[]))
 ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
 `
 
-type ListOffersByApplicationParams struct {
-	ApplicationID uuid.UUID     `json:"application_id"`
+type ListOffersVisibleParams struct {
+	Limit         int32         `json:"limit"`
+	Offset        int32         `json:"offset"`
+	ViewerRole    UserRole      `json:"viewer_role"`
+	ViewerOrg     uuid.UUID     `json:"viewer_org"`
+	ApplicationID pgtype.UUID   `json:"application_id"`
 	Statuses      []OfferStatus `json:"statuses"`
 }
 
-func (q *Queries) ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error) {
-	rows, err := q.db.Query(ctx, listOffersByApplication, arg.ApplicationID, arg.Statuses)
+// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
+func (q *Queries) ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]Offer, error) {
+	rows, err := q.db.Query(ctx, listOffersVisible,
+		arg.Limit,
+		arg.Offset,
+		arg.ViewerRole,
+		arg.ViewerOrg,
+		arg.ApplicationID,
+		arg.Statuses,
+	)
 	if err != nil {
 		return nil, err
 	}

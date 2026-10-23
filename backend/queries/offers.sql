@@ -7,8 +7,21 @@ INSERT INTO offers (
     $1, $2, $3, 'sent', $4, $5, $6, $7, $8, $9, $10, $11
 ) RETURNING *;
 
--- name: GetOfferByID :one
-SELECT * FROM offers WHERE id = $1;
+-- name: GetOfferVisible :one
+-- Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
+-- свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
+-- EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
+SELECT * FROM offers
+WHERE offers.id = sqlc.arg('id')
+  AND (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND lender_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND EXISTS (SELECT 1 FROM applications a
+                     WHERE a.id = offers.application_id
+                       AND a.borrower_organization_id = sqlc.arg('viewer_org')::uuid))
+  );
 
 -- name: ListOffersByApplication :many
 SELECT * FROM offers 
@@ -16,19 +29,38 @@ WHERE application_id = $1
   AND (sqlc.narg('statuses')::offer_status[] IS NULL OR status = ANY(sqlc.narg('statuses')::offer_status[]))
 ORDER BY created_at DESC;
 
--- name: ListOffers :many
+-- name: ListOffersVisible :many
+-- Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 SELECT * FROM offers
 WHERE
-  (sqlc.narg('lender_org_id')::uuid IS NULL OR lender_organization_id = sqlc.narg('lender_org_id')::uuid)
+  -- Блок видимости — символ в символ как в GetOfferVisible (sqlc не умеет общие фрагменты).
+  (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND lender_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND EXISTS (SELECT 1 FROM applications a
+                     WHERE a.id = offers.application_id
+                       AND a.borrower_organization_id = sqlc.arg('viewer_org')::uuid))
+  )
   AND (sqlc.narg('application_id')::uuid IS NULL OR application_id = sqlc.narg('application_id')::uuid)
   AND (sqlc.narg('statuses')::offer_status[] IS NULL OR status = ANY(sqlc.narg('statuses')::offer_status[]))
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
--- name: CountOffers :one
+-- name: CountOffersVisible :one
 SELECT count(*) FROM offers
 WHERE
-  (sqlc.narg('lender_org_id')::uuid IS NULL OR lender_organization_id = sqlc.narg('lender_org_id')::uuid)
+  -- Блок видимости — символ в символ как в GetOfferVisible (sqlc не умеет общие фрагменты).
+  (
+       sqlc.arg('viewer_role')::user_role = 'admin'
+    OR (sqlc.arg('viewer_role')::user_role = 'lender'
+        AND lender_organization_id = sqlc.arg('viewer_org')::uuid)
+    OR (sqlc.arg('viewer_role')::user_role = 'borrower'
+        AND EXISTS (SELECT 1 FROM applications a
+                     WHERE a.id = offers.application_id
+                       AND a.borrower_organization_id = sqlc.arg('viewer_org')::uuid))
+  )
   AND (sqlc.narg('application_id')::uuid IS NULL OR application_id = sqlc.narg('application_id')::uuid)
   AND (sqlc.narg('statuses')::offer_status[] IS NULL OR status = ANY(sqlc.narg('statuses')::offer_status[]));
 

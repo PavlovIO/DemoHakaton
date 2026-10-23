@@ -122,15 +122,20 @@ func (q *Queries) CancelApplication(ctx context.Context, id uuid.UUID) (Applicat
 	return i, err
 }
 
-const countApplications = `-- name: CountApplications :one
+const countApplicationsVisible = `-- name: CountApplicationsVisible :one
 SELECT count(*) FROM applications
 WHERE
-  ($1::uuid IS NULL OR borrower_organization_id = $1::uuid)
-  AND ($2::uuid IS NULL OR 
-       (status = 'published' OR EXISTS (
-           SELECT 1 FROM offers o 
-           WHERE o.application_id = applications.id AND o.lender_organization_id = $2::uuid
-       )))
+  -- Блок видимости — символ в символ как в GetApplicationVisible и Count/List (sqlc не умеет общие фрагменты).
+  (
+       $1::user_role = 'admin'
+    OR ($1::user_role = 'borrower'
+        AND borrower_organization_id = $2::uuid)
+    OR ($1::user_role = 'lender'
+        AND (status = 'published'
+             OR EXISTS (SELECT 1 FROM offers o
+                         WHERE o.application_id = applications.id
+                           AND o.lender_organization_id = $2::uuid)))
+  )
   AND ($3::application_status[] IS NULL OR status = ANY($3::application_status[]))
   AND ($4::char(2) IS NULL OR target_country_code = $4::char(2))
   AND ($5::char(3) IS NULL OR currency = $5::char(3))
@@ -140,9 +145,9 @@ WHERE
   AND ($9::int IS NULL OR term_months <= $9::int)
 `
 
-type CountApplicationsParams struct {
-	BorrowerOrgID     pgtype.UUID         `json:"borrower_org_id"`
-	LenderOrgID       pgtype.UUID         `json:"lender_org_id"`
+type CountApplicationsVisibleParams struct {
+	ViewerRole        UserRole            `json:"viewer_role"`
+	ViewerOrg         uuid.UUID           `json:"viewer_org"`
 	Statuses          []ApplicationStatus `json:"statuses"`
 	TargetCountryCode pgtype.Text         `json:"target_country_code"`
 	Currency          pgtype.Text         `json:"currency"`
@@ -152,10 +157,10 @@ type CountApplicationsParams struct {
 	TermMax           pgtype.Int4         `json:"term_max"`
 }
 
-func (q *Queries) CountApplications(ctx context.Context, arg CountApplicationsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countApplications,
-		arg.BorrowerOrgID,
-		arg.LenderOrgID,
+func (q *Queries) CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countApplicationsVisible,
+		arg.ViewerRole,
+		arg.ViewerOrg,
 		arg.Statuses,
 		arg.TargetCountryCode,
 		arg.Currency,
@@ -270,12 +275,53 @@ func (q *Queries) CreateStatusHistory(ctx context.Context, arg CreateStatusHisto
 	return i, err
 }
 
-const getApplicationByID = `-- name: GetApplicationByID :one
-SELECT id, number, borrower_organization_id, created_by_user_id, status, amount, currency, target_country_code, purpose, term_months, transfer_method, transfer_method_comment, moderation_comment, accepted_offer_id, submitted_at, published_at, created_at, updated_at FROM applications WHERE id = $1
+const getApplicationForUpdate = `-- name: GetApplicationForUpdate :one
+SELECT a.id, a.borrower_organization_id, a.status 
+FROM applications a
+WHERE a.id = (SELECT o.application_id FROM offers o WHERE o.id = $1) 
+FOR UPDATE OF a
 `
 
-func (q *Queries) GetApplicationByID(ctx context.Context, id uuid.UUID) (Application, error) {
-	row := q.db.QueryRow(ctx, getApplicationByID, id)
+type GetApplicationForUpdateRow struct {
+	ID                     uuid.UUID         `json:"id"`
+	BorrowerOrganizationID uuid.UUID         `json:"borrower_organization_id"`
+	Status                 ApplicationStatus `json:"status"`
+}
+
+// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
+func (q *Queries) GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getApplicationForUpdate, id)
+	var i GetApplicationForUpdateRow
+	err := row.Scan(&i.ID, &i.BorrowerOrganizationID, &i.Status)
+	return i, err
+}
+
+const getApplicationVisible = `-- name: GetApplicationVisible :one
+SELECT id, number, borrower_organization_id, created_by_user_id, status, amount, currency, target_country_code, purpose, term_months, transfer_method, transfer_method_comment, moderation_comment, accepted_offer_id, submitted_at, published_at, created_at, updated_at FROM applications
+WHERE applications.id = $1
+  AND (
+       $2::user_role = 'admin'
+    OR ($2::user_role = 'borrower'
+        AND borrower_organization_id = $3::uuid)
+    OR ($2::user_role = 'lender'
+        AND (status = 'published'
+             OR EXISTS (SELECT 1 FROM offers o
+                         WHERE o.application_id = applications.id
+                           AND o.lender_organization_id = $3::uuid)))
+  )
+`
+
+type GetApplicationVisibleParams struct {
+	ID         uuid.UUID `json:"id"`
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
+}
+
+// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
+// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
+// Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
+func (q *Queries) GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (Application, error) {
+	row := q.db.QueryRow(ctx, getApplicationVisible, arg.ID, arg.ViewerRole, arg.ViewerOrg)
 	var i Application
 	err := row.Scan(
 		&i.ID,
@@ -300,36 +346,20 @@ func (q *Queries) GetApplicationByID(ctx context.Context, id uuid.UUID) (Applica
 	return i, err
 }
 
-const getApplicationForUpdate = `-- name: GetApplicationForUpdate :one
-SELECT a.id, a.borrower_organization_id, a.status 
-FROM applications a
-WHERE a.id = (SELECT o.application_id FROM offers o WHERE o.id = $1) 
-FOR UPDATE OF a
-`
-
-type GetApplicationForUpdateRow struct {
-	ID                     uuid.UUID         `json:"id"`
-	BorrowerOrganizationID uuid.UUID         `json:"borrower_organization_id"`
-	Status                 ApplicationStatus `json:"status"`
-}
-
-// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
-func (q *Queries) GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getApplicationForUpdate, id)
-	var i GetApplicationForUpdateRow
-	err := row.Scan(&i.ID, &i.BorrowerOrganizationID, &i.Status)
-	return i, err
-}
-
-const listApplications = `-- name: ListApplications :many
+const listApplicationsVisible = `-- name: ListApplicationsVisible :many
 SELECT id, number, borrower_organization_id, created_by_user_id, status, amount, currency, target_country_code, purpose, term_months, transfer_method, transfer_method_comment, moderation_comment, accepted_offer_id, submitted_at, published_at, created_at, updated_at FROM applications
 WHERE
-  ($3::uuid IS NULL OR borrower_organization_id = $3::uuid)
-  AND ($4::uuid IS NULL OR 
-       (status = 'published' OR EXISTS (
-           SELECT 1 FROM offers o 
-           WHERE o.application_id = applications.id AND o.lender_organization_id = $4::uuid
-       )))
+  -- Блок видимости — символ в символ как в GetApplicationVisible и Count/List (sqlc не умеет общие фрагменты).
+  (
+       $3::user_role = 'admin'
+    OR ($3::user_role = 'borrower'
+        AND borrower_organization_id = $4::uuid)
+    OR ($3::user_role = 'lender'
+        AND (status = 'published'
+             OR EXISTS (SELECT 1 FROM offers o
+                         WHERE o.application_id = applications.id
+                           AND o.lender_organization_id = $4::uuid)))
+  )
   AND ($5::application_status[] IS NULL OR status = ANY($5::application_status[]))
   AND ($6::char(2) IS NULL OR target_country_code = $6::char(2))
   AND ($7::char(3) IS NULL OR currency = $7::char(3))
@@ -347,11 +377,11 @@ ORDER BY
 LIMIT $1 OFFSET $2
 `
 
-type ListApplicationsParams struct {
+type ListApplicationsVisibleParams struct {
 	Limit             int32               `json:"limit"`
 	Offset            int32               `json:"offset"`
-	BorrowerOrgID     pgtype.UUID         `json:"borrower_org_id"`
-	LenderOrgID       pgtype.UUID         `json:"lender_org_id"`
+	ViewerRole        UserRole            `json:"viewer_role"`
+	ViewerOrg         uuid.UUID           `json:"viewer_org"`
 	Statuses          []ApplicationStatus `json:"statuses"`
 	TargetCountryCode pgtype.Text         `json:"target_country_code"`
 	Currency          pgtype.Text         `json:"currency"`
@@ -362,12 +392,13 @@ type ListApplicationsParams struct {
 	SortBy            string              `json:"sort_by"`
 }
 
-func (q *Queries) ListApplications(ctx context.Context, arg ListApplicationsParams) ([]Application, error) {
-	rows, err := q.db.Query(ctx, listApplications,
+// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
+func (q *Queries) ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]Application, error) {
+	rows, err := q.db.Query(ctx, listApplicationsVisible,
 		arg.Limit,
 		arg.Offset,
-		arg.BorrowerOrgID,
-		arg.LenderOrgID,
+		arg.ViewerRole,
+		arg.ViewerOrg,
 		arg.Statuses,
 		arg.TargetCountryCode,
 		arg.Currency,

@@ -19,9 +19,9 @@ type Querier interface {
 	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
 	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
 	CancelApplication(ctx context.Context, id uuid.UUID) (Application, error)
-	CountApplications(ctx context.Context, arg CountApplicationsParams) (int64, error)
-	CountDeals(ctx context.Context, arg CountDealsParams) (int64, error)
-	CountOffers(ctx context.Context, arg CountOffersParams) (int64, error)
+	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
+	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
+	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
 	CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
@@ -44,32 +44,44 @@ type Querier interface {
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
 	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
-	GetApplicationByID(ctx context.Context, id uuid.UUID) (Application, error)
 	// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
 	GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error)
-	GetDealByID(ctx context.Context, id uuid.UUID) (Deal, error)
+	// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
+	// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
+	// Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
+	GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (Application, error)
+	// Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
+	// несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
+	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error)
 	GetLatestRegistryCheck(ctx context.Context, organizationID pgtype.UUID) (RegistryCheck, error)
-	GetOfferByID(ctx context.Context, id uuid.UUID) (Offer, error)
+	// Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
+	// свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
+	// EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
+	GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (Offer, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
+	// kyc_status читается на каждом запросе и не кэшируется: одобрение KYC действует со следующего.
+	// LEFT JOIN: у admin organization_id IS NULL (users_admin_org_chk), с INNER JOIN он не вошёл бы.
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
 	GetTopDemandCountries(ctx context.Context, limit int32) ([]GetTopDemandCountriesRow, error)
 	GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
-	ListApplications(ctx context.Context, arg ListApplicationsParams) ([]Application, error)
+	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
+	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]Application, error)
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
 	// fatf_high_risk: страна в чёрном или сером списке FATF.
 	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
 	ListCurrencies(ctx context.Context) ([]ListCurrenciesRow, error)
-	ListDeals(ctx context.Context, arg ListDealsParams) ([]Deal, error)
+	ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]Deal, error)
 	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error)
 	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
 	ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
-	ListOffers(ctx context.Context, arg ListOffersParams) ([]Offer, error)
 	ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error)
+	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
+	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]Offer, error)
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
