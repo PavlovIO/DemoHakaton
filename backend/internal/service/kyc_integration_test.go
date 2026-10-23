@@ -1,8 +1,13 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +16,7 @@ import (
 
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
 )
 
 // kycFixture — заёмщик в draft внутри внешней транзакции теста. Сервис открывает свои
@@ -69,8 +75,42 @@ func randomLEI() string {
 }
 
 func TestKycIntegration(t *testing.T) {
-	f := newKycFixture(t, service.KycDeps{})
+	dir := t.TempDir()
+	files, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	f := newKycFixture(t, service.KycDeps{Files: files})
 	ctx := context.Background()
+
+	t.Run("загрузка PNG и удаление", func(t *testing.T) {
+		png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{7}, 2048)...)
+		doc, err := f.kyc.UploadDocument(ctx, f.p, service.ClientMeta{UserAgent: "it"},
+			repository.KycDocumentTypeAddressProof, "адрес.png", bytes.NewReader(png))
+		if err != nil {
+			t.Fatalf("upload: %v", err)
+		}
+		docs, err := f.q.ListKycDocumentsByOrg(ctx, f.orgID)
+		if err != nil || len(docs) != 1 {
+			t.Fatalf("документы = %v, err %v", docs, err)
+		}
+		if docs[0].MimeType != "image/png" || len(docs[0].Sha256) != 32 || docs[0].SizeBytes != int64(len(png)) {
+			t.Fatalf("строка = %+v", docs[0])
+		}
+		if _, err := os.Stat(filepath.Join(dir, doc.StorageKey)); err != nil {
+			t.Fatalf("файла нет: %v", err)
+		}
+
+		if err := f.kyc.DeleteDocument(ctx, f.p, doc.ID); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+		if docs, _ := f.q.ListKycDocumentsByOrg(ctx, f.orgID); len(docs) != 0 {
+			t.Fatalf("строка осталась: %+v", docs)
+		}
+		if _, err := os.Stat(filepath.Join(dir, doc.StorageKey)); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("файл остался: %v", err)
+		}
+	})
 
 	t.Run("бенефициары: замена и очистка", func(t *testing.T) {
 		_, err := f.kyc.UpdateMyOrganization(ctx, f.p, service.OrganizationUpdateInput{

@@ -42,6 +42,7 @@ func NewRouter(h *Handler) http.Handler {
 		}),
 		middleware.SecurityHeaders(),
 		middleware.MaxBody(bodyLimit), // до валидатора: он читает тело целиком в память
+		uploadDeadlines,               // загрузке документа — 60 с вместо ReadTimeout сервера
 		middleware.WithRequestMeta(),
 		middleware.Authenticate(h.auth, WriteError),      // мягкий: только кладёт principal
 		middleware.Authorize(rules, BaseURL, WriteError), // 401 / 403 по x-roles и x-kyc-required

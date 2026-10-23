@@ -20,6 +20,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
 )
 
 const dbConnectTimeout = 5 * time.Second
@@ -50,6 +51,12 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 
+	// Каталог документов недоступен для записи — сервер не стартует, а не падает на загрузке.
+	documents, err := storage.NewLocal(cfg.DocumentStorageDir)
+	if err != nil {
+		return err
+	}
+
 	queries := repository.New(pool)
 	txManager := service.NewTxManager(pool)
 	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, service.NewMemoryRateLimiter(), service.DefaultAuthLimits)
@@ -57,7 +64,7 @@ func run(ctx context.Context) error {
 		DB:           pool,
 		Dicts:        service.NewDictionaries(queries),
 		Auth:         auth,
-		Kyc:          service.NewKyc(service.KycDeps{Store: queries, Tx: txManager}),
+		Kyc:          service.NewKyc(service.KycDeps{Store: queries, Tx: txManager, Files: documents}),
 		CookieSecure: cfg.CookieSecure,
 	})
 
