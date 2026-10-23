@@ -32,7 +32,7 @@ func TestRequestValidation(t *testing.T) {
 		{name: "ok путь", method: "GET", path: "/api/v1/dictionaries/countries", wantStatus: 200},
 		{name: "registry lookup без сессии", method: "GET", path: "/api/v1/registry/lookup", wantStatus: 400, wantCode: "VALIDATION_ERROR"},
 		{name: "ok query -> заглушка", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
-		{name: "ok тело -> заглушка", method: "PATCH", path: "/api/v1/organizations/me", body: `{"name":"Acme GmbH"}`, ctype: "application/json", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
+		{name: "ok тело -> заглушка", method: "PATCH", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", body: `{"term_months":12}`, ctype: "application/json", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
 		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 501},
 		// HEAD: ServeMux сопоставляет его с GET-паттернами, валидатор (gorillamux) — нет; раньше было 200.
 		{name: "HEAD как GET", method: "HEAD", path: "/api/v1/dictionaries/countries", wantStatus: 200},

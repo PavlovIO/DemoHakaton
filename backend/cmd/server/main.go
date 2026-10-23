@@ -57,6 +57,7 @@ func run(ctx context.Context) error {
 		DB:           pool,
 		Dicts:        service.NewDictionaries(queries),
 		Auth:         auth,
+		Kyc:          service.NewKyc(service.KycDeps{Store: queries, Tx: txManager}),
 		CookieSecure: cfg.CookieSecure,
 	})
 

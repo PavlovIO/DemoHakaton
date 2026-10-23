@@ -175,20 +175,8 @@ func meToAPI(me *service.Me) api.Me {
 
 	var organization *api.Organization
 	if me.Organization != nil {
-		organization = &api.Organization{
-			ID:                 me.Organization.ID,
-			Type:               api.OrganizationType(me.Organization.Type),
-			Name:               me.Organization.Name,
-			CountryCode:        me.Organization.CountryCode,
-			RegistrationNumber: me.Organization.RegistrationNumber,
-			LEI:                me.Organization.LEI,
-			LegalAddress:       me.Organization.LegalAddress,
-			KYCStatus:          api.KYCStatus(me.Organization.KycStatus),
-			CreatedAt:          me.Organization.CreatedAt,
-			VerifiedAt:         me.Organization.VerifiedAt,
-			KYCRejectReason:    me.Organization.KycRejectReason,
-			Beneficiaries:      []api.Beneficiary{},
-		}
+		org := organizationToAPI(me.Organization, nil)
+		organization = &org
 	}
 	return api.Me{User: user, Organization: organization}
 }

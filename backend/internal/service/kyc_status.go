@@ -43,13 +43,18 @@ var kycActionTarget = map[KycAction]repository.KycStatus{
 	KycReject:  repository.KycStatusRejected,
 }
 
+// kycEditDenied — 409 на правку профиля или документов вне draft и rejected.
+func kycEditDenied() *apperr.Error {
+	return apperr.New(apperr.CodeInvalidTransition, "Профиль и документы можно менять только в статусах draft и rejected")
+}
+
 // nextKycStatus — статус после действия или 409 INVALID_STATUS_TRANSITION.
 func nextKycStatus(from repository.KycStatus, action KycAction) (repository.KycStatus, error) {
 	if to, ok := kycTransitions[from][action]; ok {
 		return to, nil
 	}
 	if action == KycEdit {
-		return "", apperr.New(apperr.CodeInvalidTransition, "Профиль и документы можно менять только в статусах draft и rejected")
+		return "", kycEditDenied()
 	}
 	return "", apperr.InvalidTransition(string(from), string(kycActionTarget[action]))
 }

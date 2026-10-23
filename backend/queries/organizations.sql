@@ -95,6 +95,8 @@ DELETE FROM beneficiaries
 WHERE organization_id = $1;
 
 -- name: CreateBeneficiary :one
-INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent)
-VALUES ($1, $2, $3, $4)
+-- clock_timestamp(), а не DEFAULT now(): список вставляется одной транзакцией, now() у всех
+-- строк одинаковый, и ORDER BY created_at в ListBeneficiariesByOrg потерял бы порядок из PATCH.
+INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent, created_at)
+VALUES ($1, $2, $3, $4, clock_timestamp())
 RETURNING *;

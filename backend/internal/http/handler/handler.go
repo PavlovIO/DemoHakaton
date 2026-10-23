@@ -63,11 +63,18 @@ type AuthService interface {
 	Authenticate(ctx context.Context, token string) (*service.Principal, error)
 }
 
+// KycService — профиль компании, бенефициары, KYC-документы (service.Kyc).
+type KycService interface {
+	MyOrganization(ctx context.Context, p service.Principal) (service.OrganizationProfile, error)
+	UpdateMyOrganization(ctx context.Context, p service.Principal, in service.OrganizationUpdateInput) (service.OrganizationProfile, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
 	DB           Pinger
 	Dicts        DictionaryService
 	Auth         AuthService
+	Kyc          KycService
 	CookieSecure bool
 }
 
@@ -76,6 +83,7 @@ type Handler struct {
 	db           Pinger
 	dicts        DictionaryService
 	auth         AuthService
+	kyc          KycService
 	cookieSecure bool
 }
 
@@ -94,5 +102,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, cookieSecure: d.CookieSecure}
 }
