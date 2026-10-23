@@ -3,7 +3,7 @@
 Go-сервер (net/http, PostgreSQL), который реализует контракт [`api/openapi.yaml`](../api/openapi.yaml). Контракт — источник правды: по нему генерируются Go-сервер (oapi-codegen) и TS-клиент фронта (openapi-typescript), а каждый входящий запрос валидируется по нему в рантайме. В этом файле — что за API, как им пользоваться и как устроен код. Поля и схемы целиком — в самой спеке.
 
 - Запуск локально, команды `make` — [корневой README](../README.md#запуск-бэкенда).
-- Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег).
+- Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег), [ADR-0004](../docs/adr/0004-authorization.md) (авторизация).
 - Схема БД — [`docs/db/schema.md`](../docs/db/schema.md).
 - Пишете код бэкенда — начните с [«Как устроен код»](#как-устроен-код): где пишем руками, а что генерируется.
 
@@ -51,14 +51,27 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 3. Фронт ходит с `credentials: "include"`.
 4. Rate limit проверяется до хэширования пароля: `login` — 10 попыток на один email и 50 с одного IP за 15 минут (успешный вход сбрасывает счётчик email), `register` — 10 с одного IP за час. Превышение — `429 RATE_LIMITED` с заголовком `Retry-After`. Счётчики в памяти процесса.
 
-Без сессии доступны только: `POST /auth/register`, `POST /auth/login`, справочники `GET /dictionaries/*`, `GET /registry/lookup` и `GET /healthz`. Всё остальное без сессии — `401 UNAUTHORIZED`.
+Без сессии доступны операции с `security: []` в спеке: `POST /auth/register`, `POST /auth/login`, справочники `GET /dictionaries/*`, `GET /registry/lookup` и `GET /healthz`. Всё остальное без сессии — `401 UNAUTHORIZED`.
 
 ### Роли и доступ
 
-- **Роль** пользователя — `borrower` (заёмщик, РФ), `lender` (кредитор, не РФ) или `admin` — определяет, какие операции ему доступны.
-- **Владение** проверяется на каждой сущности: запрос в SQL всегда содержит `AND org_id = <моя организация>`. Чужая сущность отвечает **`404`**, а не `403`: так нельзя перебором узнать, что объект существует (защита от IDOR).
+- **Роль** пользователя — `borrower` (заёмщик, РФ), `lender` (кредитор, не РФ) или `admin` — определяет, какие операции ему доступны. Роли операции записаны в спеке расширением `x-roles`, требование KYC — `x-kyc-required: true`; их проверяет `middleware.Authorize`, а сервис повторяет проверку роли ([ADR-0004](../docs/adr/0004-authorization.md)).
+- **Владение** проверяется на каждой сущности в SQL: заявки, офферы и сделки читаются только запросами `*Visible` с обязательными `viewer_role`/`viewer_org`. Чужая сущность отвечает **`404`**, а не `403`: так нельзя перебором узнать, что объект существует (защита от IDOR).
 - **Списки** `GET /applications`, `GET /offers`, `GET /deals` зависят от роли: один и тот же эндпоинт отдаёт заёмщику его заявки, кредитору — витрину опубликованных и т.д.
 - Пока компания не прошла KYC (`kyc_status != verified`), она не может создавать заявки и офферы — `403 KYC_NOT_VERIFIED`.
+
+Порядок проверок на каждый запрос:
+
+| # | Ситуация | Ответ | Где |
+|---|---|---|---|
+| 1 | путь или метод не из спеки | `404 NOT_FOUND` | валидатор |
+| 2 | операция публичная (`security: []`) | пропускается с сессией и без | `middleware.Authorize` |
+| 3 | нет сессии, она истекла или пользователь заблокирован | `401 UNAUTHORIZED` | `middleware.Authorize` |
+| 4 | роли нет в `x-roles` операции | `403 FORBIDDEN` | `middleware.Authorize` |
+| 5 | `x-kyc-required`, а компания не `verified` | `403 KYC_NOT_VERIFIED` | `middleware.Authorize` |
+| 6 | мутирующий запрос без `X-CSRF-Token` или с чужим | `403 CSRF_INVALID` | `middleware.CSRF` |
+| 7 | запрос не соответствует схеме | `400 VALIDATION_ERROR` | валидатор |
+| 8 | сущность чужая **или** не существует | `404 NOT_FOUND` | SQL `*Visible` |
 
 ### Деньги, проценты, коды
 
@@ -284,7 +297,9 @@ curl -b b.txt $API/deals
 cmd/server/main.go            сборка зависимостей вручную, http.Server, graceful shutdown
 internal/
   http/                       СЛОЙ 1 — транспорт
-    middleware/               RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta, Authenticate, CSRF
+    middleware/               RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta,
+                              Authenticate (сессия → principal), Authorize (x-roles, x-kyc-required),
+                              CSRF
     handler/                  пишем руками: *Handler реализует контракт
       <tag>.go                операции тега: auth.go, offers.go, … (заглушки → 501)
       router.go               цепочка middleware + роутинг всех тегов
@@ -314,7 +329,7 @@ queries/                      SQL для sqlc
 
 К ним ведёт F12 из `handler/<tag>.go`. Модели (`Offer`, `Error`, enum'ы) — в `internal/http/api/models.gen.go`.
 
-Путь запроса `GET /api/v1/dictionaries/countries`: `RequestLog → Recover → MaxBody → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
+Путь запроса `GET /api/v1/dictionaries/countries`: `RequestLog → Recover → SecurityHeaders → MaxBody → WithRequestMeta → Authenticate → Authorize → CSRF → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
 
 Почему модели — один пакет, а сервер — пакет на тег: схемы ссылаются друг на друга по кругу (`organizations` ↔ `auth` ↔ `aml`), а Go запрещает циклы импортов. Операции же независимы, поэтому каждый тег — свой пакет со своим интерфейсом на 1–13 методов ([ADR-0003](../docs/adr/0003-server-package-per-tag.md)). sqlc устроен так же: запросы по доменам, `models.go` общий.
 
@@ -322,9 +337,9 @@ queries/                      SQL для sqlc
 
 Пошаговая инструкция — в комментарии пакета [`internal/http/handler/handler.go`](internal/http/handler/handler.go). Образец — справочники: [`handler/dictionaries.go`](internal/http/handler/dictionaries.go) + [`dictionaries_test.go`](internal/http/handler/dictionaries_test.go) + [`service/dictionaries.go`](internal/service/dictionaries.go). Коротко:
 
-1. Изменить контракт (если нужно) в `api/paths/<tag>.yaml` / `api/schemas/*.yaml` → `make gen`.
+1. Изменить контракт (если нужно) в `api/paths/<tag>.yaml` / `api/schemas/*.yaml` → `make gen`. У новой операции указать `x-roles` (и `x-kyc-required`, если нужен KYC) и ответ `403` — без них не пройдут тесты.
 2. SQL — в `queries/<домен>.sql` → `make gen`.
-3. Логика — в `internal/service`, с табличными тестами.
+3. Логика — в `internal/service`, с табличными тестами. Principal — через `currentPrincipal(ctx)`; сущность читать через `*Visible` с `p.ViewerRole()`, `p.ViewerOrg()`.
 4. В `handler/<tag>.go` заменить тело заглушки: вызвать сервис, перевести типы. Ошибки — `return nil, apperr.X(...)`, статус выберет `errors.go`.
 
 ### Тесты

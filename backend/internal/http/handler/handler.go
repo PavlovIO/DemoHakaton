@@ -11,6 +11,9 @@
 //  2. Новый тег в спеке = новый пакет <tag>api (скопировать gen.go и register.go соседнего),
 //     строки в generatedTags (routes_test.go), в routes() (router.go) и в проверках ниже.
 //  3. Бизнес-логику держать в internal/service; хендлер только переводит api-типы ⇄ доменные.
+//     У операции в спеке — x-roles (и x-kyc-required): их проверяет middleware.Authorize.
+//     Principal брать через currentPrincipal(ctx); сущность читать запросами *Visible
+//     с p.ViewerRole(), p.ViewerOrg() — чужое и несуществующее дают 404.
 //  4. Ошибки НЕ собирать через типизированные XxxNNNJSONResponse: вернуть nil, apperr.X(...).
 //     Маппинг код → HTTP-статус централизован в errors.go (WriteError).
 //     Типизированные ответы используются только для успешных ответов (и Healthz503).
