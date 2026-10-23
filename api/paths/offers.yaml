@@ -4,6 +4,7 @@ paths:
     get:
       tags: [offers]
       operationId: listOffers
+      x-roles: [borrower, lender, admin]
       summary: Список офферов (role-scoped) — «мои предложения», входящие, архив
       description: |
         - `lender` — офферы своей компании;
@@ -45,6 +46,7 @@ paths:
     get:
       tags: [offers]
       operationId: getOffer
+      x-roles: [borrower, lender, admin]
       summary: Карточка оффера (видят только автор-кредитор, заёмщик-владелец заявки, admin)
       parameters:
         - $ref: '../components.yaml#/components/parameters/OfferId'
@@ -62,6 +64,7 @@ paths:
     post:
       tags: [offers]
       operationId: acceptOffer
+      x-roles: [borrower]
       summary: Принять оффер (borrower-владелец заявки)
       description: |
         Одна транзакция БД с `SELECT ... FOR UPDATE` на заявку:
@@ -85,6 +88,7 @@ paths:
     post:
       tags: [offers]
       operationId: rejectOffer
+      x-roles: [borrower]
       summary: Отклонить оффер (borrower-владелец заявки)
       parameters:
         - $ref: '../components.yaml#/components/parameters/OfferId'
@@ -111,6 +115,7 @@ paths:
     post:
       tags: [offers]
       operationId: withdrawOffer
+      x-roles: [lender]
       summary: Отозвать свой оффер (lender, только из sent)
       parameters:
         - $ref: '../components.yaml#/components/parameters/OfferId'

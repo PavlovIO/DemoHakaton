@@ -55,6 +55,7 @@ paths:
     post:
       tags: [auth]
       operationId: logout
+      x-roles: [borrower, lender, admin]
       summary: Выход (инвалидирует сессию, чистит cookie)
       responses:
         '204': { description: Вышел }
@@ -65,6 +66,7 @@ paths:
     get:
       tags: [auth]
       operationId: getMe
+      x-roles: [borrower, lender, admin]
       summary: Текущий пользователь и его компания
       responses:
         '200':

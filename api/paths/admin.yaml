@@ -4,6 +4,7 @@ paths:
     get:
       tags: [admin]
       operationId: adminListOrganizations
+      x-roles: [admin]
       summary: Компании (очередь верификации — kyc_status=under_review)
       parameters:
         - name: kyc_status
@@ -38,6 +39,7 @@ paths:
     get:
       tags: [admin]
       operationId: adminGetOrganization
+      x-roles: [admin]
       summary: Полная карточка компании для проверки (документы, бенефициары, AML-флаги, пользователи)
       parameters:
         - $ref: '../components.yaml#/components/parameters/OrganizationId'
@@ -55,6 +57,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminApproveKyc
+      x-roles: [admin]
       summary: Верифицировать компанию (under_review → verified)
       description: 409, если у компании есть открытые AML-флаги с severity=high.
       parameters:
@@ -79,6 +82,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminRejectKyc
+      x-roles: [admin]
       summary: Отклонить верификацию (under_review → rejected) с причиной
       parameters:
         - $ref: '../components.yaml#/components/parameters/OrganizationId'
@@ -103,6 +107,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminApproveApplication
+      x-roles: [admin]
       summary: Одобрить заявку (moderation → published)
       description: Очередь модерации — `GET /applications?status=moderation` под admin.
       parameters:
@@ -127,6 +132,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminRejectApplication
+      x-roles: [admin]
       summary: Вернуть заявку на доработку (moderation → rejected) с причиной
       parameters:
         - $ref: '../components.yaml#/components/parameters/ApplicationId'
@@ -151,6 +157,7 @@ paths:
     get:
       tags: [admin]
       operationId: adminListUsers
+      x-roles: [admin]
       parameters:
         - name: role
           in: query
@@ -177,6 +184,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminBlockUser
+      x-roles: [admin]
       summary: Заблокировать пользователя (инвалидирует все его сессии)
       parameters:
         - $ref: '../components.yaml#/components/parameters/UserId'
@@ -199,6 +207,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminUnblockUser
+      x-roles: [admin]
       parameters:
         - $ref: '../components.yaml#/components/parameters/UserId'
       responses:
@@ -215,6 +224,7 @@ paths:
     get:
       tags: [admin]
       operationId: adminListAmlFlags
+      x-roles: [admin]
       summary: AML-флаги (rule-based скрининг)
       parameters:
         - name: status
@@ -241,6 +251,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminResolveAmlFlag
+      x-roles: [admin]
       parameters:
         - name: flagId
           in: path
@@ -274,6 +285,7 @@ paths:
     get:
       tags: [admin]
       operationId: adminAnalyticsSummary
+      x-roles: [admin]
       summary: Базовая аналитика — количество заявок, средний размер, топ-страны
       parameters:
         - $ref: '../components.yaml#/components/parameters/CreatedFrom'
@@ -294,6 +306,7 @@ paths:
     get:
       tags: [admin]
       operationId: adminListAuditLog
+      x-roles: [admin]
       summary: Журнал действий пользователей
       parameters:
         - name: user_id

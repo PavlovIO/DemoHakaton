@@ -4,6 +4,7 @@ paths:
     get:
       tags: [organizations]
       operationId: getMyOrganization
+      x-roles: [borrower, lender]
       summary: Профиль своей компании
       responses:
         '200':
@@ -16,6 +17,7 @@ paths:
     patch:
       tags: [organizations]
       operationId: updateMyOrganization
+      x-roles: [borrower, lender]
       summary: Редактирование профиля (только в статусах draft / rejected)
       requestBody:
         required: true
@@ -37,6 +39,7 @@ paths:
     get:
       tags: [organizations]
       operationId: listMyDocuments
+      x-roles: [borrower, lender]
       summary: Загруженные KYC-документы своей компании
       responses:
         '200':
@@ -51,6 +54,7 @@ paths:
     post:
       tags: [organizations]
       operationId: uploadMyDocument
+      x-roles: [borrower, lender]
       summary: Загрузить KYC-документ
       description: |
         Допустимые типы файлов: PDF, PNG, JPEG; максимум 10 MB.
@@ -89,6 +93,7 @@ paths:
     delete:
       tags: [organizations]
       operationId: deleteMyDocument
+      x-roles: [borrower, lender]
       summary: Удалить свой документ (только в статусах draft / rejected)
       parameters:
         - $ref: '../components.yaml#/components/parameters/DocumentId'
@@ -103,6 +108,7 @@ paths:
     get:
       tags: [organizations]
       operationId: downloadDocument
+      x-roles: [borrower, lender, admin]
       summary: Скачать файл документа (владелец-организация или admin)
       parameters:
         - $ref: '../components.yaml#/components/parameters/DocumentId'
@@ -122,6 +128,7 @@ paths:
     post:
       tags: [organizations]
       operationId: submitKyc
+      x-roles: [borrower, lender]
       summary: Отправить компанию на верификацию
       description: |
         `draft|rejected → under_review`. Проверяет, что загружены обязательные документы:

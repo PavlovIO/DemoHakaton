@@ -29,6 +29,20 @@ info:
     один и тот же эндпоинт возвращает разный набор данных в зависимости от роли.
     Компания с `kyc_status != verified` не может создавать заявки и офферы (403 `KYC_NOT_VERIFIED`).
 
+    Роли, которым доступна операция, — расширение `x-roles` у операции; требование KYC — `x-kyc-required: true`.
+    Публичные операции — `security: []`, у них `x-roles` нет. Порядок проверок на каждый запрос:
+
+    | # | Ситуация | Ответ |
+    |---|---|---|
+    | 1 | путь или метод не из спеки | 404 `NOT_FOUND` |
+    | 2 | операция публичная (`security: []`) | пропускается с сессией и без неё |
+    | 3 | нет сессии, сессия истекла или пользователь заблокирован | 401 `UNAUTHORIZED` |
+    | 4 | роли пользователя нет в `x-roles` | 403 `FORBIDDEN` |
+    | 5 | `x-kyc-required: true`, а у компании `kyc_status != verified` | 403 `KYC_NOT_VERIFIED` |
+    | 6 | мутирующий запрос без `X-CSRF-Token` или с чужим | 403 `CSRF_INVALID` |
+    | 7 | запрос не соответствует схеме | 400 `VALIDATION_ERROR` |
+    | 8 | сущность чужая или не существует | 404 `NOT_FOUND` — одинаково |
+
     ## Деньги и проценты
     Суммы и проценты передаются **строками** в десятичном формате (`"500000.00"`, `"8.00"`),
     чтобы избежать потери точности float в JSON. В БД — `NUMERIC`.
@@ -114,6 +128,8 @@ paths:
       summary: Компании (очередь верификации — kyc_status=under_review)
       tags:
         - admin
+      x-roles:
+        - admin
   /admin/organizations/{organizationId}:
     get:
       operationId: adminGetOrganization
@@ -134,6 +150,8 @@ paths:
           $ref: '#/components/responses/NotFound'
       summary: Полная карточка компании для проверки (документы, бенефициары, AML-флаги, пользователи)
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/organizations/{organizationId}/kyc/approve:
     post:
@@ -163,6 +181,8 @@ paths:
           $ref: '#/components/responses/InvalidTransition'
       summary: Верифицировать компанию (under_review → verified)
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/organizations/{organizationId}/kyc/reject:
     post:
@@ -195,6 +215,8 @@ paths:
       summary: Отклонить верификацию (under_review → rejected) с причиной
       tags:
         - admin
+      x-roles:
+        - admin
   /admin/applications/{applicationId}/approve:
     post:
       description: Очередь модерации — `GET /applications?status=moderation` под admin.
@@ -223,6 +245,8 @@ paths:
           $ref: '#/components/responses/InvalidTransition'
       summary: Одобрить заявку (moderation → published)
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/applications/{applicationId}/reject:
     post:
@@ -254,6 +278,8 @@ paths:
           $ref: '#/components/responses/InvalidTransition'
       summary: Вернуть заявку на доработку (moderation → rejected) с причиной
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/users:
     get:
@@ -288,6 +314,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
       tags:
         - admin
+      x-roles:
+        - admin
   /admin/users/{userId}/block:
     post:
       operationId: adminBlockUser
@@ -315,6 +343,8 @@ paths:
       summary: Заблокировать пользователя (инвалидирует все его сессии)
       tags:
         - admin
+      x-roles:
+        - admin
   /admin/users/{userId}/unblock:
     post:
       operationId: adminUnblockUser
@@ -334,6 +364,8 @@ paths:
         "404":
           $ref: '#/components/responses/NotFound'
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/aml/flags:
     get:
@@ -367,6 +399,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
       summary: AML-флаги (rule-based скрининг)
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/aml/flags/{flagId}/resolve:
     post:
@@ -416,6 +450,8 @@ paths:
           $ref: '#/components/responses/InvalidTransition'
       tags:
         - admin
+      x-roles:
+        - admin
   /admin/analytics/summary:
     get:
       operationId: adminAnalyticsSummary
@@ -442,6 +478,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
       summary: Базовая аналитика — количество заявок, средний размер, топ-страны
       tags:
+        - admin
+      x-roles:
         - admin
   /admin/audit-log:
     get:
@@ -482,6 +520,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
       summary: Журнал действий пользователей
       tags:
+        - admin
+      x-roles:
         - admin
   /applications:
     get:
@@ -569,6 +609,10 @@ paths:
       summary: Список заявок (role-scoped) — витрина, «мои заявки», архив
       tags:
         - applications
+      x-roles:
+        - borrower
+        - lender
+        - admin
     post:
       operationId: createApplication
       requestBody:
@@ -593,6 +637,9 @@ paths:
       summary: Создать заявку (borrower, KYC verified) — в статусе draft
       tags:
         - applications
+      x-kyc-required: true
+      x-roles:
+        - borrower
   /applications/{applicationId}:
     get:
       description: borrower — своя; lender — published или с его оффером; admin — любая. Иначе 404.
@@ -615,6 +662,10 @@ paths:
       summary: Карточка заявки
       tags:
         - applications
+      x-roles:
+        - borrower
+        - lender
+        - admin
     patch:
       operationId: updateApplication
       parameters:
@@ -645,6 +696,8 @@ paths:
       summary: Редактировать заявку (владелец, статусы draft / rejected)
       tags:
         - applications
+      x-roles:
+        - borrower
   /applications/{applicationId}/submit:
     post:
       description: Запускает AML-правила по заявке (порог суммы, high-risk юрисдикция). Админ получает уведомление.
@@ -669,6 +722,8 @@ paths:
       summary: Отправить на модерацию (draft|rejected → moderation)
       tags:
         - applications
+      x-roles:
+        - borrower
   /applications/{applicationId}/cancel:
     post:
       description: Все `sent`-офферы → `rejected` (reason `application_cancelled`).
@@ -693,6 +748,8 @@ paths:
       summary: Отменить заявку (владелец; любой статус, кроме agreed/cancelled)
       tags:
         - applications
+      x-roles:
+        - borrower
   /applications/{applicationId}/reject-offers:
     post:
       operationId: rejectAllOffers
@@ -721,6 +778,8 @@ paths:
       summary: Отклонить все текущие офферы (владелец); заявка остаётся published
       tags:
         - applications
+      x-roles:
+        - borrower
   /applications/{applicationId}/history:
     get:
       operationId: getApplicationHistory
@@ -744,6 +803,10 @@ paths:
       summary: История смены статусов заявки и её офферов
       tags:
         - applications
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /applications/{applicationId}/offers:
     get:
       description: borrower-владелец и admin видят все; lender — только свой. Другим — 404.
@@ -776,6 +839,10 @@ paths:
       summary: Офферы по заявке
       tags:
         - offers
+      x-roles:
+        - borrower
+        - lender
+        - admin
     post:
       description: |
         `amount` ≤ сумме заявки; валюта = валюте заявки.
@@ -809,6 +876,9 @@ paths:
       summary: Сделать оффер (lender, KYC verified, заявка published)
       tags:
         - offers
+      x-kyc-required: true
+      x-roles:
+        - lender
   /auth/register:
     post:
       description: |
@@ -885,6 +955,10 @@ paths:
       summary: Выход (инвалидирует сессию, чистит cookie)
       tags:
         - auth
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /auth/me:
     get:
       operationId: getMe
@@ -902,6 +976,10 @@ paths:
       summary: Текущий пользователь и его компания
       tags:
         - auth
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /offers/{offerId}/messages:
     get:
       description: |
@@ -941,6 +1019,10 @@ paths:
       summary: Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
       tags:
         - chat
+      x-roles:
+        - borrower
+        - lender
+        - admin
     post:
       description: Текст хранится как есть и рендерится фронтом только как текст (никакого HTML).
       operationId: sendMessage
@@ -974,6 +1056,9 @@ paths:
       summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
       tags:
         - chat
+      x-roles:
+        - borrower
+        - lender
   /deals:
     get:
       operationId: listDeals
@@ -996,6 +1081,10 @@ paths:
       summary: Сделки (role-scoped — стороны сделки или admin)
       tags:
         - deals
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /deals/{dealId}:
     get:
       operationId: getDeal
@@ -1022,6 +1111,10 @@ paths:
       summary: Карточка сделки
       tags:
         - deals
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /dictionaries/countries:
     get:
       operationId: listCountries
@@ -1095,6 +1188,10 @@ paths:
       summary: Уведомления текущего пользователя (polling)
       tags:
         - notifications
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /notifications/{notificationId}/read:
     post:
       operationId: markNotificationRead
@@ -1116,6 +1213,10 @@ paths:
           $ref: '#/components/responses/NotFound'
       tags:
         - notifications
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /notifications/read-all:
     post:
       operationId: markAllNotificationsRead
@@ -1128,6 +1229,10 @@ paths:
           $ref: '#/components/responses/Forbidden'
       tags:
         - notifications
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /offers:
     get:
       description: |
@@ -1179,6 +1284,10 @@ paths:
       summary: Список офферов (role-scoped) — «мои предложения», входящие, архив
       tags:
         - offers
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /offers/{offerId}:
     get:
       operationId: getOffer
@@ -1200,6 +1309,10 @@ paths:
       summary: Карточка оффера (видят только автор-кредитор, заёмщик-владелец заявки, admin)
       tags:
         - offers
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /offers/{offerId}/accept:
     post:
       description: |
@@ -1228,6 +1341,8 @@ paths:
       summary: Принять оффер (borrower-владелец заявки)
       tags:
         - offers
+      x-roles:
+        - borrower
   /offers/{offerId}/reject:
     post:
       operationId: rejectOffer
@@ -1260,6 +1375,8 @@ paths:
       summary: Отклонить оффер (borrower-владелец заявки)
       tags:
         - offers
+      x-roles:
+        - borrower
   /offers/{offerId}/withdraw:
     post:
       operationId: withdrawOffer
@@ -1283,6 +1400,8 @@ paths:
       summary: Отозвать свой оффер (lender, только из sent)
       tags:
         - offers
+      x-roles:
+        - lender
   /organizations/me:
     get:
       operationId: getMyOrganization
@@ -1300,6 +1419,9 @@ paths:
       summary: Профиль своей компании
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
     patch:
       operationId: updateMyOrganization
       requestBody:
@@ -1326,6 +1448,9 @@ paths:
       summary: Редактирование профиля (только в статусах draft / rejected)
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
   /organizations/me/documents:
     get:
       operationId: listMyDocuments
@@ -1345,6 +1470,9 @@ paths:
       summary: Загруженные KYC-документы своей компании
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
     post:
       description: |
         Допустимые типы файлов: PDF, PNG, JPEG; максимум 10 MB.
@@ -1391,6 +1519,9 @@ paths:
       summary: Загрузить KYC-документ
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
   /organizations/me/documents/{documentId}:
     delete:
       operationId: deleteMyDocument
@@ -1410,6 +1541,9 @@ paths:
       summary: Удалить свой документ (только в статусах draft / rejected)
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
   /documents/{documentId}/file:
     get:
       operationId: downloadDocument
@@ -1432,6 +1566,10 @@ paths:
       summary: Скачать файл документа (владелец-организация или admin)
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
+        - admin
   /organizations/me/kyc/submit:
     post:
       description: |
@@ -1459,6 +1597,9 @@ paths:
       summary: Отправить компанию на верификацию
       tags:
         - organizations
+      x-roles:
+        - borrower
+        - lender
   /registry/lookup:
     get:
       description: Доступно без логина на шаге регистрации; жёсткий rate limit.

@@ -4,6 +4,7 @@ paths:
     get:
       tags: [deals]
       operationId: listDeals
+      x-roles: [borrower, lender, admin]
       summary: Сделки (role-scoped — стороны сделки или admin)
       parameters:
         - $ref: '../components.yaml#/components/parameters/CreatedFrom'
@@ -23,6 +24,7 @@ paths:
     get:
       tags: [deals]
       operationId: getDeal
+      x-roles: [borrower, lender, admin]
       summary: Карточка сделки
       parameters:
         - name: dealId
