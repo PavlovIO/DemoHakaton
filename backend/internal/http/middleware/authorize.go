@@ -2,8 +2,11 @@ package middleware
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/getkin/kin-openapi/openapi3"
+
+	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
 // Расширения операции в спеке, из которых строится AccessRule.
@@ -45,10 +48,23 @@ func (a *AccessRules) Rule(operationID string) (AccessRule, bool) {
 	return rule, ok
 }
 
+// knownRoles — значения enum user_role в БД; другой роли в x-roles быть не может.
+var knownRoles = map[string]bool{
+	string(repository.UserRoleBorrower): true,
+	string(repository.UserRoleLender):   true,
+	string(repository.UserRoleAdmin):    true,
+}
+
+// accessRuleOf строит правило операции и отвергает спеку, в которой доступ описан
+// неоднозначно: защищённая операция без ролей открылась бы всем, а не никому.
 func accessRuleOf(op *openapi3.Operation) (AccessRule, error) {
+	_, hasRoles := op.Extensions[extRoles]
 	// Security == nil — операция наследует глобальный security: [cookieAuth];
 	// не-nil пустой список — security: [], операция публичная.
 	if op.Security != nil && len(*op.Security) == 0 {
+		if hasRoles {
+			return AccessRule{}, fmt.Errorf("%s у публичной операции (security: [])", extRoles)
+		}
 		return AccessRule{Public: true}, nil
 	}
 	roles, err := rolesOf(op)
@@ -59,20 +75,24 @@ func accessRuleOf(op *openapi3.Operation) (AccessRule, error) {
 	if err != nil {
 		return AccessRule{}, err
 	}
+	// У admin нет организации, а значит и kyc_status: с x-kyc-required он не прошёл бы никогда.
+	if kyc && slices.Contains(roles, string(repository.UserRoleAdmin)) {
+		return AccessRule{}, fmt.Errorf("%s у операции, доступной admin", extKYCRequired)
+	}
 	return AccessRule{Roles: roles, KYCRequired: kyc}, nil
 }
 
 // rolesOf читает x-roles: из YAML список приходит как []any.
 func rolesOf(op *openapi3.Operation) ([]string, error) {
 	raw, ok := op.Extensions[extRoles].([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s должен быть списком ролей", extRoles)
+	if !ok || len(raw) == 0 {
+		return nil, fmt.Errorf("у защищённой операции %s должен быть непустым списком ролей", extRoles)
 	}
 	roles := make([]string, 0, len(raw))
 	for _, r := range raw {
 		role, ok := r.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s: роль %v не строка", extRoles, r)
+		if !ok || !knownRoles[role] {
+			return nil, fmt.Errorf("%s: неизвестная роль %v", extRoles, r)
 		}
 		roles = append(roles, role)
 	}
