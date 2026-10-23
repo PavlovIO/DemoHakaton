@@ -34,6 +34,8 @@ func TestRequestValidation(t *testing.T) {
 		{name: "ok query -> заглушка", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
 		{name: "ok тело -> заглушка", method: "PATCH", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", body: `{"term_months":12}`, ctype: "application/json", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
 		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 501},
+		{name: "ok несколько target_country", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=TR", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
+		{name: "ok витрина и архив откликов", method: "GET", path: "/api/v1/applications?status=published&sort=published_at_desc&has_my_offer=true", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
 		// HEAD: ServeMux сопоставляет его с GET-паттернами, валидатор (gorillamux) — нет; раньше было 200.
 		{name: "HEAD как GET", method: "HEAD", path: "/api/v1/dictionaries/countries", wantStatus: 200},
 
@@ -42,6 +44,10 @@ func TestRequestValidation(t *testing.T) {
 		{name: "status вне enum", method: "GET", path: "/api/v1/applications?status=bogus", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "status"},
 		{name: "amount_min не по паттерну", method: "GET", path: "/api/v1/applications?amount_min=abc", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "amount_min"},
 		{name: "page_size > maximum", method: "GET", path: "/api/v1/applications?page_size=1000", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "page_size"},
+		{name: "target_country не ISO-код", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=Germany", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "target_country"},
+		{name: "has_my_offer не boolean", method: "GET", path: "/api/v1/applications?has_my_offer=yes", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "has_my_offer"},
+		{name: "deals: организация не uuid", method: "GET", path: "/api/v1/deals?lender_organization_id=acme", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "lender_organization_id"},
+		{name: "aml: заявка не uuid", method: "GET", path: "/api/v1/admin/aml/flags?application_id=APP-1", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "application_id"},
 
 		// Путь.
 		{name: "не uuid в пути", method: "GET", path: "/api/v1/applications/not-a-uuid", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "applicationId"},

@@ -386,6 +386,12 @@ paths:
           schema:
             format: uuid
             type: string
+        - description: Флаги конкретной заявки (экран модерации)
+          in: query
+          name: application_id
+          schema:
+            format: uuid
+            type: string
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -532,6 +538,7 @@ paths:
         - `lender` — только `published` + заявки, по которым у компании есть оффер (для архива);
         - `admin` — все заявки.
         Фильтр по сумме (`amount_min`/`amount_max`) применяется только вместе с `currency`.
+        Витрина кредитора — `status=published&sort=published_at_desc`, архив его откликов — `has_my_offer=true`.
       operationId: listApplications
       parameters:
         - explode: true
@@ -542,10 +549,22 @@ paths:
               $ref: '#/components/schemas/ApplicationStatus'
             type: array
           style: form
-        - in: query
+        - description: Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ
+          explode: true
+          in: query
           name: target_country
           schema:
-            $ref: '#/components/schemas/CountryCode'
+            items:
+              $ref: '#/components/schemas/CountryCode'
+            type: array
+          style: form
+        - description: |
+            Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
+            `false` — только без моего оффера. Для других ролей игнорируется.
+          in: query
+          name: has_my_offer
+          schema:
+            type: boolean
         - in: query
           name: currency
           schema:
@@ -588,6 +607,8 @@ paths:
             enum:
               - created_at_desc
               - created_at_asc
+              - published_at_desc
+              - published_at_asc
               - amount_desc
               - amount_asc
               - term_asc
@@ -1063,8 +1084,21 @@ paths:
         - lender
   /deals:
     get:
+      description: Период `created_from`/`created_to` фильтрует по `agreed_at`.
       operationId: listDeals
       parameters:
+        - description: Только для admin
+          in: query
+          name: borrower_organization_id
+          schema:
+            format: uuid
+            type: string
+        - description: Только для admin
+          in: query
+          name: lender_organization_id
+          schema:
+            format: uuid
+            type: string
         - $ref: '#/components/parameters/CreatedFrom'
         - $ref: '#/components/parameters/CreatedTo'
         - $ref: '#/components/parameters/Page'

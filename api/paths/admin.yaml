@@ -236,6 +236,10 @@ paths:
         - name: organization_id
           in: query
           schema: { type: string, format: uuid }
+        - name: application_id
+          in: query
+          description: Флаги конкретной заявки (экран модерации)
+          schema: { type: string, format: uuid }
         - $ref: '../components.yaml#/components/parameters/Page'
         - $ref: '../components.yaml#/components/parameters/PageSize'
       responses:

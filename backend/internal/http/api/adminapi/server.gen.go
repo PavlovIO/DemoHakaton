@@ -118,6 +118,19 @@ func (siw *ServerInterfaceWrapper) AdminListAMLFlags(w http.ResponseWriter, r *h
 		return
 	}
 
+	// ------------- Optional query parameter "application_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "application_id", r.URL.Query(), &params.ApplicationID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "application_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "application_id", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "page" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
