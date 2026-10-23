@@ -31,6 +31,9 @@ type Config struct {
 	SessionTTL time.Duration
 	// CookieSecure включает флаг Secure у cookie.
 	CookieSecure bool
+	// DocumentStorageDir — каталог файлов KYC-документов вне веб-корня; должен переживать
+	// перезапуски (в контейнере — volume).
+	DocumentStorageDir string
 }
 
 // Load читает конфиг из окружения. Возвращает все ошибки разом, а не первую.
@@ -51,6 +54,8 @@ func load(getenv func(string) string) (Config, error) {
 		DatabaseURL: get("DATABASE_URL", ""),
 		HTTPAddr:    get("HTTP_ADDR", ":8080"),
 		LogFormat:   get("LOG_FORMAT", "text"),
+
+		DocumentStorageDir: get("DOCUMENT_STORAGE_DIR", "storage/documents"),
 	}
 
 	if cfg.DatabaseURL == "" {
