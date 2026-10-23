@@ -564,6 +564,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Список заявок (role-scoped) — витрина, «мои заявки», архив
       tags:
         - applications
@@ -606,6 +608,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: Карточка заявки
@@ -632,6 +636,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -654,6 +660,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -676,6 +684,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -702,6 +712,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -725,6 +737,8 @@ paths:
           description: OK (хронологически)
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: История смены статусов заявки и её офферов
@@ -755,6 +769,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: Офферы по заявке
@@ -864,6 +880,8 @@ paths:
           description: Вышел
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Выход (инвалидирует сессию, чистит cookie)
       tags:
         - auth
@@ -879,6 +897,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Текущий пользователь и его компания
       tags:
         - auth
@@ -914,6 +934,8 @@ paths:
           description: OK (по возрастанию id)
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
@@ -941,6 +963,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -967,6 +991,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Сделки (role-scoped — стороны сделки или admin)
       tags:
         - deals
@@ -989,6 +1015,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: Карточка сделки
@@ -1062,6 +1090,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Уведомления текущего пользователя (polling)
       tags:
         - notifications
@@ -1080,6 +1110,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       tags:
@@ -1092,6 +1124,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       tags:
         - notifications
   /offers:
@@ -1140,6 +1174,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Список офферов (role-scoped) — «мои предложения», входящие, архив
       tags:
         - offers
@@ -1157,6 +1193,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: Карточка оффера (видят только автор-кредитор, заёмщик-владелец заявки, admin)
@@ -1181,6 +1219,8 @@ paths:
           description: Сделка зафиксирована
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -1211,6 +1251,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -1232,6 +1274,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -1275,6 +1319,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "409":
           $ref: '#/components/responses/InvalidTransition'
       summary: Редактирование профиля (только в статусах draft / rejected)
@@ -1294,6 +1340,8 @@ paths:
           description: OK
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
       summary: Загруженные KYC-документы своей компании
       tags:
         - organizations
@@ -1330,6 +1378,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "409":
           $ref: '#/components/responses/InvalidTransition'
         "413":
@@ -1351,6 +1401,8 @@ paths:
           description: Удалён
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
         "409":
@@ -1373,6 +1425,8 @@ paths:
           description: Файл (Content-Disposition attachment)
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "404":
           $ref: '#/components/responses/NotFound'
       summary: Скачать файл документа (владелец-организация или admin)
@@ -1398,6 +1452,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
         "409":
           $ref: '#/components/responses/InvalidTransition'
       summary: Отправить компанию на верификацию

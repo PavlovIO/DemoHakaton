@@ -265,6 +265,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	return m
 }
 
+type ForbiddenJSONResponse Error
+
 type NotFoundJSONResponse Error
 
 type UnauthorizedJSONResponse Error
@@ -305,6 +307,20 @@ func (response ListNotifications401JSONResponse) VisitListNotificationsResponse(
 	return err
 }
 
+type ListNotifications403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListNotifications403JSONResponse) VisitListNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type MarkAllNotificationsReadRequestObject struct {
 }
 
@@ -330,6 +346,20 @@ func (response MarkAllNotificationsRead401JSONResponse) VisitMarkAllNotification
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkAllNotificationsRead403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response MarkAllNotificationsRead403JSONResponse) VisitMarkAllNotificationsReadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -360,6 +390,20 @@ func (response MarkNotificationRead401JSONResponse) VisitMarkNotificationReadRes
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkNotificationRead403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response MarkNotificationRead403JSONResponse) VisitMarkNotificationReadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

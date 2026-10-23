@@ -528,6 +528,20 @@ func (response ListApplicationOffers401JSONResponse) VisitListApplicationOffersR
 	return err
 }
 
+type ListApplicationOffers403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListApplicationOffers403JSONResponse) VisitListApplicationOffersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListApplicationOffers404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response ListApplicationOffers404JSONResponse) VisitListApplicationOffersResponse(w http.ResponseWriter) error {
@@ -671,6 +685,20 @@ func (response ListOffers401JSONResponse) VisitListOffersResponse(w http.Respons
 	return err
 }
 
+type ListOffers403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListOffers403JSONResponse) VisitListOffersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetOfferRequestObject struct {
 	OfferID OfferID `json:"offerId"`
 }
@@ -703,6 +731,20 @@ func (response GetOffer401JSONResponse) VisitGetOfferResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOffer403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetOffer403JSONResponse) VisitGetOfferResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -753,6 +795,20 @@ func (response AcceptOffer401JSONResponse) VisitAcceptOfferResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptOffer403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AcceptOffer403JSONResponse) VisitAcceptOfferResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -822,6 +878,20 @@ func (response RejectOffer401JSONResponse) VisitRejectOfferResponse(w http.Respo
 	return err
 }
 
+type RejectOffer403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RejectOffer403JSONResponse) VisitRejectOfferResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RejectOffer404JSONResponse struct{ NotFoundJSONResponse }
 
 func (response RejectOffer404JSONResponse) VisitRejectOfferResponse(w http.ResponseWriter) error {
@@ -882,6 +952,20 @@ func (response WithdrawOffer401JSONResponse) VisitWithdrawOfferResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type WithdrawOffer403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response WithdrawOffer403JSONResponse) VisitWithdrawOfferResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

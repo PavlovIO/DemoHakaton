@@ -59,6 +59,7 @@ paths:
       responses:
         '204': { description: Вышел }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
 
   /auth/me:
     get:
@@ -72,3 +73,4 @@ paths:
             application/json:
               schema: { $ref: '../schemas/auth.yaml#/components/schemas/Me' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }

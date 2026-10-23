@@ -261,6 +261,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	return m
 }
 
+type ForbiddenJSONResponse Error
+
 type NotFoundJSONResponse Error
 
 type UnauthorizedJSONResponse Error
@@ -301,6 +303,20 @@ func (response ListDeals401JSONResponse) VisitListDealsResponse(w http.ResponseW
 	return err
 }
 
+type ListDeals403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDeals403JSONResponse) VisitListDealsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetDealRequestObject struct {
 	DealID openapi_types.UUID `json:"dealId"`
 }
@@ -333,6 +349,20 @@ func (response GetDeal401JSONResponse) VisitGetDealResponse(w http.ResponseWrite
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeal403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetDeal403JSONResponse) VisitGetDealResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

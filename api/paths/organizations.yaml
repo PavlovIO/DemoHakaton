@@ -30,6 +30,7 @@ paths:
               schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
         '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
 
   /organizations/me/documents:
@@ -46,6 +47,7 @@ paths:
                 type: array
                 items: { $ref: '../schemas/organizations.yaml#/components/schemas/KycDocument' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
     post:
       tags: [organizations]
       operationId: uploadMyDocument
@@ -75,6 +77,7 @@ paths:
               schema: { $ref: '../schemas/organizations.yaml#/components/schemas/KycDocument' }
         '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
         '413':
           description: Файл слишком большой
@@ -92,6 +95,7 @@ paths:
       responses:
         '204': { description: Удалён }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
 
@@ -111,6 +115,7 @@ paths:
                 type: string
                 format: binary
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
 
   /organizations/me/kyc/submit:
@@ -132,6 +137,7 @@ paths:
               schema: { $ref: '../schemas/organizations.yaml#/components/schemas/Organization' }
         '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '409': { $ref: '../components.yaml#/components/responses/InvalidTransition' }
 
   /registry/lookup:
