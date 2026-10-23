@@ -26,6 +26,9 @@ package handler
 
 import (
 	"context"
+	"io"
+
+	"github.com/google/uuid"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/adminapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/applicationsapi"
@@ -67,6 +70,10 @@ type AuthService interface {
 type KycService interface {
 	MyOrganization(ctx context.Context, p service.Principal) (service.OrganizationProfile, error)
 	UpdateMyOrganization(ctx context.Context, p service.Principal, in service.OrganizationUpdateInput) (service.OrganizationProfile, error)
+	ListDocuments(ctx context.Context, p service.Principal) ([]repository.KycDocument, error)
+	UploadDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, docType repository.KycDocumentType, fileName string, content io.Reader) (repository.KycDocument, error)
+	DeleteDocument(ctx context.Context, p service.Principal, id uuid.UUID) error
+	OpenDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.DocumentFile, error)
 }
 
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.

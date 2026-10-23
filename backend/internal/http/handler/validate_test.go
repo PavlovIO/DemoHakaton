@@ -113,7 +113,7 @@ func TestRequestValidation(t *testing.T) {
 
 	t.Run("multipart пропускается", func(t *testing.T) {
 		// Загрузку файла валидатор не трогает (читал бы multipart целиком в память):
-		// мусорное тело доходит до заглушки — 501, а не 400.
+		// мусорное тело доходит до хендлера, и форму проверяет он сам — нет части file.
 		req, _ := http.NewRequest("POST", srv.URL+"/api/v1/organizations/me/documents", strings.NewReader("garbage"))
 		req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
 		addValidTestSession(req)
@@ -122,9 +122,11 @@ func TestRequestValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusNotImplemented {
-			raw, _ := io.ReadAll(resp.Body)
-			t.Fatalf("status = %d, want 501; body %s", resp.StatusCode, raw)
+		raw, _ := io.ReadAll(resp.Body)
+		var e api.Error
+		_ = json.Unmarshal(raw, &e)
+		if resp.StatusCode != http.StatusBadRequest || len(e.Error.Details) == 0 || e.Error.Details[0].Field != "file" {
+			t.Fatalf("status = %d, want 400 с field file; body %s", resp.StatusCode, raw)
 		}
 	})
 }
