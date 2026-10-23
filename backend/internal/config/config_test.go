@@ -18,28 +18,29 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.HTTPAddr != ":8080" || cfg.LogLevel != slog.LevelInfo || cfg.LogFormat != "text" ||
 		cfg.ShutdownTimeout != 10*time.Second || cfg.SessionTTL != 24*time.Hour ||
-		!cfg.CookieSecure || cfg.DBMaxConns != 0 {
+		!cfg.CookieSecure || cfg.DBMaxConns != 0 || cfg.DocumentStorageDir != "storage/documents" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }
 
 func TestLoadOverrides(t *testing.T) {
 	cfg, err := load(env(map[string]string{
-		"DATABASE_URL":     "postgres://x",
-		"HTTP_ADDR":        ":9090",
-		"LOG_LEVEL":        "debug",
-		"LOG_FORMAT":       "json",
-		"SHUTDOWN_TIMEOUT": "3s",
-		"SESSION_TTL":      "12h",
-		"COOKIE_SECURE":    "false",
-		"DB_MAX_CONNS":     "8",
+		"DATABASE_URL":         "postgres://x",
+		"HTTP_ADDR":            ":9090",
+		"LOG_LEVEL":            "debug",
+		"LOG_FORMAT":           "json",
+		"SHUTDOWN_TIMEOUT":     "3s",
+		"SESSION_TTL":          "12h",
+		"COOKIE_SECURE":        "false",
+		"DB_MAX_CONNS":         "8",
+		"DOCUMENT_STORAGE_DIR": "/var/lib/lp/documents",
 	}))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if cfg.HTTPAddr != ":9090" || cfg.LogLevel != slog.LevelDebug || cfg.LogFormat != "json" ||
 		cfg.ShutdownTimeout != 3*time.Second || cfg.SessionTTL != 12*time.Hour ||
-		cfg.CookieSecure || cfg.DBMaxConns != 8 {
+		cfg.CookieSecure || cfg.DBMaxConns != 8 || cfg.DocumentStorageDir != "/var/lib/lp/documents" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }

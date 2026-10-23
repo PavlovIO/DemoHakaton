@@ -12,6 +12,7 @@ __pycache__/
 *.local
 # Uploaded KYC files in local dev
 /storage/
+/backend/storage/
 .DS_Store
 .idea/
 .vscode/

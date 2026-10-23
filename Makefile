@@ -8,6 +8,9 @@ POSTGRES_USER ?= lp
 POSTGRES_DB   ?= liquidity_platform
 DATABASE_URL  ?= postgres://lp:lp_dev_password@localhost:5432/liquidity_platform?sslmode=disable
 PG_CONTAINER  ?= lp_postgres
+# Абсолютный путь: make run запускает сервер из backend/ (go -C backend), и относительный
+# storage/documents оказался бы в backend/storage — вне .gitignore.
+DOCUMENT_STORAGE_DIR ?= $(CURDIR)/storage/documents
 MIGRATIONS    := backend/migrations
 TESTDATA      := backend/migrations/testdata
 
