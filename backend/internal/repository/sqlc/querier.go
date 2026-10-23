@@ -29,6 +29,8 @@ type Querier interface {
 	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
+	// clock_timestamp(), а не DEFAULT now(): список вставляется одной транзакцией, now() у всех
+	// строк одинаковый, и ORDER BY created_at в ListBeneficiariesByOrg потерял бы порядок из PATCH.
 	CreateBeneficiary(ctx context.Context, arg CreateBeneficiaryParams) (Beneficiary, error)
 	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
 	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)

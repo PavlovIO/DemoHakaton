@@ -80,8 +80,8 @@ func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizations
 }
 
 const createBeneficiary = `-- name: CreateBeneficiary :one
-INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent)
-VALUES ($1, $2, $3, $4)
+INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent, created_at)
+VALUES ($1, $2, $3, $4, clock_timestamp())
 RETURNING id, organization_id, full_name, citizenship_country_code, ownership_percent, created_at
 `
 
@@ -92,6 +92,8 @@ type CreateBeneficiaryParams struct {
 	OwnershipPercent       decimal.Decimal `json:"ownership_percent"`
 }
 
+// clock_timestamp(), а не DEFAULT now(): список вставляется одной транзакцией, now() у всех
+// строк одинаковый, и ORDER BY created_at в ListBeneficiariesByOrg потерял бы порядок из PATCH.
 func (q *Queries) CreateBeneficiary(ctx context.Context, arg CreateBeneficiaryParams) (Beneficiary, error) {
 	row := q.db.QueryRow(ctx, createBeneficiary,
 		arg.OrganizationID,
