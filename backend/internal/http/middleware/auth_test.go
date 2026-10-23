@@ -27,26 +27,24 @@ func (a *fakeAuthenticator) Authenticate(_ context.Context, token string) (*serv
 func TestAuthenticateMiddleware(t *testing.T) {
 	userID := uuid.New()
 	orgID := uuid.New()
+	// Authenticate «мягкий»: 401 решает Authorize, потому что только он знает, публичная ли
+	// операция. Сюда доходит только решение «есть principal или нет» и 500 при сбое БД.
 	cases := []struct {
-		name       string
-		method     string
-		path       string
-		cookie     string
-		authErr    error
-		wantStatus int
-		wantCode   string
-		wantNext   bool
+		name          string
+		method        string
+		path          string
+		cookie        string
+		authErr       error
+		wantStatus    int
+		wantCode      string
+		wantNext      bool
+		wantPrincipal bool
 	}{
-		{name: "public without cookie", path: "/api/v1/healthz", wantStatus: http.StatusNoContent, wantNext: true},
-		{name: "public HEAD without cookie", method: http.MethodHead, path: "/api/v1/healthz", wantStatus: http.StatusNoContent, wantNext: true},
-		{name: "registry lookup GET without cookie", method: http.MethodGet, path: "/api/v1/registry/lookup", wantStatus: http.StatusNoContent, wantNext: true},
-		{name: "registry lookup POST without cookie", method: http.MethodPost, path: "/api/v1/registry/lookup", wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
-		{name: "protected without cookie", path: "/api/v1/users/me", wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
-		{name: "authentication error", path: "/api/v1/users/me", cookie: "bad", authErr: apperr.Unauthorized("expired"), wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
+		{name: "no cookie", path: "/api/v1/users/me", wantStatus: http.StatusNoContent, wantNext: true},
+		{name: "expired session", path: "/api/v1/users/me", cookie: "bad", authErr: apperr.Unauthorized("expired"), wantStatus: http.StatusNoContent, wantNext: true},
 		{name: "non application error", path: "/api/v1/users/me", cookie: "bad", authErr: errors.New("database unavailable"), wantStatus: http.StatusInternalServerError, wantCode: string(apperr.CodeInternal)},
-		{name: "valid token", path: "/api/v1/users/me", cookie: "valid-token", wantStatus: http.StatusNoContent, wantNext: true},
+		{name: "valid token", path: "/api/v1/users/me", cookie: "valid-token", wantStatus: http.StatusNoContent, wantNext: true, wantPrincipal: true},
 	}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			authenticator := &fakeAuthenticator{
@@ -56,7 +54,11 @@ func TestAuthenticateMiddleware(t *testing.T) {
 			nextCalled := false
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				nextCalled = true
-				if tc.name == "valid token" {
+				_, hasPrincipal := PrincipalFromContext(r.Context())
+				if hasPrincipal != tc.wantPrincipal {
+					t.Errorf("principal in context = %v, want %v", hasPrincipal, tc.wantPrincipal)
+				}
+				if tc.wantPrincipal {
 					principal, ok := PrincipalFromContext(r.Context())
 					if !ok || principal.UserID != userID || principal.OrgID == nil || *principal.OrgID != orgID || principal.Role != "lender" {
 						t.Errorf("PrincipalFromContext() = %#v, %v", principal, ok)

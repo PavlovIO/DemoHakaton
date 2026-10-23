@@ -1,12 +1,18 @@
 package middleware
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/uuid"
 
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/openapi"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 )
 
 // isProtected — операция требует сессии: security не задан (наследует глобальный cookieAuth)
@@ -125,5 +131,77 @@ func TestProtectedOperationsDeclare403(t *testing.T) {
 				t.Errorf("%s (%s %s): защищённая операция без ответа '403'", op.OperationID, method, path)
 			}
 		}
+	}
+}
+
+// TestAuthorize — порядок проверок доступа: публичная операция → нет сессии (401) →
+// роль не из x-roles (403) → KYC не verified при x-kyc-required (403 KYC_NOT_VERIFIED).
+func TestAuthorize(t *testing.T) {
+	rules, err := NewAccessRules(openapi.MustDoc())
+	if err != nil {
+		t.Fatalf("NewAccessRules: %v", err)
+	}
+	principal := func(role, kyc string) *service.Principal {
+		org := uuid.New()
+		p := &service.Principal{UserID: uuid.New(), OrgID: &org, Role: role, KycStatus: kyc}
+		if role == "admin" {
+			p.OrgID, p.KycStatus = nil, ""
+		}
+		return p
+	}
+	id := uuid.NewString()
+	tests := []struct {
+		name      string
+		method    string
+		path      string
+		principal *service.Principal
+		wantCode  apperr.Code // "" — запрос ушёл в next
+	}{
+		{"healthz без сессии", http.MethodGet, "/api/v1/healthz", nil, ""},
+		{"HEAD healthz без сессии", http.MethodHead, "/api/v1/healthz", nil, ""},
+		{"login без сессии", http.MethodPost, "/api/v1/auth/login", nil, ""},
+		{"registry lookup без сессии", http.MethodGet, "/api/v1/registry/lookup", nil, ""},
+		{"путь не из спеки", http.MethodGet, "/api/v1/nope", nil, ""},
+		{"список заявок без сессии", http.MethodGet, "/api/v1/applications", nil, apperr.CodeUnauthorized},
+		{"заявка от lender", http.MethodPost, "/api/v1/applications", principal("lender", "verified"), apperr.CodeForbidden},
+		{"заявка от admin", http.MethodPost, "/api/v1/applications", principal("admin", ""), apperr.CodeForbidden},
+		{"заявка от borrower draft", http.MethodPost, "/api/v1/applications", principal("borrower", "draft"), apperr.CodeKYCNotVerified},
+		{"заявка от borrower verified", http.MethodPost, "/api/v1/applications", principal("borrower", "verified"), ""},
+		{"оффер от lender under_review", http.MethodPost, "/api/v1/applications/" + id + "/offers", principal("lender", "under_review"), apperr.CodeKYCNotVerified},
+		{"accept от lender", http.MethodPost, "/api/v1/offers/" + id + "/accept", principal("lender", "verified"), apperr.CodeForbidden},
+		{"загрузка документа admin", http.MethodPost, "/api/v1/organizations/me/documents", principal("admin", ""), apperr.CodeForbidden},
+		{"админка от borrower", http.MethodGet, "/api/v1/admin/users", principal("borrower", "verified"), apperr.CodeForbidden},
+		{"админка от admin", http.MethodGet, "/api/v1/admin/users", principal("admin", ""), ""},
+		{"сделка lender draft", http.MethodGet, "/api/v1/deals/" + id, principal("lender", "draft"), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotErr error
+			writeErr := func(w http.ResponseWriter, _ *http.Request, err error) {
+				gotErr = err
+				w.WriteHeader(http.StatusTeapot)
+			}
+			nextCalled := false
+			next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { nextCalled = true })
+
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			if tt.principal != nil {
+				req = req.WithContext(context.WithValue(req.Context(), principalContextKey, *tt.principal))
+			}
+			Authorize(rules, "/api/v1", writeErr)(next).ServeHTTP(httptest.NewRecorder(), req)
+
+			if tt.wantCode == "" {
+				if !nextCalled || gotErr != nil {
+					t.Fatalf("want next, got err %v", gotErr)
+				}
+				return
+			}
+			if nextCalled {
+				t.Fatalf("next вызван, want %s", tt.wantCode)
+			}
+			if e, ok := apperr.As(gotErr); !ok || e.Code != tt.wantCode {
+				t.Fatalf("err = %v, want code %s", gotErr, tt.wantCode)
+			}
+		})
 	}
 }

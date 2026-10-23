@@ -399,7 +399,11 @@ func (a *Auth) Authenticate(ctx context.Context, token string) (*Principal, erro
 		v := uuid.UUID(row.OrganizationID.Bytes)
 		orgID = &v
 	}
-	return &Principal{UserID: row.UserID, OrgID: orgID, Role: string(row.Role)}, nil
+	var kycStatus string // у admin организации нет: LEFT JOIN даёт NULL
+	if row.KycStatus.Valid {
+		kycStatus = string(row.KycStatus.KycStatus)
+	}
+	return &Principal{UserID: row.UserID, OrgID: orgID, Role: string(row.Role), KycStatus: kycStatus}, nil
 }
 
 // Logout удаляет сессию по токену.

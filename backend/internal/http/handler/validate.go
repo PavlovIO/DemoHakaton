@@ -44,7 +44,7 @@ func validateRequests() func(http.Handler) http.Handler {
 		Options: openapi3filter.Options{
 			// В спеке глобальный security: [cookieAuth]; при nil-функции openapi3filter
 			// отдаёт SecurityRequirementsError на каждый запрос (401 на всё).
-			// Аутентификацию делает своё middleware. TODO(BE-03): проверять сессию здесь.
+			// Сессию и роли проверяют свои middleware раньше (Authenticate, Authorize).
 			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
 			// Все ошибки формы, а не первая: одна запись на поле в error.details.
 			MultiError: true,

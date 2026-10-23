@@ -82,9 +82,9 @@ func (h *Handler) Logout(ctx context.Context, _ authapi.LogoutRequestObject) (au
 
 // GetMe возвращает профиль пользователя из principal контекста.
 func (h *Handler) GetMe(ctx context.Context, _ authapi.GetMeRequestObject) (authapi.GetMeResponseObject, error) {
-	principal, ok := middleware.PrincipalFromContext(ctx)
-	if !ok {
-		return nil, apperr.Unauthorized("Сессия недействительна")
+	principal, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	me, err := h.auth.Me(ctx, principal)
 	if err != nil {

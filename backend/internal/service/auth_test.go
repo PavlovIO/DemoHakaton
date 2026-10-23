@@ -529,6 +529,70 @@ func TestAuthAuthenticateAndLogout(t *testing.T) {
 	}
 }
 
+// TestAuthAuthenticateKycStatus: KYC-статус компании приходит в Principal из той же строки
+// сессии, а у admin (без организации) он пустой и ViewerOrg — uuid.Nil.
+func TestAuthAuthenticateKycStatus(t *testing.T) {
+	orgID := uuid.New()
+	tests := []struct {
+		name          string
+		row           repository.GetSessionByTokenHashRow
+		wantKyc       string
+		wantOrg       *uuid.UUID
+		wantRole      repository.UserRole
+		wantViewerOrg uuid.UUID
+	}{
+		{
+			name: "borrower verified",
+			row: repository.GetSessionByTokenHashRow{
+				UserID:         uuid.New(),
+				Role:           repository.UserRoleBorrower,
+				OrganizationID: pgtype.UUID{Bytes: orgID, Valid: true},
+				KycStatus:      repository.NullKycStatus{KycStatus: repository.KycStatusVerified, Valid: true},
+			},
+			wantKyc:       "verified",
+			wantOrg:       &orgID,
+			wantRole:      repository.UserRoleBorrower,
+			wantViewerOrg: orgID,
+		},
+		{
+			name: "admin",
+			row: repository.GetSessionByTokenHashRow{
+				UserID: uuid.New(),
+				Role:   repository.UserRoleAdmin,
+			},
+			wantKyc:       "",
+			wantRole:      repository.UserRoleAdmin,
+			wantViewerOrg: uuid.Nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeAuthStore()
+			const token = "session-token"
+			sum := sha256.Sum256([]byte(token))
+			store.sessions[string(sum[:])] = tc.row
+			auth := newTestAuth(store)
+
+			p, err := auth.Authenticate(context.Background(), token)
+			if err != nil {
+				t.Fatalf("Authenticate() err = %v", err)
+			}
+			if p.KycStatus != tc.wantKyc {
+				t.Errorf("KycStatus = %q, want %q", p.KycStatus, tc.wantKyc)
+			}
+			if (p.OrgID == nil) != (tc.wantOrg == nil) || (p.OrgID != nil && *p.OrgID != *tc.wantOrg) {
+				t.Errorf("OrgID = %v, want %v", p.OrgID, tc.wantOrg)
+			}
+			if p.ViewerRole() != tc.wantRole {
+				t.Errorf("ViewerRole() = %q, want %q", p.ViewerRole(), tc.wantRole)
+			}
+			if p.ViewerOrg() != tc.wantViewerOrg {
+				t.Errorf("ViewerOrg() = %v, want %v", p.ViewerOrg(), tc.wantViewerOrg)
+			}
+		})
+	}
+}
+
 func TestAuthMe(t *testing.T) {
 	store := newFakeAuthStore()
 	auth := newTestAuth(store)

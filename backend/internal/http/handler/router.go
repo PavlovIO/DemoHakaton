@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
@@ -15,6 +16,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/organizationsapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/systemapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/openapi"
 )
 
 // BaseURL — префикс API (servers[0].url в api/openapi.yaml).
@@ -27,6 +29,11 @@ func NewRouter(h *Handler) http.Handler {
 	if h.auth == nil {
 		panic("handler: Deps.Auth is nil")
 	}
+	// Ошибка в правилах доступа — баг в спеке: сервер не должен стартовать с открытой ручкой.
+	rules, err := middleware.NewAccessRules(openapi.MustDoc())
+	if err != nil {
+		panic(fmt.Sprintf("access rules: %v", err))
+	}
 
 	return middleware.Chain(routes(h),
 		middleware.RequestLog, // самый внешний: логируем и отбитые запросы
@@ -36,9 +43,10 @@ func NewRouter(h *Handler) http.Handler {
 		middleware.SecurityHeaders(),
 		middleware.MaxBody(bodyLimit), // до валидатора: он читает тело целиком в память
 		middleware.WithRequestMeta(),
-		middleware.Authenticate(h.auth, WriteError),
-		middleware.CSRF(WriteError),
-		validateRequests(), // внутри Recover, снаружи роутинга спеки
+		middleware.Authenticate(h.auth, WriteError),      // мягкий: только кладёт principal
+		middleware.Authorize(rules, BaseURL, WriteError), // 401 / 403 по x-roles и x-kyc-required
+		middleware.CSRF(WriteError),                      // после Authorize: берёт его правило операции
+		validateRequests(),                               // внутри Recover, снаружи роутинга спеки
 	)
 }
 

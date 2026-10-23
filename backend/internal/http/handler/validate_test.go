@@ -75,9 +75,8 @@ func TestRequestValidation(t *testing.T) {
 			if tt.ctype != "" {
 				req.Header.Set("Content-Type", tt.ctype)
 			}
-			if needsTestAuthentication(tt.method, tt.path) {
-				addValidTestSession(req)
-			}
+			// Сессия и CSRF — на каждом запросе: публичные операции их игнорируют.
+			addValidTestSession(req)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -142,22 +141,5 @@ func TestRegistryLookupWithoutSession(t *testing.T) {
 	}
 	if e.Error.Code != "NOT_IMPLEMENTED" {
 		t.Fatalf("code = %s, want NOT_IMPLEMENTED; body %s", e.Error.Code, body)
-	}
-}
-
-func needsTestAuthentication(method, path string) bool {
-	switch {
-	case method == http.MethodGet && path == "/api/v1/healthz":
-		return false
-	case method == http.MethodGet && (path == "/api/v1/dictionaries/countries" ||
-		path == "/api/v1/dictionaries/currencies" ||
-		path == "/api/v1/dictionaries/transfer-methods" ||
-		path == "/api/v1/registry/lookup"):
-		return false
-	case method == http.MethodPost && (path == "/api/v1/auth/register" ||
-		path == "/api/v1/auth/login"):
-		return false
-	default:
-		return true
 	}
 }

@@ -1,11 +1,17 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/routers"
+	"github.com/getkin/kin-openapi/routers/gorillamux"
 
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
@@ -22,14 +28,20 @@ type AccessRule struct {
 	KYCRequired bool     // x-kyc-required
 }
 
-// AccessRules — правила доступа по operationId, прочитанные из спеки.
+// AccessRules — правила доступа по operationId, прочитанные из спеки, и роутер kin-openapi,
+// который находит операцию по запросу (тот же, что внутри валидатора).
 type AccessRules struct {
+	router      routers.Router
 	byOperation map[string]AccessRule
 }
 
 // NewAccessRules разбирает спеку один раз при старте. Ошибка = баг в спеке, сервер не стартует.
 func NewAccessRules(doc *openapi3.T) (*AccessRules, error) {
-	rules := &AccessRules{byOperation: make(map[string]AccessRule)}
+	router, err := gorillamux.NewRouter(doc)
+	if err != nil {
+		return nil, fmt.Errorf("router: %w", err)
+	}
+	rules := &AccessRules{router: router, byOperation: make(map[string]AccessRule)}
 	for path, item := range doc.Paths.Map() {
 		for method, op := range item.Operations() {
 			rule, err := accessRuleOf(op)
@@ -46,6 +58,79 @@ func NewAccessRules(doc *openapi3.T) (*AccessRules, error) {
 func (a *AccessRules) Rule(operationID string) (AccessRule, bool) {
 	rule, ok := a.byOperation[operationID]
 	return rule, ok
+}
+
+// ruleFor находит операцию запроса в спеке. prefix (BaseURL) снимается с пути: в спеке
+// пути без него. HEAD ищется как GET — gorillamux HEAD не сопоставляет, а ServeMux да.
+func (a *AccessRules) ruleFor(r *http.Request, prefix string) (AccessRule, bool) {
+	path, ok := strings.CutPrefix(r.URL.Path, prefix)
+	if !ok {
+		return AccessRule{}, false
+	}
+	lookup := r.Clone(r.Context())
+	lookup.URL.Path = path
+	lookup.URL.RawPath = ""
+	if lookup.Method == http.MethodHead {
+		lookup.Method = http.MethodGet
+	}
+	route, _, err := a.router.FindRoute(lookup)
+	if err != nil {
+		return AccessRule{}, false
+	}
+	rule, ok := a.byOperation[route.Operation.OperationID]
+	return rule, ok
+}
+
+type accessRuleContextKey struct{}
+
+// accessRuleFromContext — правило операции, которое положил Authorize (для CSRF).
+// ok == false — путь не из спеки.
+func accessRuleFromContext(ctx context.Context) (AccessRule, bool) {
+	rule, ok := ctx.Value(accessRuleContextKey{}).(AccessRule)
+	return rule, ok
+}
+
+// Authorize проверяет доступ к операции по правилам из спеки. Порядок проверок:
+//
+//	| # | Ситуация                                  | Ответ                 |
+//	|---|-------------------------------------------|-----------------------|
+//	| 1 | путь или метод не из спеки                | next (404 — валидатор)|
+//	| 2 | security: []                              | next                  |
+//	| 3 | нет principal (сессии нет или невалидна)  | 401 UNAUTHORIZED      |
+//	| 4 | роли нет в x-roles                        | 403 FORBIDDEN         |
+//	| 5 | x-kyc-required, а KYC не verified         | 403 KYC_NOT_VERIFIED  |
+//
+// Стоит до валидатора: тот пропускает multipart-загрузку, и без этого роль загрузки
+// не проверил бы никто. Сервис повторяет проверку роли — защита в глубину.
+func Authorize(rules *AccessRules, prefix string, writeErr func(http.ResponseWriter, *http.Request, error)) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rule, ok := rules.ruleFor(r, prefix)
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			r = r.WithContext(context.WithValue(r.Context(), accessRuleContextKey{}, rule))
+			if rule.Public {
+				next.ServeHTTP(w, r)
+				return
+			}
+			p, ok := PrincipalFromContext(r.Context())
+			if !ok {
+				writeErr(w, r, apperr.Unauthorized("Требуется вход"))
+				return
+			}
+			if !slices.Contains(rule.Roles, p.Role) {
+				writeErr(w, r, apperr.Forbidden("Недостаточно прав для операции"))
+				return
+			}
+			if rule.KYCRequired && p.KycStatus != string(repository.KycStatusVerified) {
+				writeErr(w, r, apperr.KYCNotVerified())
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // knownRoles — значения enum user_role в БД; другой роли в x-roles быть не может.
