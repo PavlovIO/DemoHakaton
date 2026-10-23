@@ -1,6 +1,6 @@
 package service_test
 
-// Интеграционный тест прав роли приложения (backend/db/roles.sql + миграция 00003_app_role_grants).
+// Интеграционный тест прав роли приложения (backend/db/roles.sql + миграция 00006_app_role_grants).
 // DATABASE_URL должен указывать на lp_app: БД сама не даёт переписать audit_log, изменить сделку,
 // выполнить DDL или команду ОС. Положенные права проверяют остальные интеграционные тесты пакета.
 
@@ -10,13 +10,15 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/servicetest"
 )
 
 // sqlStateInsufficientPrivilege — SQLSTATE 42501 insufficient_privilege.
 const sqlStateInsufficientPrivilege = "42501"
 
 func TestDBPrivilegesIntegration(t *testing.T) {
-	pool := newPool(t)
+	pool := servicetest.NewPool(t)
 	ctx := context.Background()
 
 	// Под суперпользователем запреты ниже не сработали бы, а часть команд выполнилась бы.
