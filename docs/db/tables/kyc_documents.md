@@ -41,9 +41,6 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateKycDocument` | `:one` | Запись метаданных после сохранения файла |
-| `ListKycDocumentsByOrg` | `:many` | Все документы компании (без сортировки) |
-| `DeleteKycDocument` | `:exec` | Удаление по `id` **и** `organization_id` — защита от IDOR |
-
-Замечания:
-- Нет `GetKycDocumentByID` для скачивания файла. Он понадобится, и в нём тоже нужен фильтр по `organization_id` (кроме админа).
-- `DeleteKycDocument` не возвращает `storage_key`, поэтому файл в хранилище придётся найти отдельно. Удобнее `:one` с `RETURNING storage_key`.
+| `ListKycDocumentsByOrg` | `:many` | Все документы компании, `ORDER BY uploaded_at, id` |
+| `GetKycDocumentVisible` | `:one` | Документ для скачивания: admin — любой, остальные — своей организации; чужой → 0 строк → `404` |
+| `DeleteKycDocument` | `:one` | Удаление по `id` **и** `organization_id` (IDOR), `RETURNING storage_key` — чтобы удалить файл после коммита |
