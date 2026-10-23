@@ -65,7 +65,7 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateApplication` | `:one` | Новая заявка в статусе `draft` |
-| `GetApplicationByID` | `:one` | Заявка по `id` |
+| `GetApplicationVisible` | `:one` | Заявка по `id`, если её видит `viewer_role`/`viewer_org`. Видимость: `borrower` — заявки своей компании, `lender` — `published` и заявки со своим оффером, `admin` — все. Чужая и несуществующая одинаково → 0 строк → `404` |
 | `GetApplicationForUpdate` | `:one` | `SELECT … FOR UPDATE` заявки по `offer_id`. Первый шаг транзакции принятия оффера |
 | `UpdateApplication` | `:one` | Частичное обновление полей (`COALESCE`) |
 | `SubmitApplication` | `:one` | → `moderation`, ставит `submitted_at`, очищает `moderation_comment` |
@@ -73,14 +73,14 @@ erDiagram
 | `RejectApplication` | `:one` | → `rejected` с `moderation_comment` |
 | `CancelApplication` | `:one` | → `cancelled` |
 | `AgreeApplication` | `:one` | → `agreed`, записывает `accepted_offer_id` |
-| `ListApplications` | `:many` | Список с фильтрами: `borrower_org_id` (мои заявки), `lender_org_id` (витрина: `published` + заявки, где у кредитора есть оффер), `statuses[]`, страна, валюта, сумма и срок от/до. Сортировка `sort_by`: `amount_asc/desc`, `term_asc/desc`, `created_at_asc`, по умолчанию `created_at DESC` |
-| `CountApplications` | `:one` | Счётчик для того же фильтра |
+| `ListApplicationsVisible` | `:many` | Список с тем же правилом видимости, что `GetApplicationVisible` (обязательные `viewer_role`, `viewer_org`), и фильтрами `statuses[]`, страна, валюта, сумма и срок от/до. Сортировка `sort_by`: `amount_asc/desc`, `term_asc/desc`, `created_at_asc`, по умолчанию `created_at DESC` |
+| `CountApplicationsVisible` | `:one` | Счётчик для того же фильтра; блок видимости совпадает с `List` символ в символ |
 
 `CreateStatusHistory` тоже лежит в `applications.sql`, но относится к [`status_history`](status_history.md).
 
 Замечания:
 - `GetApplicationForUpdate` не фильтрует по `borrower_organization_id` и `status`, хотя пример в [schema.md](../schema.md#принятие-оффера-post-offersofferidaccept) делает это в SQL. Владельца и `status = 'published'` сервис должен проверить сам по возвращённым полям.
-- `GetApplicationByID` и все `UPDATE` работают по одному `id`, без `organization_id`. Защита от IDOR — в сервисе.
+- `UPDATE` пока работают по одному `id`, без `organization_id`: фильтр владельца в `WHERE` добавляет BE-07.
 - В `UPDATE`-запросах нет условия по текущему статусу: допустимость перехода проверяет сервис.
-- `ListApplications` для витрины не джойнит `organizations` (имя и страну заёмщика) и не возвращает `my_offer_id`. Их придётся догружать отдельно или расширить запрос.
+- `ListApplicationsVisible` для витрины не джойнит `organizations` (имя и страну заёмщика) и не возвращает `my_offer_id`. Их придётся догружать отдельно или расширить запрос.
 - Сортировка по умолчанию — `created_at`, а не `published_at`, как в примере витрины.

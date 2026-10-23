@@ -206,7 +206,7 @@ erDiagram
 | Деньги > 0, проценты в разумных пределах, длины строк | БД `CHECK` + валидация по OpenAPI |
 | Только PDF/PNG/JPEG, файлы ≤ 10 MB | **Сервис** (по содержимому) + БД |
 | Закрытый AML-флаг ⇔ есть кто и когда закрыл | БД |
-| Доступ только к своим сущностям (IDOR) | **Репозиторий**: фильтр по `organization_id` в каждом запросе |
+| Доступ только к своим сущностям (IDOR) | **Репозиторий**: запросы `*Visible` с обязательными `viewer_role`/`viewer_org`; чужое и несуществующее → 0 строк → `404` |
 
 ## Ключевые запросы
 
@@ -307,12 +307,12 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 |---|---|---|
 | `dictionaries.sql` | countries, currencies, transfer_methods | `ListCountries`, `ListCurrencies`, `ListTransferMethods` |
 | `users.sql` | users | `GetUserByID`, `GetUserByEmail`, `CreateUser`, `UpdateLastLogin`, `BlockUser`, `UnblockUser`, `ListUsers`, `CountUsers` |
-| `sessions.sql` | sessions (+ users) | `CreateSession`, `GetSessionByTokenHash`, `TouchSession`, `DeleteSessionByTokenHash`, `DeleteSessionsByUserID`, `DeleteExpiredSessions` |
+| `sessions.sql` | sessions (+ users, organizations) | `CreateSession`, `GetSessionByTokenHash`, `TouchSession`, `DeleteSessionByTokenHash`, `DeleteSessionsByUserID`, `DeleteExpiredSessions` |
 | `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations` |
 | `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
-| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationByID`, `GetApplicationForUpdate`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplications`, `CountApplications`, `CreateStatusHistory` |
-| `offers.sql` | offers | `CreateOffer`, `GetOfferByID`, `ListOffersByApplication`, `ListOffers`, `CountOffers`, `AcceptOffer`, `RejectOtherOffers`, `RejectOffer`, `WithdrawOffer`, `RejectAllOffersForApplication` |
-| `deals.sql` | deals | `CreateDeal`, `GetDealByID`, `ListDeals`, `CountDeals` |
+| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationVisible`, `GetApplicationForUpdate`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplicationsVisible`, `CountApplicationsVisible`, `CreateStatusHistory` |
+| `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListOffersByApplication`, `ListOffersVisible`, `CountOffersVisible`, `AcceptOffer`, `RejectOtherOffers`, `RejectOffer`, `WithdrawOffer`, `RejectAllOffersForApplication` |
+| `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessages`, `MarkMessagesRead`, `CountUnreadMessages` |
 | `notifications.sql` | notifications | `CreateNotification`, `ListNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
 | `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
@@ -327,9 +327,9 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - `sanctions_entries` — нет запросов загрузчика списков.
 
 Расхождения с примерами выше:
-- **IDOR.** Правило «фильтр по `organization_id` в каждом запросе» выполняется только в `DeleteKycDocument` и `MarkNotificationRead`. `Get*ByID`, `GetApplicationForUpdate`, `ListMessages`, `ListOffersByApplication` и все `UPDATE` статусов фильтруют только по `id`. Владельца проверяет сервис по возвращённым полям — это нужно либо закрепить в коде и тестах, либо добавить фильтр в SQL.
+- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). `GetApplicationForUpdate`, `ListMessages`, `ListOffersByApplication` и `UPDATE` статусов пока фильтруют только по `id`; фильтр владельца в `WHERE` им добавляют BE-07…BE-10 (таблица в плане BE-04).
 - **Принятие оффера.** `GetApplicationForUpdate` не проверяет владельца и `status = 'published'`. `RejectOtherOffers` — `:exec` без `RETURNING`, поэтому кредиторам отклонённых офферов не из чего отправить уведомления.
-- **Витрина.** `ListApplications` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
+- **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
 - **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
 - **Сделка.** `fee_amount` считается в SQL (`CreateDeal`), а не в бэкенде.
 - **Переходы статусов** заявок и KYC не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`). Параллельные запросы могут проскочить проверку сервиса.

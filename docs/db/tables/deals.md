@@ -58,10 +58,9 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateDeal` | `:one` | Снапшот условий. `fee_amount` считается в SQL: `round($amount × $fee_percent / 100, 2)` |
-| `GetDealByID` | `:one` | Сделка по `id` |
-| `ListDeals` | `:many` | Фильтр по `borrower_org_id` или `lender_org_id`, сортировка `agreed_at DESC`, пагинация |
-| `CountDeals` | `:one` | Счётчик для того же фильтра |
+| `GetDealVisible` | `:one` | Сделка по `id`, если `viewer_org` — её сторона или `viewer_role = admin`. Чужая и несуществующая → 0 строк → `404` |
+| `ListDealsVisible` | `:many` | То же правило видимости (обязательные `viewer_role`, `viewer_org`), сортировка `agreed_at DESC`, пагинация |
+| `CountDealsVisible` | `:one` | Счётчик для того же фильтра |
 
 Замечания:
-- `GetDealByID` не фильтрует по стороне сделки: проверка, что пользователь — заёмщик или кредитор, в сервисе.
 - `fee_amount` в `CreateDeal` считается в SQL, а в [schema.md](../schema.md) написано, что его считает бэкенд. Результат тот же, но источник правды теперь — запрос.
