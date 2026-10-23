@@ -4,6 +4,7 @@ paths:
     get:
       tags: [applications]
       operationId: listApplications
+      x-roles: [borrower, lender, admin]
       summary: Список заявок (role-scoped) — витрина, «мои заявки», архив
       description: |
         - `borrower` — только заявки своей компании, любые статусы;
@@ -66,6 +67,8 @@ paths:
     post:
       tags: [applications]
       operationId: createApplication
+      x-roles: [borrower]
+      x-kyc-required: true
       summary: Создать заявку (borrower, KYC verified) — в статусе draft
       requestBody:
         required: true
@@ -86,6 +89,7 @@ paths:
     get:
       tags: [applications]
       operationId: getApplication
+      x-roles: [borrower, lender, admin]
       summary: Карточка заявки
       description: borrower — своя; lender — published или с его оффером; admin — любая. Иначе 404.
       parameters:
@@ -102,6 +106,7 @@ paths:
     patch:
       tags: [applications]
       operationId: updateApplication
+      x-roles: [borrower]
       summary: Редактировать заявку (владелец, статусы draft / rejected)
       parameters:
         - $ref: '../components.yaml#/components/parameters/ApplicationId'
@@ -126,6 +131,7 @@ paths:
     post:
       tags: [applications]
       operationId: submitApplication
+      x-roles: [borrower]
       summary: Отправить на модерацию (draft|rejected → moderation)
       description: Запускает AML-правила по заявке (порог суммы, high-risk юрисдикция). Админ получает уведомление.
       parameters:
@@ -145,6 +151,7 @@ paths:
     post:
       tags: [applications]
       operationId: cancelApplication
+      x-roles: [borrower]
       summary: Отменить заявку (владелец; любой статус, кроме agreed/cancelled)
       description: Все `sent`-офферы → `rejected` (reason `application_cancelled`).
       parameters:
@@ -164,6 +171,7 @@ paths:
     post:
       tags: [applications]
       operationId: rejectAllOffers
+      x-roles: [borrower]
       summary: Отклонить все текущие офферы (владелец); заявка остаётся published
       parameters:
         - $ref: '../components.yaml#/components/parameters/ApplicationId'
@@ -186,6 +194,7 @@ paths:
     get:
       tags: [applications]
       operationId: getApplicationHistory
+      x-roles: [borrower, lender, admin]
       summary: История смены статусов заявки и её офферов
       parameters:
         - $ref: '../components.yaml#/components/parameters/ApplicationId'
@@ -205,6 +214,7 @@ paths:
     get:
       tags: [offers]
       operationId: listApplicationOffers
+      x-roles: [borrower, lender, admin]
       summary: Офферы по заявке
       description: borrower-владелец и admin видят все; lender — только свой. Другим — 404.
       parameters:
@@ -230,6 +240,8 @@ paths:
     post:
       tags: [offers]
       operationId: createOffer
+      x-roles: [lender]
+      x-kyc-required: true
       summary: Сделать оффер (lender, KYC verified, заявка published)
       description: |
         `amount` ≤ сумме заявки; валюта = валюте заявки.

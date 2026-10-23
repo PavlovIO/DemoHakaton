@@ -4,6 +4,7 @@ paths:
     get:
       tags: [notifications]
       operationId: listNotifications
+      x-roles: [borrower, lender, admin]
       summary: Уведомления текущего пользователя (polling)
       parameters:
         - name: unread_only
@@ -24,6 +25,7 @@ paths:
     post:
       tags: [notifications]
       operationId: markNotificationRead
+      x-roles: [borrower, lender, admin]
       parameters:
         - name: notificationId
           in: path
@@ -39,6 +41,7 @@ paths:
     post:
       tags: [notifications]
       operationId: markAllNotificationsRead
+      x-roles: [borrower, lender, admin]
       responses:
         '204': { description: OK }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }

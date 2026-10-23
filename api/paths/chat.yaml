@@ -4,6 +4,7 @@ paths:
     get:
       tags: [chat]
       operationId: listMessages
+      x-roles: [borrower, lender, admin]
       summary: Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
       description: |
         MVP — polling: фронт раз в 3–5 с запрашивает `after_id=<последний id>`.
@@ -31,6 +32,7 @@ paths:
     post:
       tags: [chat]
       operationId: sendMessage
+      x-roles: [borrower, lender]
       summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
       description: Текст хранится как есть и рендерится фронтом только как текст (никакого HTML).
       parameters:
