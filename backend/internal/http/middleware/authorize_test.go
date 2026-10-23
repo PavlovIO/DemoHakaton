@@ -64,6 +64,58 @@ func TestAccessRulesFromEmbeddedSpec(t *testing.T) {
 	}
 }
 
+// specWithOperation — минимальная спека с одной операцией GET /x; ext — строки YAML
+// уровня операции (security, x-roles, x-kyc-required).
+func specWithOperation(t *testing.T, ext string) *openapi3.T {
+	t.Helper()
+	src := `
+openapi: 3.0.3
+info: { title: t, version: "1" }
+security: [ { cookieAuth: [] } ]
+components:
+  securitySchemes:
+    cookieAuth: { type: apiKey, in: cookie, name: session }
+paths:
+  /x:
+    get:
+      operationId: x
+` + ext + `
+      responses:
+        '200': { description: OK }
+`
+	doc, err := openapi3.NewLoader().LoadFromData([]byte(src))
+	if err != nil {
+		t.Fatalf("тестовая спека не разбирается: %v", err)
+	}
+	return doc
+}
+
+func TestNewAccessRulesRejectsBadSpec(t *testing.T) {
+	tests := []struct {
+		name string
+		ext  string
+	}{
+		{"защищённая без x-roles", ``},
+		{"пустой x-roles", `      x-roles: []`},
+		{"неизвестная роль", `      x-roles: [superuser]`},
+		{"x-roles у публичной", "      security: []\n      x-roles: [borrower]"},
+		{"x-kyc-required не bool", "      x-roles: [borrower]\n      x-kyc-required: \"yes\""},
+		{"x-kyc-required у admin", "      x-roles: [admin]\n      x-kyc-required: true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewAccessRules(specWithOperation(t, tt.ext)); err == nil {
+				t.Fatal("ошибки нет, а спека некорректна")
+			}
+		})
+	}
+
+	// Контроль: корректная спека того же вида разбирается — иначе таблица выше проверяла бы опечатку.
+	if _, err := NewAccessRules(specWithOperation(t, "      x-roles: [borrower]\n      x-kyc-required: true")); err != nil {
+		t.Fatalf("корректная спека: %v", err)
+	}
+}
+
 // Любая защищённая операция может вернуть 403 (роль, KYC, CSRF), поэтому контракт обязан его
 // объявлять. Тест не даёт новой операции появиться без него.
 func TestProtectedOperationsDeclare403(t *testing.T) {
