@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -50,10 +51,13 @@ type OrganizationUpdateInput struct {
 	Beneficiaries      *[]BeneficiaryInput
 }
 
-// KycStore — чтения вне транзакции.
+// KycStore — запросы вне транзакции.
 type KycStore interface {
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (repository.Organization, error)
 	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]repository.Beneficiary, error)
+	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]repository.KycDocument, error)
+	GetKycDocumentVisible(ctx context.Context, arg repository.GetKycDocumentVisibleParams) (repository.KycDocument, error)
+	CreateAuditLog(ctx context.Context, arg repository.CreateAuditLogParams) (repository.AuditLog, error)
 }
 
 // KycTx — транзакция, в которой выполняются изменения профиля, документов и KYC.
@@ -61,21 +65,30 @@ type KycTx interface {
 	InTx(ctx context.Context, fn func(q repository.Querier) error) error
 }
 
+// DocumentFiles — хранилище файлов документов (storage.Local; в тестах — фейк).
+type DocumentFiles interface {
+	Create() (key string, w io.WriteCloser, err error)
+	Open(key string) (r io.ReadCloser, size int64, err error) // нет файла — fs.ErrNotExist
+	Remove(key string) error
+}
+
 // KycDeps — зависимости сервиса KYC.
 type KycDeps struct {
 	Store KycStore
 	Tx    KycTx
+	Files DocumentFiles
 }
 
 // Kyc — профиль компании, бенефициары, KYC-документы и отправка на проверку.
 type Kyc struct {
 	store KycStore
 	tx    KycTx
+	files DocumentFiles
 }
 
 // NewKyc создаёт сервис KYC.
 func NewKyc(d KycDeps) *Kyc {
-	return &Kyc{store: d.Store, tx: d.Tx}
+	return &Kyc{store: d.Store, tx: d.Tx, files: d.Files}
 }
 
 // ownOrganization — организация заёмщика или кредитора. Роль проверяет и middleware
