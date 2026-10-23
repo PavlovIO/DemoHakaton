@@ -27,6 +27,7 @@ func TestErrorMapping(t *testing.T) {
 		{apperr.NotFound("nope"), 404, "NOT_FOUND"},
 		{apperr.Conflict("email taken"), 409, "CONFLICT"},
 		{apperr.InvalidTransition("published", "draft"), 409, "INVALID_STATUS_TRANSITION"},
+		{apperr.FileTooLarge(), 413, "FILE_TOO_LARGE"},
 		{apperr.RateLimited(), 429, "RATE_LIMITED"},
 		{apperr.NotImplemented("listDeals"), 501, "NOT_IMPLEMENTED"},
 		{apperr.Unavailable("db down", errors.New("dial")), 503, "UNAVAILABLE"},
@@ -98,6 +99,7 @@ func TestEveryCodeHasStatus(t *testing.T) {
 		apperr.CodeValidation, apperr.CodeUnauthorized, apperr.CodeForbidden, apperr.CodeCSRFInvalid,
 		apperr.CodeKYCNotVerified, apperr.CodeNotFound, apperr.CodeConflict, apperr.CodeInvalidTransition,
 		apperr.CodeRateLimited, apperr.CodeInternal, apperr.CodeNotImplemented, apperr.CodeUnavailable,
+		apperr.CodeFileTooLarge,
 	}
 	for _, c := range codes {
 		if s := handler.StatusOf(c); s == http.StatusInternalServerError && c != apperr.CodeInternal {

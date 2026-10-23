@@ -50,8 +50,9 @@ info:
 
     ## Ошибки
     Единый формат `Error`. Коды: `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `CSRF_INVALID`,
-    `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `RATE_LIMITED`, `INTERNAL`,
-    `NOT_IMPLEMENTED` (501, операция ещё не реализована), `UNAVAILABLE` (503, например нет соединения с БД).
+    `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `FILE_TOO_LARGE` (413),
+    `RATE_LIMITED`, `INTERNAL`, `NOT_IMPLEMENTED` (501, операция ещё не реализована),
+    `UNAVAILABLE` (503, например нет соединения с БД).
 
     ## Пагинация
     `page` (с 1) + `page_size` (по умолчанию 20, максимум 100). Ответ: `{items, total, page, page_size}`.
@@ -1479,6 +1480,10 @@ paths:
         Тип определяется по содержимому (magic bytes), а не по расширению.
         Файл хранится вне веб-корня под случайным именем.
         Только в статусах организации draft / rejected.
+        Поле `doc_type` передаётся в форме до `file`: сервер читает форму потоком
+        и проверяет тип документа до приёма файла (браузерный `FormData` сохраняет
+        порядок `append`). Иначе — 400 `VALIDATION_ERROR` с `field: doc_type`.
+        Файл больше 10 MB — 413 `FILE_TOO_LARGE`.
       operationId: uploadMyDocument
       requestBody:
         content:
@@ -1557,6 +1562,17 @@ paths:
                 format: binary
                 type: string
           description: Файл (Content-Disposition attachment)
+          headers:
+            Content-Disposition:
+              description: '`attachment` с исходным именем файла (RFC 2231 для не-ASCII)'
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: Браузер не угадывает тип содержимого
+              schema:
+                enum:
+                  - nosniff
+                type: string
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1576,6 +1592,7 @@ paths:
         `draft|rejected → under_review`. Проверяет, что загружены обязательные документы:
         - все: `charter`, `registration_certificate`, `address_proof`, `beneficiaries_register`;
         - кредитор дополнительно: `source_of_funds`.
+        Нужен хотя бы один бенефициар, иначе 400 `VALIDATION_ERROR` с `field: beneficiaries`.
         При переходе бэкенд запускает AML-скрининг (санкционные списки, FATF-юрисдикции)
         и создаёт `AmlFlag` при совпадениях. Админ получает уведомление.
       operationId: submitKyc
@@ -2786,8 +2803,9 @@ components:
           maxLength: 1000
           type: string
         lei:
+          description: '`""` очищает LEI; отсутствие поля или `null` — оставить как есть.'
           nullable: true
-          pattern: ^[A-Z0-9]{20}$
+          pattern: ^([A-Z0-9]{20})?$
           type: string
         name:
           maxLength: 300
