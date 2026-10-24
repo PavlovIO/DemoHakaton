@@ -164,19 +164,23 @@ func (s *fakeAppStore) CreateAuditLog(_ context.Context, arg repository.CreateAu
 // fakeAppTx — транзакция поверх той же памяти.
 type fakeAppTx struct{ store *fakeAppStore }
 
+// appInTx — querier внутри транзакции: отдельный тип, чтобы тест отличил его от store пула.
+type appInTx struct{ *fakeAppStore }
+
 func (t fakeAppTx) InTx(_ context.Context, fn func(q repository.Querier) error) error {
-	return fn(t.store)
+	return fn(appInTx{t.store})
 }
 
 // fakeAppScreener — AML-скрининг заявки: запоминает субъект, возвращает findings.
 type fakeAppScreener struct {
 	aml.NoopScreener
 	screened []aml.ApplicationSubject
+	stores   []aml.Store
 	findings []aml.Finding
 }
 
-func (f *fakeAppScreener) ScreenApplication(_ context.Context, s aml.ApplicationSubject) ([]aml.Finding, error) {
-	f.screened = append(f.screened, s)
+func (f *fakeAppScreener) ScreenApplication(_ context.Context, store aml.Store, s aml.ApplicationSubject) ([]aml.Finding, error) {
+	f.screened, f.stores = append(f.screened, s), append(f.stores, store)
 	return f.findings, nil
 }
 
@@ -528,6 +532,9 @@ func TestApplicationsSubmit(t *testing.T) {
 		}
 		if len(screener.screened) != 1 || screener.screened[0].TargetCountryCode != "DE" || screener.screened[0].CurrencyCode != "EUR" {
 			t.Fatalf("screened = %+v", screener.screened)
+		}
+		if _, ok := screener.stores[0].(appInTx); !ok {
+			t.Fatalf("скрининг получил %T, а не querier транзакции", screener.stores[0])
 		}
 		if len(s.adminNotices) != 1 || s.adminNotices[0].Type != repository.NotificationTypeApplicationSubmitted ||
 			s.adminNotices[0].EntityType != repository.EntityTypeApplication || s.adminNotices[0].EntityID != id.String() {

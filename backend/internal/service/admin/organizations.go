@@ -186,7 +186,7 @@ func loadOrganizationDetails(ctx context.Context, q repository.Querier, orgID uu
 		out.Documents = []repository.KycDocument{}
 	}
 	for i, r := range flagRows {
-		out.AmlFlags[i] = amlFlagFromRow(r)
+		out.AmlFlags[i] = amlFlagFromParts(r.AmlFlag, r.OrganizationName, r.OrganizationCountryCode)
 	}
 	for i, u := range userRows {
 		out.Users[i] = userFromListRow(repository.ListUsersRow(u))
@@ -215,11 +215,12 @@ func latestRegistryCheck(ctx context.Context, q repository.Querier, orgID uuid.U
 	}, nil
 }
 
-func amlFlagFromRow(r repository.ListAmlFlagsByOrganizationRow) AmlFlag {
-	f := r.AmlFlag
+// amlFlagFromParts — флаг и организация из строк ListAmlFlags*, GetAmlFlagByID: sqlc
+// генерирует на каждый запрос свой тип строки.
+func amlFlagFromParts(f repository.AmlFlag, orgName, orgCountryCode string) AmlFlag {
 	return AmlFlag{
 		ID:                f.ID,
-		Organization:      OrgShort{ID: f.OrganizationID, Name: r.OrganizationName, CountryCode: r.OrganizationCountryCode},
+		Organization:      OrgShort{ID: f.OrganizationID, Name: orgName, CountryCode: orgCountryCode},
 		ApplicationID:     pgconv.UUIDPtr(f.ApplicationID),
 		Rule:              string(f.Rule),
 		Severity:          string(f.Severity),

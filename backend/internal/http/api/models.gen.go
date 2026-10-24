@@ -396,19 +396,25 @@ func (e Role) Valid() bool {
 
 // Defines values for TransferMethod.
 const (
+	TransferMethodCips  TransferMethod = "cips"
 	TransferMethodOther TransferMethod = "other"
 	TransferMethodSEPA  TransferMethod = "sepa"
 	TransferMethodSWIFT TransferMethod = "swift"
+	TransferMethodSpfs  TransferMethod = "spfs"
 )
 
 // Valid indicates whether the value is a known member of the TransferMethod enum.
 func (e TransferMethod) Valid() bool {
 	switch e {
+	case TransferMethodCips:
+		return true
 	case TransferMethodOther:
 		return true
 	case TransferMethodSEPA:
 		return true
 	case TransferMethodSWIFT:
+		return true
+	case TransferMethodSpfs:
 		return true
 	default:
 		return false

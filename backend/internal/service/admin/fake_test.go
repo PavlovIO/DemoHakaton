@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -47,6 +48,9 @@ type fakeDB struct {
 	orgCountArg     *repository.CountOrganizationsParams
 	userListArg     *repository.ListUsersParams
 	userCountArg    *repository.CountUsersParams
+	amlFlags        map[int64]repository.AmlFlag
+	flagListArg     *repository.ListAmlFlagsParams
+	flagCountArg    *repository.CountAmlFlagsParams
 	snapshots       int // вызовы ReadSnapshot: чтение из нескольких запросов должно идти в одном
 }
 
@@ -274,4 +278,51 @@ func (f *fakeDB) UnblockUser(_ context.Context, id uuid.UUID) (repository.Unbloc
 func (f *fakeDB) DeleteSessionsByUserID(_ context.Context, userID uuid.UUID) error {
 	f.deletedSessions = append(f.deletedSessions, userID)
 	return nil
+}
+
+// withAmlFlag добавляет флаг организации org в amlFlags.
+func (f *fakeDB) withAmlFlag(org *repository.Organization, status repository.AmlFlagStatus) repository.AmlFlag {
+	if f.amlFlags == nil {
+		f.amlFlags = map[int64]repository.AmlFlag{}
+	}
+	flag := repository.AmlFlag{
+		ID: int64(len(f.amlFlags) + 1), OrganizationID: org.ID, Rule: repository.AmlRuleSanctionsMatch,
+		Severity: repository.AmlSeverityHigh, Details: "Совпадение", Status: status,
+		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+	f.amlFlags[flag.ID] = flag
+	return flag
+}
+
+func (f *fakeDB) ResolveAmlFlag(_ context.Context, arg repository.ResolveAmlFlagParams) (repository.AmlFlag, error) {
+	flag, ok := f.amlFlags[arg.ID]
+	if !ok || flag.Status != repository.AmlFlagStatusOpen {
+		return repository.AmlFlag{}, pgx.ErrNoRows
+	}
+	flag.Status, flag.ResolvedByUserID, flag.ResolutionComment = arg.Status, arg.ResolvedByUserID, arg.ResolutionComment
+	flag.ResolvedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	f.amlFlags[arg.ID] = flag
+	return flag, nil
+}
+
+func (f *fakeDB) GetAmlFlagByID(_ context.Context, id int64) (repository.GetAmlFlagByIDRow, error) {
+	flag, ok := f.amlFlags[id]
+	if !ok {
+		return repository.GetAmlFlagByIDRow{}, pgx.ErrNoRows
+	}
+	return repository.GetAmlFlagByIDRow{AmlFlag: flag, OrganizationName: f.org.Name, OrganizationCountryCode: f.org.CountryCode}, nil
+}
+
+func (f *fakeDB) ListAmlFlags(_ context.Context, arg repository.ListAmlFlagsParams) ([]repository.ListAmlFlagsRow, error) {
+	f.flagListArg = &arg
+	var rows []repository.ListAmlFlagsRow
+	for id := int64(1); id <= int64(len(f.amlFlags)); id++ {
+		rows = append(rows, repository.ListAmlFlagsRow{AmlFlag: f.amlFlags[id], OrganizationName: f.org.Name, OrganizationCountryCode: f.org.CountryCode})
+	}
+	return rows, nil
+}
+
+func (f *fakeDB) CountAmlFlags(_ context.Context, arg repository.CountAmlFlagsParams) (int64, error) {
+	f.flagCountArg = &arg
+	return f.total, nil
 }

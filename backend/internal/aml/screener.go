@@ -8,8 +8,7 @@ import (
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
-// API пакета по шагу 1 плана BE-13. Правила (санкции, FATF, порог, реестр) подключает
-// BE-13; до этого сервисы получают NoopScreener.
+// API пакета по шагу 1 плана BE-13; правила — RuleScreener (rules.go).
 
 // Person — бенефициар для скрининга.
 type Person struct {
@@ -55,26 +54,31 @@ type Finding struct {
 	Rule     repository.AmlRule
 	Severity repository.AmlSeverity
 	Details  string
+	// MatchKey — ключ дедупликации: Details без того, что меняется при обновлении данных
+	// (дата FATF, score, имя алиаса). Пустой — дедупликация по Details.
+	MatchKey string
 }
 
 // Screener проверяет компанию и заявку по AML-правилам. Ошибка — операция откатывается
-// целиком (fail-closed): без скрининга статус не меняется.
+// целиком (fail-closed): без скрининга статус не меняется. store — querier транзакции
+// вызывающего: скрининг идёт под блокировкой строки, и второе соединение из пула на каждый
+// submit исчерпало бы пул при параллельных подачах.
 type Screener interface {
-	ScreenOrganization(ctx context.Context, s OrganizationSubject) ([]Finding, error)
-	ScreenApplication(ctx context.Context, s ApplicationSubject) ([]Finding, error)
+	ScreenOrganization(ctx context.Context, store Store, s OrganizationSubject) ([]Finding, error)
+	ScreenApplication(ctx context.Context, store Store, s ApplicationSubject) ([]Finding, error)
 }
 
-// NoopScreener — заглушка, пока правила не подключены: находок нет.
+// NoopScreener — скрининг без находок: для тестов, где AML не проверяется.
 type NoopScreener struct{}
 
 var _ Screener = NoopScreener{}
 
 // ScreenOrganization — находок нет.
-func (NoopScreener) ScreenOrganization(context.Context, OrganizationSubject) ([]Finding, error) {
+func (NoopScreener) ScreenOrganization(context.Context, Store, OrganizationSubject) ([]Finding, error) {
 	return nil, nil
 }
 
 // ScreenApplication — находок нет.
-func (NoopScreener) ScreenApplication(context.Context, ApplicationSubject) ([]Finding, error) {
+func (NoopScreener) ScreenApplication(context.Context, Store, ApplicationSubject) ([]Finding, error) {
 	return nil, nil
 }

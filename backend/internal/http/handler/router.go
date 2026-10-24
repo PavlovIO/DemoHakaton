@@ -36,13 +36,15 @@ func NewRouter(h *Handler) http.Handler {
 	}
 
 	return middleware.Chain(routes(h),
-		middleware.RequestLog, // самый внешний: логируем и отбитые запросы
+		middleware.RequestID(), // самый внешний: id нужен уже строке RequestLog
+		middleware.RequestLog,  // логируем и отбитые запросы
 		middleware.Recover(func(w http.ResponseWriter, r *http.Request) { // паника в валидаторе -> 500 в формате Error
 			WriteError(w, r, apperr.New(apperr.CodeInternal, "panic"))
 		}),
 		middleware.SecurityHeaders(),
-		middleware.MaxBody(bodyLimit), // до валидатора: он читает тело целиком в память
-		uploadDeadlines,               // загрузке документа — 60 с вместо ReadTimeout сервера
+		middleware.CORS(h.corsOrigins), // до Authenticate: preflight идёт без cookie
+		middleware.MaxBody(bodyLimit),  // до валидатора: он читает тело целиком в память
+		uploadDeadlines,                // загрузке документа — 60 с вместо ReadTimeout сервера
 		middleware.WithRequestMeta(),
 		middleware.Authenticate(h.auth, WriteError),      // мягкий: только кладёт principal
 		middleware.Authorize(rules, BaseURL, WriteError), // 401 / 403 по x-roles и x-kyc-required

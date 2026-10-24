@@ -145,9 +145,9 @@ erDiagram
 |---|---|---|
 | `countries` | ISO 3166-1 alpha-2, названия ru/en, `fatf_list` (`black`/`grey`/NULL) + `fatf_as_of`, `is_unfriendly` | `GET /dictionaries/countries`. Поле `fatf_high_risk = fatf_list IS NOT NULL` |
 | `currencies` | ISO 4217 | `GET /dictionaries/currencies` |
-| `transfer_methods` | swift / sepa / other | `GET /dictionaries/transfer-methods` |
+| `transfer_methods` | swift / sepa / spfs (СПФС) / cips (CIPS) / other | `GET /dictionaries/transfer-methods` |
 
-В сиде не полный ISO, а около 30 стран, нужных для демо и типичных юрисдикций. Чёрный список FATF взят по итогам пленара июня 2026. Серый список и перечень недружественных стран (распоряжение № 430-р) нужно сверить с первоисточниками: это отдельная задача.
+В сиде не полный ISO, а около 50 стран, нужных для демо и типичных юрисдикций. Чёрный (`00002`) и серый (`00005`, 22 юрисдикции) списки FATF взяты по итогам пленара июня 2026. Перечень недружественных стран (распоряжение № 430-р) и полный ISO 3166-1 — отдельная задача (BE-02).
 
 ### Организации и пользователи
 
@@ -277,38 +277,53 @@ SELECT a.*, o.name, o.country_code,
 
 ### Аналитика (`GET /admin/analytics/summary`)
 
+Период — полуинтервал `[created_from, created_to)`, без границ — всё время. Заявки и спрос — по `applications.created_at`, офферы и предложение — по `offers.created_at`, сделки — по `deals.agreed_at`. Все шесть запросов идут в одном снимке (`ReadSnapshot`).
+
 ```sql
--- Средний размер по каждой валюте отдельно (без конвертации)
-SELECT currency, count(*), sum(amount), round(avg(amount), 2)
-  FROM applications WHERE status NOT IN ('draft') AND created_at BETWEEN $from AND $to
- GROUP BY currency;
+-- Средний размер по каждой валюте отдельно (без конвертации); cancelled и rejected — тоже поданный спрос
+SELECT currency, count(*), sum(amount)::numeric, round(avg(amount), 2)::numeric
+  FROM applications WHERE status <> 'draft' AND created_at >= $from AND created_at < $to
+ GROUP BY currency ORDER BY currency;
+
+-- Заявки по статусам (total — их сумма), офферы и сделки за период
+SELECT status, count(*) FROM applications WHERE <период по created_at> GROUP BY status;
+SELECT count(*) FROM offers WHERE <период по created_at>;
+SELECT count(*) FROM deals  WHERE <период по agreed_at>;
 
 -- Топ стран спроса (куда хотят деньги)
 SELECT target_country_code, count(*) FROM applications
- WHERE status IN ('published', 'agreed') GROUP BY 1 ORDER BY 2 DESC LIMIT $n;
+ WHERE status IN ('published', 'agreed') AND <период> GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $n;
 
 -- Топ стран предложения (откуда кредиторы, сделавшие офферы)
-SELECT org.country_code, count(DISTINCT o.id) FROM offers o
+SELECT org.country_code, count(o.id) FROM offers o
   JOIN organizations org ON org.id = o.lender_organization_id
- GROUP BY 1 ORDER BY 2 DESC LIMIT $n;
+ WHERE <период по o.created_at> GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $n;
 ```
+
+Явный `::numeric` у сумм нужен sqlc: без него `sum(numeric)` выводится как `int64`, а override из `sqlc.yaml` на `decimal.Decimal` не срабатывает.
 
 ### Санкционный скрининг
 
 ```sql
-SET pg_trgm.similarity_threshold = 0.4;            -- широкий отбор кандидатов
-SELECT id, source, name, similarity(name_normalized, $q) AS score
+SELECT id, source, external_id, entity_kind, name, name_normalized,
+       similarity(name_normalized, @query) AS trgm_score
   FROM sanctions_entries
- WHERE name_normalized % $q
- ORDER BY score DESC LIMIT 20;
+ WHERE name_normalized % @query                               -- GIN-индекс
+   AND similarity(name_normalized, @query) >= @min_similarity -- 0.4: результат не зависит от GUC
+   AND entity_kind = ANY(@entity_kinds)                       -- до LIMIT: персоны не вытесняют организацию
+ ORDER BY trgm_score DESC, id LIMIT 20;
 -- Кандидатов досчитать Jaro-Winkler в Go. ≥ 0.90 → флаг high, 0.85–0.90 → medium (ручная проверка).
 ```
 
-Перед поиском имя нормализуется одинаково для списка и для запроса:
-- нижний регистр;
-- транслитерация кириллицы в латиницу;
+Порог задаётся в самом запросе, GUC на соединении не меняем: на соединении из пула настройка утекает в чужие запросы. Инвариант: GUC роли (`0.3` по умолчанию, `0.4` на `lp_app` после DB-SEC) ≤ `candidateMinSimilarity` (`0.4`, `internal/aml/rules.go`) — иначе `%` отрежет кандидатов раньше явного порога.
+
+Имя нормализуется одной функцией `aml.Normalize` для загрузчика и для запроса:
+- снятие диакритики, нижний регистр;
+- транслитерация кириллицы (ICAO); при скрининге кириллического имени ищется ещё вариант BGN/PCGN (`Юрий` → `iurii` и `yuriy`), берётся лучший score;
 - удаление орг. форм (ООО, LLC, Ltd, GmbH);
 - схлопывание пробелов.
+
+Score — `max(JW(a, b), JW(sortTokens(a), sortTokens(b)))`: «Petrov Ivan» и «Ivan Petrov» совпадают. Флаг — один на субъект (компанию или бенефициара), по лучшему кандидату: на распространённом имени иначе была бы лавина флагов.
 
 ## Покрытие sqlc
 
@@ -326,19 +341,17 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessagesVisible`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
 | `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
-| `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `admin.sql` | aml_flags, sanctions_entries, countries, audit_log, аналитика | `CreateAmlFlag`, `HasSimilarAmlFlag`, `ListAmlFlags`, `CountAmlFlags`, `GetAmlFlagByID`, `ListAmlFlagsByOrganization`, `CountOpenHighAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `ListCountriesFatf`, `CreateAuditLog`, `ListAuditLog`, `CountAuditLog`, `GetAnalyticsSummaryByCurrency`, `CountApplicationsByStatus`, `CountOffersInPeriod`, `CountDealsInPeriod`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `sanctions.sql` | sanctions_entries | `DeleteSanctionsBySource`, `InsertSanctionsEntries` (`:copyfrom`, загрузчик `cmd/loadsanctions`) |
 
 ### Чего не хватает и где запросы расходятся с этим документом
 
 Пробелы (запросов нет):
-- `status_history` — нет чтения для `GET /applications/{id}/history`;
-- `aml_flags` — нет `Count` и `GetByID`; `audit_log` — нет фильтров и `Count`;
-- `sanctions_entries` — нет запросов загрузчика списков.
+- `status_history` — нет чтения для `GET /applications/{id}/history`.
 
 Расхождения с примерами выше:
 - **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). Чат читается `ListMessagesVisible` с тем же правилом; `CreateMessage` и `MarkMessagesRead` вызываются только после `GetOfferVisible`. `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`. Запросы уведомлений фильтруют по `user_id` текущего пользователя; `MarkNotificationRead` — `:execrows`, 0 строк → `404`.
 - **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
-- **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
 - **Переходы статусов** заявок и решения админа по KYC (`ApproveKyc`, `RejectKyc`) не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`, у `UpdateOrganization` и `SubmitKycForReview` — `kyc_status IN ('draft','rejected')` плюс `GetOrganizationForUpdate`). Параллельные запросы могут проскочить проверку сервиса.
 
 ## Что сознательно не делаем в MVP

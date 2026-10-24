@@ -70,19 +70,23 @@ func (s *submitStore) CreateRegistryCheck(_ context.Context, arg repository.Crea
 
 type submitTx struct{ store *submitStore }
 
+// inTx — querier внутри транзакции: отдельный тип, чтобы тест отличил его от store пула.
+type inTx struct{ *submitStore }
+
 func (t submitTx) InTx(_ context.Context, fn func(q repository.Querier) error) error {
-	return fn(t.store)
+	return fn(inTx{t.store})
 }
 
 type fakeScreener struct {
 	findings []aml.Finding
 	err      error
 	called   bool
+	store    aml.Store
 	subject  aml.OrganizationSubject
 }
 
-func (f *fakeScreener) ScreenOrganization(_ context.Context, s aml.OrganizationSubject) ([]aml.Finding, error) {
-	f.called, f.subject = true, s
+func (f *fakeScreener) ScreenOrganization(_ context.Context, store aml.Store, s aml.OrganizationSubject) ([]aml.Finding, error) {
+	f.called, f.store, f.subject = true, store, s
 	return f.findings, f.err
 }
 
@@ -157,6 +161,10 @@ func TestSubmitKyc(t *testing.T) {
 		}
 		if profile.Org.KycStatus != "under_review" || !screener.called {
 			t.Fatalf("status = %s, скрининг = %v", profile.Org.KycStatus, screener.called)
+		}
+		// Скрининг идёт под FOR UPDATE: соединение из пула вместо транзакции исчерпывает пул.
+		if _, ok := screener.store.(inTx); !ok {
+			t.Fatalf("скрининг получил %T, а не querier транзакции", screener.store)
 		}
 		h := store.history
 		if len(h) != 1 || h[0].EntityType != repository.EntityTypeOrganization || h[0].FromStatus.String != "draft" ||

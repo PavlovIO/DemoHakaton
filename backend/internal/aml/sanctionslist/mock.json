@@ -1,0 +1,15 @@
+[
+  {"external_id": "demo-gama-001", "entity_kind": "organization", "name": "GAMA GmbH", "country_code": "DE",
+   "note": "демо: нечёткое совпадение с Gamma GmbH из сида BE-16"},
+  {"external_id": "M-001", "entity_kind": "person", "name": "Zolotarev Kirill", "country_code": "RU"},
+  {"external_id": "M-001", "entity_kind": "person", "name": "Kirill Zolotaryov", "country_code": "RU"},
+  {"external_id": "M-002", "entity_kind": "person", "name": "Юрий Щукин", "country_code": "RU"},
+  {"external_id": "M-002", "entity_kind": "person", "name": "Yuriy Shchukin", "country_code": "RU"},
+  {"external_id": "M-003", "entity_kind": "organization", "name": "ООО «Северный Путь»", "country_code": "RU"},
+  {"external_id": "M-003", "entity_kind": "organization", "name": "Severny Put LLC", "country_code": "RU"},
+  {"external_id": "M-004", "entity_kind": "organization", "name": "Nordwind Shipping Ltd", "country_code": "PA"},
+  {"external_id": "M-005", "entity_kind": "person", "name": "Tahmasebi Darius", "country_code": "IR"},
+  {"external_id": "M-006", "entity_kind": "other", "name": "Orient Star Exchange", "country_code": "AE"},
+  {"external_id": "M-007", "entity_kind": "person", "name": "Pak Chol Su", "country_code": "KP"},
+  {"external_id": "M-008", "entity_kind": "organization", "name": "Blue Lagoon Holdings SA"}
+]

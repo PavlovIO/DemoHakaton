@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -20,6 +19,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// Действия audit_log аутентификации (BE-14). auth.logout не пишется (DECISIONS п. 16).
+const (
+	AuditAuthLogin       = "auth.login"
+	AuditAuthLoginFailed = "auth.login_failed"
+	AuditAuthRegister    = "auth.register"
 )
 
 // RegisterOrganizationInput описывает организацию при регистрации пользователя.
@@ -215,6 +221,13 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput, meta service.Clie
 			return err
 		}
 
+		// Аудит — в транзакции регистрации: его сбой откатывает пользователя и организацию.
+		if err := service.WriteAudit(ctx, q, meta, userAudit(AuditAuthRegister, userRow.ID, map[string]any{
+			"organization_id": org.ID.String(),
+		})); err != nil {
+			return err
+		}
+
 		created = &Session{
 			Token:     token,
 			CSRFToken: csrfToken,
@@ -301,8 +314,7 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta service.C
 		}); err != nil {
 			return err
 		}
-		_, err := q.CreateAuditLog(ctx, auditParams(&userID, "auth.login", "", meta))
-		return err
+		return service.WriteAudit(ctx, q, meta, userAudit(AuditAuthLogin, userID, nil))
 	})
 	if err != nil {
 		return nil, err
@@ -323,32 +335,27 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta service.C
 }
 
 // auditFailure пишет auth.login_failed best-effort: транзакции нет, ошибка записи
-// только логируется и не меняет ответ клиенту.
+// только логируется и не меняет ответ клиенту. Email при unknown_email не пишется —
+// это ПДн чужого человека (DECISIONS п. 16).
 func (a *Auth) auditFailure(ctx context.Context, userID *uuid.UUID, reason string, meta service.ClientMeta) {
-	if _, err := a.store.CreateAuditLog(ctx, auditParams(userID, "auth.login_failed", reason, meta)); err != nil {
-		slog.Warn("audit write failed", "action", "auth.login_failed", "err", err)
+	event := service.AuditEvent{Action: AuditAuthLoginFailed, Meta: map[string]any{"reason": reason}}
+	if userID != nil {
+		event = userAudit(AuditAuthLoginFailed, *userID, event.Meta)
+	}
+	if err := service.WriteAudit(ctx, a.store, meta, event); err != nil {
+		slog.WarnContext(ctx, "audit write failed", "action", AuditAuthLoginFailed, "err", err)
 	}
 }
 
-func auditParams(userID *uuid.UUID, action, reason string, meta service.ClientMeta) repository.CreateAuditLogParams {
-	fields := map[string]string{}
-	if reason != "" {
-		fields["reason"] = reason
+// userAudit — событие о пользователе: он же и автор, и сущность.
+func userAudit(action string, userID uuid.UUID, fields map[string]any) service.AuditEvent {
+	return service.AuditEvent{
+		Action:     action,
+		UserID:     &userID,
+		EntityType: repository.EntityTypeUser,
+		EntityID:   userID.String(),
+		Meta:       fields,
 	}
-	metaJSON, _ := json.Marshal(fields) // map[string]string сериализуется всегда
-
-	arg := repository.CreateAuditLogParams{
-		Action:    action,
-		Ip:        meta.IP,
-		UserAgent: pgtype.Text{String: meta.UserAgent, Valid: meta.UserAgent != ""},
-		Meta:      metaJSON,
-	}
-	if userID != nil {
-		arg.UserID = uuidToPgUUID(*userID)
-		arg.EntityType = repository.NullEntityType{EntityType: repository.EntityTypeUser, Valid: true}
-		arg.EntityID = pgtype.Text{String: userID.String(), Valid: true}
-	}
-	return arg
 }
 
 // Authenticate возвращает Principal по токену сессии.
@@ -364,7 +371,7 @@ func (a *Auth) Authenticate(ctx context.Context, token string) (*service.Princip
 		return nil, err
 	}
 	if err := a.store.TouchSession(ctx, hashToken(token)); err != nil {
-		slog.Warn("touch session failed", "err", err)
+		slog.WarnContext(ctx, "touch session failed", "err", err)
 	}
 
 	var orgID *uuid.UUID

@@ -1,0 +1,10 @@
+Report Date: 16-Oct-2026
+Last Updated,Unique ID,OFSI Group ID,UN Reference Number,Name 6,Name 1,Name 2,Name 3,Name 4,Name 5,Name type,Alias strength,Title,Name non-latin script,Non-latin script type,Non-latin script language,Regime Name,Designation Type,Designation source,Sanctions Imposed,Other Information,UK Statement of Reasons,Address Line 1,Address Line 2,Address Line 3,Address Line 4,Address Line 5,Address Line 6,Address Postal Code,Address Country,Phone number,Website,Email address,Date Designated,D.O.B,Nationality(/ies),National Identifier number,National Identifier additional information,Passport number,Passport additional information,Position,Gender,Town of birth,Country of birth,Type of entity,Subsidiaries,Parent company,Business registration number (s),IMO number,Current owner/operator (s),Previous owner/operator (s),Current believed flag of ship,Previous flags,Type of ship,Tonnage of ship,Length of ship,Year Built,Hull identification number (HIN)
+,TST0001,,,NORDWIND MARITIME LIMITED,,,,,,Primary Name,,,,,,,Entity,,,"Fictional test entity, used in tests.
+Second line.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,TST0001,,,NORDWIND MARITIME LTD,,,,,,Alias,,,,,,,Entity,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,TST0001,,,NORDWIND MARITIME LIMITED,,,,,,Primary Name,,,,,,,Entity,,,,,Second address row,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,TST0002,,,TESTOV,Ivan,Petrovich,,,,Primary Name,,,,,,,Individual,,,,,,,,,,,,,,,,,,Ruritania,,,,,,,,,,,,,,,,,,,,,,
+,TST0002,,,TESTOFF,Ivan,,,,,Alias,,,,,,,Individual,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,TST0003,,,SEA FICTION,,,,,,Primary Name,,,,,,,Ship,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,TST0004,,,,,,,,,Alias,,,,,,,Entity,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

@@ -27,7 +27,7 @@ components:
       enum: [rejected_by_borrower, another_offer_accepted, application_cancelled]
     TransferMethod:
       type: string
-      enum: [swift, sepa, other]
+      enum: [swift, sepa, spfs, cips, other]
     RepaymentSchedule:
       type: string
       description: |

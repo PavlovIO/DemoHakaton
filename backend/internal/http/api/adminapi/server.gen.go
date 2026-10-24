@@ -1054,6 +1054,20 @@ func (response AdminAnalyticsSummary200JSONResponse) VisitAdminAnalyticsSummaryR
 	return err
 }
 
+type AdminAnalyticsSummary400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AdminAnalyticsSummary400JSONResponse) VisitAdminAnalyticsSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminAnalyticsSummary401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response AdminAnalyticsSummary401JSONResponse) VisitAdminAnalyticsSummaryResponse(w http.ResponseWriter) error {
@@ -1272,6 +1286,20 @@ func (response AdminListAuditLog200JSONResponse) VisitAdminListAuditLogResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListAuditLog400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AdminListAuditLog400JSONResponse) VisitAdminListAuditLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }

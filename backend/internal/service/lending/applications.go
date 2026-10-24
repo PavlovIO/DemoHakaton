@@ -140,7 +140,7 @@ type TxRunner interface {
 
 // ApplicationScreener — AML-скрининг заявки при отправке на модерацию (aml.Screener).
 type ApplicationScreener interface {
-	ScreenApplication(ctx context.Context, s aml.ApplicationSubject) ([]aml.Finding, error)
+	ScreenApplication(ctx context.Context, store aml.Store, s aml.ApplicationSubject) ([]aml.Finding, error)
 }
 
 // ApplicationsDeps — зависимости сервиса заявок.
@@ -385,7 +385,7 @@ func (s *Applications) Submit(ctx context.Context, p service.Principal, meta ser
 		if _, err := q.SubmitApplication(ctx, repository.SubmitApplicationParams{ID: id, FromStatus: cur.Status}); err != nil {
 			return transitionErr(err, from, to)
 		}
-		findings, err := s.screener.ScreenApplication(ctx, aml.ApplicationSubject{
+		findings, err := s.screener.ScreenApplication(ctx, q, aml.ApplicationSubject{
 			TargetCountryCode: cur.TargetCountryCode, Amount: cur.Amount, CurrencyCode: cur.Currency,
 		})
 		if err != nil {

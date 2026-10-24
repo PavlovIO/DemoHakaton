@@ -143,6 +143,10 @@ type AdminService interface {
 	ListUsers(ctx context.Context, p service.Principal, f admin.UserFilter) (admin.UserPage, error)
 	BlockUser(ctx context.Context, p service.Principal, id uuid.UUID, reason string, meta service.ClientMeta) (admin.User, error)
 	UnblockUser(ctx context.Context, p service.Principal, id uuid.UUID, meta service.ClientMeta) (admin.User, error)
+	ListAmlFlags(ctx context.Context, p service.Principal, f admin.AmlFlagFilter) (admin.AmlFlagPage, error)
+	ResolveAmlFlag(ctx context.Context, p service.Principal, id int64, resolution repository.AmlFlagStatus, comment string, meta service.ClientMeta) (admin.AmlFlag, error)
+	AnalyticsSummary(ctx context.Context, p service.Principal, f admin.AnalyticsFilter) (admin.AnalyticsSummary, error)
+	ListAuditLog(ctx context.Context, p service.Principal, f admin.AuditLogFilter) (admin.AuditLogPage, error)
 }
 
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
@@ -159,6 +163,8 @@ type Deps struct {
 	Notifications NotificationService
 	Admin         AdminService
 	CookieSecure  bool
+	// CORSAllowedOrigins — origin фронта на другом хосте; пусто — CORS выключен.
+	CORSAllowedOrigins []string
 }
 
 // Handler логирует через slog.Default() — его настраивает cmd/server.
@@ -175,6 +181,7 @@ type Handler struct {
 	notifications NotificationService
 	admin         AdminService
 	cookieSecure  bool
+	corsOrigins   []string
 }
 
 // Компилятор проверяет, что Handler реализует все операции спеки: по интерфейсу на тег.
@@ -192,5 +199,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, admin: d.Admin, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, admin: d.Admin, cookieSecure: d.CookieSecure, corsOrigins: d.CORSAllowedOrigins}
 }

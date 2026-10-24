@@ -4,7 +4,7 @@
 
 - Группа: служебные (AML)
 - sqlc-модель: `repository.AmlFlag`
-- API: `GET /admin/aml-flags`, `POST /admin/aml-flags/{id}/resolve`
+- API: `GET /admin/aml/flags`, `POST /admin/aml/flags/{flagId}/resolve`
 
 ## Поля
 
@@ -16,6 +16,7 @@
 | `rule` | `aml_rule` | нет | — | `AmlRule` | `sanctions_match`, `high_risk_jurisdiction`, `amount_threshold`, `registry_mismatch`, `other` |
 | `severity` | `aml_severity` (`low` / `medium` / `high`) | нет | — | `AmlSeverity` | |
 | `details` | `text` | нет | — | `string` | Что сработало |
+| `match_key` | `text` | да | — | `pgtype.Text` | Ключ дедупликации: `details` без даты FATF, score и имени алиаса (миграция `00004`). NULL — флаг не из скрининга, в дедупликации не участвует |
 | `status` | `aml_flag_status` (`open` / `false_positive` / `confirmed`) | нет | `'open'` | `AmlFlagStatus` | |
 | `resolved_by_user_id` | `uuid` FK → `users.id` | да | — | `pgtype.UUID` | Кто закрыл |
 | `resolution_comment` | `text` | да | — | `pgtype.Text` | |
@@ -47,9 +48,14 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateAmlFlag` | `:one` | Создать флаг по результату скрининга |
-| `ListAmlFlags` | `:many` | Фильтры `status`, `severity`, `organization_id`, сортировка `created_at DESC`, пагинация |
+| `HasSimilarAmlFlag` | `:one` | Дедупликация: у компании и заявки уже есть флаг с тем же `rule` и `match_key` в `open` или `false_positive` |
+| `ListAmlFlags` | `:many` | JOIN `organizations` (для `organization`), фильтры `status`, `severity`, `organization_id`, `application_id`, сортировка `created_at DESC, id DESC`, пагинация |
+| `CountAmlFlags` | `:one` | Счётчик с теми же фильтрами |
+| `GetAmlFlagByID` | `:one` | Флаг с организацией: ответ resolve и различение 404 / 409 |
+| `ListAmlFlagsByOrganization` | `:many` | Флаги в карточке компании, открытые сверху |
+| `CountOpenHighAmlFlags` | `:one` | Открытые `high` — блокируют approve KYC |
 | `ResolveAmlFlag` | `:one` | Закрыть флаг: только из `open`, ставит `resolved_at = now()` |
 
 Замечания:
-- Нет `CountAmlFlags` для пагинации и `GetAmlFlagByID` для карточки.
+- `ResolveAmlFlag` не различает «нет флага» и «уже закрыт» (оба — `ErrNoRows`): сервис перечитывает флаг `GetAmlFlagByID` и отвечает 404 или 409.
 - Если в `ResolveAmlFlag` передать `status = 'open'`, запрос упадёт на `aml_flags_resolution_chk`. Это правильно, но сервис должен валидировать статус заранее и отдавать 400, а не 500.
