@@ -61,7 +61,7 @@ func run(ctx context.Context) error {
 
 	queries := repository.New(pool)
 	txManager := service.NewTxManager(pool)
-	// Один ограничитель на процесс: ключи login/register/registry_lookup различаются префиксом.
+	// Один ограничитель на процесс: ключи login/register/registry_lookup/chat:send различаются префиксом.
 	limiter := service.NewMemoryRateLimiter()
 	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, limiter, service.DefaultAuthLimits)
 	companyRegistry := registry.NewMock() // в MVP реестр — только мок (DECISIONS п. 17)
@@ -81,6 +81,7 @@ func run(ctx context.Context) error {
 		}),
 		Offers:       service.NewOffers(service.OffersDeps{Store: queries, Tx: txManager}),
 		Deals:        service.NewDeals(service.DealsDeps{Store: queries, Tx: txManager}),
+		Chat:         service.NewChat(service.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
 		CookieSecure: cfg.CookieSecure,
 	})
 
