@@ -33,7 +33,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | ✅ | `GET`/`PATCH /organizations/me`, `GET`/`POST /organizations/me/documents`, `DELETE /organizations/me/documents/{documentId}`, `GET /documents/{documentId}/file`, `POST /organizations/me/kyc/submit` — профиль, бенефициары, KYC-документы и отправка на проверку с AML-скринингом и сверкой с реестром |
 | ✅ | `GET /registry/lookup` — поиск компании в мок-реестре для автозаполнения |
 | ✅ | `GET`/`POST /applications`, `GET`/`PATCH /applications/{applicationId}`, `POST …/submit`, `POST …/cancel`, `POST …/reject-offers`, `GET …/history` — заявки: витрина с фильтрами, статусы, история, уведомления |
-| ⏳ 501 | остальные 27 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET /offers`, `GET /offers/{offerId}`, `GET`/`POST /applications/{applicationId}/offers`, `POST /offers/{offerId}/reject`, `POST /offers/{offerId}/withdraw` — офферы: видимость по сторонам, `unread_messages`, история, уведомления |
+| ⏳ 501 | остальные 21 — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -185,13 +186,15 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/offers` | Список (по роли): кредитору — его предложения, заёмщику — входящие; архив | авториз. |
-| GET | `/applications/{applicationId}/offers` | Офферы по заявке | авториз. |
-| POST | `/applications/{applicationId}/offers` | Сделать оффер (KYC verified, заявка `published`, сумма ≤ суммы заявки) → `201` | L |
+| GET | `/offers` | Список (по роли): кредитору — его предложения, заёмщику — входящие по его заявкам, admin — все. Фильтры: `status` (несколько — ИЛИ), `application_id`, `created_from`/`created_to`; admin — `lender_organization_id`, `borrower_organization_id`; пагинация | авториз. |
+| GET | `/applications/{applicationId}/offers` | Офферы по заявке: владельцу и admin — все, кредитору — только свой (суммы конкурентов скрыты); фильтр `status` | авториз. |
+| POST | `/applications/{applicationId}/offers` | Сделать оффер (KYC verified, заявка `published`, сумма ≤ суммы заявки, валюта — всегда валюта заявки) → `201`; заёмщику — `offer_received` | L |
 | GET | `/offers/{offerId}` | Карточка оффера (автор-кредитор, заёмщик-владелец заявки, admin) | авториз. |
 | POST | `/offers/{offerId}/accept` | **Принять оффер → создаётся сделка** (`200`, тело — `Deal`); остальные офферы заявки отклоняются; повторный вызов → `409` | B |
-| POST | `/offers/{offerId}/reject` | Отклонить оффер | B |
-| POST | `/offers/{offerId}/withdraw` | Отозвать свой оффер (только из `sent`) | L |
+| POST | `/offers/{offerId}/reject` | Отклонить оффер (только из `sent`; тело `{"comment"}` необязательно) → `rejected_by_borrower`; кредитору — `offer_rejected` | B |
+| POST | `/offers/{offerId}/withdraw` | Отозвать свой оффер (только из `sent`); заёмщику — `offer_withdrawn` | L |
+
+Ошибки офферов: сумма больше суммы заявки или `valid_until` в прошлом → `400 VALIDATION_ERROR` (поле в `details`); невидимые оффер или заявка → `404 NOT_FOUND`; заявка не в `published` → `409 CONFLICT` («Заявка не принимает офферы»); второй `sent`-оффер компании по той же заявке → `409 CONFLICT` (после `withdrawn`/`rejected` можно сделать новый); `reject`/`withdraw` не из `sent` → `409 INVALID_STATUS_TRANSITION`. `403 FORBIDDEN` на `reject` получают admin и кредитор (видят оффер, но решает заёмщик), на `withdraw` — admin и заёмщик. `unread_messages` — чужие непрочитанные сообщения чата текущего пользователя; admin его не получает.
 
 ### deals — сделки
 
