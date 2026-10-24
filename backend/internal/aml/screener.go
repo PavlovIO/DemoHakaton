@@ -54,6 +54,9 @@ type Finding struct {
 	Rule     repository.AmlRule
 	Severity repository.AmlSeverity
 	Details  string
+	// MatchKey — ключ дедупликации: Details без того, что меняется при обновлении данных
+	// (дата FATF, score, имя алиаса). Пустой — дедупликация по Details.
+	MatchKey string
 }
 
 // Screener проверяет компанию и заявку по AML-правилам. Ошибка — операция откатывается

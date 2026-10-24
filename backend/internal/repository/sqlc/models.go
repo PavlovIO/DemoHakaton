@@ -736,6 +736,7 @@ type AmlFlag struct {
 	ResolutionComment pgtype.Text        `json:"resolution_comment"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+	MatchKey          pgtype.Text        `json:"match_key"`
 }
 
 type Application struct {

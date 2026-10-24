@@ -56,10 +56,10 @@ func (q *Queries) CountOpenHighAmlFlags(ctx context.Context, organizationID uuid
 
 const createAmlFlag = `-- name: CreateAmlFlag :one
 INSERT INTO aml_flags (
-    organization_id, application_id, rule, severity, details
+    organization_id, application_id, rule, severity, details, match_key
 ) VALUES (
-    $1, $2, $3, $4, $5
-) RETURNING id, organization_id, application_id, rule, severity, details, status, resolved_by_user_id, resolution_comment, created_at, resolved_at
+    $1, $2, $3, $4, $5, $6
+) RETURNING id, organization_id, application_id, rule, severity, details, status, resolved_by_user_id, resolution_comment, created_at, resolved_at, match_key
 `
 
 type CreateAmlFlagParams struct {
@@ -68,6 +68,7 @@ type CreateAmlFlagParams struct {
 	Rule           AmlRule     `json:"rule"`
 	Severity       AmlSeverity `json:"severity"`
 	Details        string      `json:"details"`
+	MatchKey       pgtype.Text `json:"match_key"`
 }
 
 func (q *Queries) CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error) {
@@ -77,6 +78,7 @@ func (q *Queries) CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (A
 		arg.Rule,
 		arg.Severity,
 		arg.Details,
+		arg.MatchKey,
 	)
 	var i AmlFlag
 	err := row.Scan(
@@ -91,6 +93,7 @@ func (q *Queries) CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (A
 		&i.ResolutionComment,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.MatchKey,
 	)
 	return i, err
 }
@@ -137,7 +140,7 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 }
 
 const getAmlFlagByID = `-- name: GetAmlFlagByID :one
-SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, o.name AS organization_name, o.country_code AS organization_country_code
+SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, f.match_key, o.name AS organization_name, o.country_code AS organization_country_code
 FROM aml_flags f
 JOIN organizations o ON o.id = f.organization_id
 WHERE f.id = $1
@@ -166,6 +169,7 @@ func (q *Queries) GetAmlFlagByID(ctx context.Context, id int64) (GetAmlFlagByIDR
 		&i.AmlFlag.ResolutionComment,
 		&i.AmlFlag.CreatedAt,
 		&i.AmlFlag.ResolvedAt,
+		&i.AmlFlag.MatchKey,
 		&i.OrganizationName,
 		&i.OrganizationCountryCode,
 	)
@@ -285,7 +289,7 @@ SELECT EXISTS (
     WHERE organization_id = $1::uuid
       AND application_id IS NOT DISTINCT FROM $2::uuid
       AND rule = $3::aml_rule
-      AND details = $4::text
+      AND match_key = $4::text
       AND status IN ('open', 'false_positive')
 )
 `
@@ -294,18 +298,19 @@ type HasSimilarAmlFlagParams struct {
 	OrganizationID uuid.UUID   `json:"organization_id"`
 	ApplicationID  pgtype.UUID `json:"application_id"`
 	Rule           AmlRule     `json:"rule"`
-	Details        string      `json:"details"`
+	MatchKey       string      `json:"match_key"`
 }
 
 // Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
-// и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
+// и match_key в статусе open или false_positive. Повторный submit после rejected не плодит
 // копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+// Ключ, а не details: в тексте есть дата FATF и score, они меняются при обновлении данных.
 func (q *Queries) HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error) {
 	row := q.db.QueryRow(ctx, hasSimilarAmlFlag,
 		arg.OrganizationID,
 		arg.ApplicationID,
 		arg.Rule,
-		arg.Details,
+		arg.MatchKey,
 	)
 	var exists bool
 	err := row.Scan(&exists)
@@ -313,7 +318,7 @@ func (q *Queries) HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagPa
 }
 
 const listAmlFlags = `-- name: ListAmlFlags :many
-SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, o.name AS organization_name, o.country_code AS organization_country_code
+SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, f.match_key, o.name AS organization_name, o.country_code AS organization_country_code
 FROM aml_flags f
 JOIN organizations o ON o.id = f.organization_id
 WHERE ($1::aml_flag_status IS NULL OR f.status = $1::aml_flag_status)
@@ -369,6 +374,7 @@ func (q *Queries) ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]L
 			&i.AmlFlag.ResolutionComment,
 			&i.AmlFlag.CreatedAt,
 			&i.AmlFlag.ResolvedAt,
+			&i.AmlFlag.MatchKey,
 			&i.OrganizationName,
 			&i.OrganizationCountryCode,
 		); err != nil {
@@ -383,7 +389,7 @@ func (q *Queries) ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]L
 }
 
 const listAmlFlagsByOrganization = `-- name: ListAmlFlagsByOrganization :many
-SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, o.name AS organization_name, o.country_code AS organization_country_code
+SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, f.match_key, o.name AS organization_name, o.country_code AS organization_country_code
 FROM aml_flags f
 JOIN organizations o ON o.id = f.organization_id
 WHERE f.organization_id = $1
@@ -419,6 +425,7 @@ func (q *Queries) ListAmlFlagsByOrganization(ctx context.Context, organizationID
 			&i.AmlFlag.ResolutionComment,
 			&i.AmlFlag.CreatedAt,
 			&i.AmlFlag.ResolvedAt,
+			&i.AmlFlag.MatchKey,
 			&i.OrganizationName,
 			&i.OrganizationCountryCode,
 		); err != nil {
@@ -512,7 +519,7 @@ UPDATE aml_flags SET
     resolution_comment = $4,
     resolved_at = now()
 WHERE id = $1 AND status = 'open'
-RETURNING id, organization_id, application_id, rule, severity, details, status, resolved_by_user_id, resolution_comment, created_at, resolved_at
+RETURNING id, organization_id, application_id, rule, severity, details, status, resolved_by_user_id, resolution_comment, created_at, resolved_at, match_key
 `
 
 type ResolveAmlFlagParams struct {
@@ -542,6 +549,7 @@ func (q *Queries) ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) 
 		&i.ResolutionComment,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.MatchKey,
 	)
 	return i, err
 }

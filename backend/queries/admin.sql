@@ -1,20 +1,21 @@
 -- name: CreateAmlFlag :one
 INSERT INTO aml_flags (
-    organization_id, application_id, rule, severity, details
+    organization_id, application_id, rule, severity, details, match_key
 ) VALUES (
-    $1, $2, $3, $4, $5
+    $1, $2, $3, $4, $5, $6
 ) RETURNING *;
 
 -- name: HasSimilarAmlFlag :one
 -- Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
--- и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
+-- и match_key в статусе open или false_positive. Повторный submit после rejected не плодит
 -- копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+-- Ключ, а не details: в тексте есть дата FATF и score, они меняются при обновлении данных.
 SELECT EXISTS (
     SELECT 1 FROM aml_flags
     WHERE organization_id = sqlc.arg('organization_id')::uuid
       AND application_id IS NOT DISTINCT FROM sqlc.narg('application_id')::uuid
       AND rule = sqlc.arg('rule')::aml_rule
-      AND details = sqlc.arg('details')::text
+      AND match_key = sqlc.arg('match_key')::text
       AND status IN ('open', 'false_positive')
 );
 

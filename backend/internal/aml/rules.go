@@ -153,12 +153,16 @@ func screenFatf(ctx context.Context, store Store, jurisdictions []jurisdiction) 
 		if !ok || !r.FatfList.Valid {
 			continue
 		}
-		details := fmt.Sprintf("%s — %s список FATF", j.label, fatfListLabel[r.FatfList.FatfList])
+		// Дата списка — только в details: обновление FATF без смены списка страны не должно
+		// заново открывать флаг, закрытый админом.
+		key := fmt.Sprintf("%s — %s список FATF", j.label, fatfListLabel[r.FatfList.FatfList])
+		details := key
 		if r.FatfAsOf.Valid {
 			details += fmt.Sprintf(" (на %s)", r.FatfAsOf.Time.Format(time.DateOnly))
 		}
 		findings = append(findings, Finding{
-			Rule: repository.AmlRuleHighRiskJurisdiction, Severity: fatfSeverity[r.FatfList.FatfList], Details: details,
+			Rule: repository.AmlRuleHighRiskJurisdiction, Severity: fatfSeverity[r.FatfList.FatfList],
+			Details: details, MatchKey: key,
 		})
 	}
 	return findings, nil
@@ -265,6 +269,9 @@ func screenSanctions(ctx context.Context, store Store, name string, kinds []stri
 		Severity: severity,
 		Details: fmt.Sprintf("Совпадение %s «%s» со списком %s (запись %s «%s»), score %.2f",
 			subjectLabel, name, best.Source, best.ExternalID, best.Name, bestScore),
+		// Ключ — запись списка и severity, без score и алиаса: перезагрузка списка или правка
+		// нормализации не открывает заново закрытое, а рост до high даёт новый флаг.
+		MatchKey: fmt.Sprintf("%s «%s» ~ %s/%s, %s", subjectLabel, name, best.Source, best.ExternalID, severity),
 	}}, nil
 }
 

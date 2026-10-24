@@ -103,8 +103,9 @@ type Querier interface {
 	// историю дважды — второе увидит уже новый статус и ответит без записей.
 	GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error)
 	// Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
-	// и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
+	// и match_key в статусе open или false_positive. Повторный submit после rejected не плодит
 	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+	// Ключ, а не details: в тексте есть дата FATF и score, они меняются при обновлении данных.
 	HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error)
 	InsertSanctionsEntries(ctx context.Context, arg []InsertSanctionsEntriesParams) (int64, error)
 	// Админский список флагов (BE-13): фильтры через narg — «нет значения → всё». Название и

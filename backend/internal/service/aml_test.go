@@ -11,7 +11,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 )
 
-// fakeFlagStore считает дублем находку с details из existing.
+// fakeFlagStore считает дублем находку с match_key из existing.
 type fakeFlagStore struct {
 	repository.Querier
 	existing map[string]bool
@@ -21,7 +21,7 @@ type fakeFlagStore struct {
 
 func (s *fakeFlagStore) HasSimilarAmlFlag(_ context.Context, arg repository.HasSimilarAmlFlagParams) (bool, error) {
 	s.dedupArg = append(s.dedupArg, arg)
-	return s.existing[arg.Details], nil
+	return s.existing[arg.MatchKey], nil
 }
 
 func (s *fakeFlagStore) CreateAmlFlag(_ context.Context, arg repository.CreateAmlFlagParams) (repository.AmlFlag, error) {
@@ -31,9 +31,10 @@ func (s *fakeFlagStore) CreateAmlFlag(_ context.Context, arg repository.CreateAm
 
 func TestSaveAmlFindings(t *testing.T) {
 	orgID, appID := uuid.New(), uuid.New()
-	store := &fakeFlagStore{existing: map[string]bool{"уже открыт": true}}
+	store := &fakeFlagStore{existing: map[string]bool{"M-001, high": true}}
 	findings := []aml.Finding{
-		{Rule: repository.AmlRuleSanctionsMatch, Severity: repository.AmlSeverityHigh, Details: "уже открыт"},
+		// Текст изменился (score после перезагрузки списка), ключ — нет: дубль.
+		{Rule: repository.AmlRuleSanctionsMatch, Severity: repository.AmlSeverityHigh, Details: "M-001, score 0.93", MatchKey: "M-001, high"},
 		{Rule: repository.AmlRuleAmountThreshold, Severity: repository.AmlSeverityMedium, Details: "новый"},
 	}
 
@@ -45,7 +46,7 @@ func TestSaveAmlFindings(t *testing.T) {
 		t.Fatalf("created flags = %+v, want только «новый»", got)
 	}
 	if len(store.created) != 1 || store.created[0].OrganizationID != orgID || store.created[0].ApplicationID.Bytes != appID ||
-		store.created[0].Rule != repository.AmlRuleAmountThreshold {
+		store.created[0].Rule != repository.AmlRuleAmountThreshold || store.created[0].MatchKey.String != "новый" {
 		t.Fatalf("CreateAmlFlag = %+v", store.created)
 	}
 	if len(store.dedupArg) != 2 || store.dedupArg[0].Rule != repository.AmlRuleSanctionsMatch || !store.dedupArg[0].ApplicationID.Valid {

@@ -154,6 +154,27 @@ func TestScreenOrganizationSanctions(t *testing.T) {
 	}
 }
 
+// MatchKey не зависит от score и алиаса: после перезагрузки списка лучшим может стать
+// другой алиас той же записи, и закрытый флаг не должен открыться снова.
+func TestScreenOrganizationSanctionsMatchKey(t *testing.T) {
+	screen := func(c repository.SearchSanctionsRow) Finding {
+		t.Helper()
+		got, err := RuleScreener{}.ScreenOrganization(context.Background(), &fakeStore{candidates: []repository.SearchSanctionsRow{c}}, beneficiary(shortSubject))
+		if err != nil || len(got) != 1 {
+			t.Fatalf("findings = %+v, err = %v", got, err)
+		}
+		return got[0]
+	}
+	exact, alias := screen(candidate("M-1", "person", shortSubject)), screen(candidate("M-1", "person", score090))
+	if exact.Details == alias.Details || exact.MatchKey != alias.MatchKey {
+		t.Fatalf("details %q / %q, key %q / %q: нужен один ключ при разном тексте",
+			exact.Details, alias.Details, exact.MatchKey, alias.MatchKey)
+	}
+	if medium := screen(candidate("M-1", "person", score088)); medium.MatchKey == exact.MatchKey {
+		t.Fatalf("medium и high с одним ключом %q: рост до high не дал бы нового флага", medium.MatchKey)
+	}
+}
+
 func TestScreenOrganizationFatf(t *testing.T) {
 	store := &fakeStore{fatf: map[string]repository.FatfList{"KP": repository.FatfListBlack, "KW": repository.FatfListGrey}}
 	subject := OrganizationSubject{
@@ -169,9 +190,9 @@ func TestScreenOrganizationFatf(t *testing.T) {
 	}
 	want := []Finding{
 		{Rule: repository.AmlRuleHighRiskJurisdiction, Severity: repository.AmlSeverityHigh,
-			Details: "Страна регистрации KP — чёрный список FATF (на 2026-06-19)"},
+			Details: "Страна регистрации KP — чёрный список FATF (на 2026-06-19)", MatchKey: "Страна регистрации KP — чёрный список FATF"},
 		{Rule: repository.AmlRuleHighRiskJurisdiction, Severity: repository.AmlSeverityMedium,
-			Details: "Гражданство бенефициара «Al Sabah» KW — серый список FATF (на 2026-06-19)"},
+			Details: "Гражданство бенефициара «Al Sabah» KW — серый список FATF (на 2026-06-19)", MatchKey: "Гражданство бенефициара «Al Sabah» KW — серый список FATF"},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("findings = %+v\nwant %+v", got, want)
@@ -279,7 +300,7 @@ func TestScreenApplication(t *testing.T) {
 		{name: "страна назначения в чёрном списке",
 			subject: ApplicationSubject{TargetCountryCode: "IR", Amount: decimal.NewFromInt(1000), CurrencyCode: "USD"},
 			want: []Finding{{Rule: repository.AmlRuleHighRiskJurisdiction, Severity: repository.AmlSeverityHigh,
-				Details: "Страна назначения IR — чёрный список FATF (на 2026-06-19)"}}},
+				Details: "Страна назначения IR — чёрный список FATF (на 2026-06-19)", MatchKey: "Страна назначения IR — чёрный список FATF"}}},
 		{name: "сумма выше порога",
 			subject: ApplicationSubject{TargetCountryCode: "DE", Amount: decimal.RequireFromString("100000000.01"), CurrencyCode: "RUB"},
 			want: []Finding{{Rule: repository.AmlRuleAmountThreshold, Severity: repository.AmlSeverityMedium,
