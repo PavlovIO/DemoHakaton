@@ -59,10 +59,7 @@ func (k *Kyc) SubmitKyc(ctx context.Context, p Principal, meta ClientMeta) (Orga
 	if _, err := nextKycStatus(org.KycStatus, KycSubmit); err != nil {
 		return OrganizationProfile{}, err
 	}
-	registryCheck, snapshot, err := k.checkRegistry(ctx, org)
-	if err != nil {
-		return OrganizationProfile{}, err
-	}
+	registryCheck, snapshot := k.checkRegistry(ctx, org)
 
 	err = k.tx.InTx(ctx, func(q repository.Querier) error {
 		org, err := q.GetOrganizationForUpdate(ctx, orgID)
@@ -94,29 +91,28 @@ func (k *Kyc) SubmitKyc(ctx context.Context, p Principal, meta ClientMeta) (Orga
 	return k.profile(ctx, k.store, orgID)
 }
 
-// checkRegistry сверяет компанию с реестром, если verifier подключён (BE-06). Недоступный
-// реестр не блокирует submit — «мягкая деградация» (issue #22): AML получит Outcome
+// checkRegistry сверяет компанию с реестром, если verifier подключён (BE-06). Сбой
+// реестра не блокирует submit — «мягкая деградация» (issue #22): AML получит Outcome
 // unavailable, и админ сверит вручную. snapshot != nil — ответ реестра для registry_checks.
-func (k *Kyc) checkRegistry(ctx context.Context, org repository.Organization) (*aml.RegistryResult, *registry.Result, error) {
+func (k *Kyc) checkRegistry(ctx context.Context, org repository.Organization) (*aml.RegistryResult, *registry.Result) {
 	if k.verifier == nil {
-		return nil, nil, nil
+		return nil, nil
 	}
 	number := org.RegistrationNumber
 	if org.CountryCode != countryRU {
 		if !org.Lei.Valid {
-			return &aml.RegistryResult{Outcome: aml.RegistryNoIdentifier}, nil, nil
+			return &aml.RegistryResult{Outcome: aml.RegistryNoIdentifier}, nil
 		}
 		number = org.Lei.String
 	}
 	result, err := k.verifier.Lookup(ctx, org.CountryCode, number)
-	if errors.Is(err, registry.ErrUnavailable) {
-		slog.WarnContext(ctx, "registry unavailable on kyc submit", "organization_id", org.ID, "err", err)
-		return amlRegistryResult(result, err), nil, nil
-	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("registry lookup: %w", err)
+		// Любой сбой, а не только ErrUnavailable: битый ответ или баг адаптера не должны
+		// превращать внешний реестр в 500 на submit — админ сверит вручную.
+		slog.WarnContext(ctx, "registry lookup failed on kyc submit", "organization_id", org.ID, "err", err)
+		return amlRegistryResult(result, err), nil
 	}
-	return amlRegistryResult(result, nil), &result, nil
+	return amlRegistryResult(result, nil), &result
 }
 
 // checkRequiredDocuments — 400 с записью на каждый недостающий тип.
