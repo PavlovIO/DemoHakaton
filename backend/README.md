@@ -24,7 +24,7 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 
 ## Статус реализации
 
-Контракт описывает **51 операцию**. Каждая уже маршрутизируется и валидируется по спеке, а ещё не реализованные отвечают `501 NOT_IMPLEMENTED` в общем формате ошибок. Поэтому фронт видит итоговую форму API с первого дня.
+Контракт описывает **51 операцию**, все реализованы. Операция, добавленная в контракт раньше кода, отвечает `501 NOT_IMPLEMENTED` в общем формате ошибок.
 
 | Работает | Операции |
 |---|---|
@@ -39,7 +39,7 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | ✅ | `GET /notifications`, `POST /notifications/{notificationId}/read`, `POST /notifications/read-all` — лента уведомлений с `unread_total` |
 | ✅ | `GET /admin/organizations`, `GET /admin/organizations/{organizationId}`, `POST …/kyc/approve`, `POST …/kyc/reject`, `POST /admin/applications/{applicationId}/approve`, `POST …/reject`, `GET /admin/users`, `POST /admin/users/{userId}/block`, `POST …/unblock` — очередь и карточка компании, решения по KYC, модерация заявок, блокировка |
 | ✅ | `GET /admin/aml/flags`, `POST /admin/aml/flags/{flagId}/resolve` — AML-флаги с фильтрами и решение по флагу |
-| ⏳ 501 | остальные 2 (`adminAnalyticsSummary`, `adminListAuditLog` — BE-14) — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET /admin/audit-log`, `GET /admin/analytics/summary` — журнал аудита с фильтрами и сводка за период |
 
 ## Общие правила
 
@@ -47,6 +47,7 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 
 - Все пути — относительно **`/api/v1`** (`http://localhost:8080/api/v1` локально).
 - Тела запросов и ответов — `application/json; charset=utf-8`. Исключение — загрузка KYC-документа (`multipart/form-data`) и скачивание файла.
+- Каждый ответ несёт `X-Request-ID`: id из запроса клиента (`[A-Za-z0-9._-]`, до 64 символов) или сгенерированный. Тот же `request_id` — в каждой строке лога сервера по этому запросу; с сессией там же `user_id` и `org_id`.
 - Поля в JSON — `snake_case`. Идентификаторы — UUID (v7, сортируются по времени создания). Даты — RFC 3339 (`2026-10-22T12:00:00Z`).
 
 ### Аутентификация: сессия в cookie + CSRF
@@ -261,8 +262,8 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | GET | `/admin/users` | Пользователи. Фильтры `role`, `status`, `q` (подстрока email); пагинация | A |
 | POST | `/admin/users/{userId}/block` | Заблокировать (удаляет все его сессии) | A |
 | POST | `/admin/users/{userId}/unblock` | Разблокировать | A |
-| GET | `/admin/audit-log` | Журнал действий пользователей | A |
-| GET | `/admin/analytics/summary` | Аналитика: число заявок, средний размер, топ-страны | A |
+| GET | `/admin/audit-log` | Журнал действий пользователей, новые сверху. Фильтры `user_id`, `action`, `entity_type`, `entity_id`, `created_from`, `created_to`; пагинация и `total` | A |
+| GET | `/admin/analytics/summary` | Сводка за период: заявки всего и по статусам, офферы, сделки, суммы и средние по валютам, топ-`top_n` стран спроса и предложения | A |
 
 Ошибки и правила решений админа:
 - **KYC approve:** компания не в `under_review` → `409 INVALID_STATUS_TRANSITION`; у компании есть открытый AML-флаг `severity=high` → `409 CONFLICT` («У компании есть открытые AML-флаги высокой серьёзности»), состояние не меняется. Переход проверяется раньше флагов. Флаг, закрытый как `false_positive` или `confirmed`, approve не блокирует.
@@ -271,6 +272,8 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 - **Блокировка:** администратора (в том числе себя) заблокировать нельзя → `403 FORBIDDEN`. Блокировка удаляет все сессии пользователя; доступ теряется и без этого — сессия заблокированного не проходит проверку (`401`), вход отклоняется. Повторный block и unblock уже активного → `200` без новых записей. Разблокировка сессии не восстанавливает: пользователь входит заново.
 - Каждое решение пишет `status_history` (`actor_role = admin`) и `audit_log` (`kyc.approve`, `kyc.reject`, `application.approve`, `application.reject`, `user.block`, `user.unblock` — с IP и User-Agent), решения по KYC и заявкам — ещё и уведомление компании. Два параллельных решения по одной сущности сериализуются блокировкой строки: второе получает `409 INVALID_STATUS_TRANSITION`.
 - **AML-флаг:** нет флага → `404 NOT_FOUND`; флаг уже закрыт → `409 INVALID_STATUS_TRANSITION` (решение не меняется, флаг не переоткрывается). Решение пишет `audit_log` `aml_flag.resolve`.
+- **Период** `created_from`/`created_to` (журнал и сводка) — полуинтервал `[from, to)`, без границ — всё время; в сводке `created_from > created_to` → `400 VALIDATION_ERROR`, `field: created_to`. Сводка считает заявки по `created_at`, офферы — по `created_at` оффера, сделки — по `agreed_at`. `amounts_by_currency` — все заявки, кроме `draft`, по каждой валюте отдельно (без конвертации); `top_demand_countries` — только `published` и `agreed`; `top_n` 1–50, по умолчанию 10.
+- **Журнал аудита** (`action` — `<сущность>.<глагол>`): `auth.login`, `auth.login_failed` (`meta.reason`: `unknown_email` / `bad_password` / `blocked`, email не пишется), `auth.register`, `document.upload`, `document.download` (только админом), `kyc.submit`, `kyc.approve`, `kyc.reject`, `application.create`, `application.submit`, `application.cancel`, `application.approve`, `application.reject`, `offer.create`, `offer.accept`, `offer.reject`, `offer.withdraw`, `user.block`, `user.unblock`, `aml_flag.resolve`. Каждая запись — с IP и User-Agent; запись пишется в транзакции действия, и её сбой откатывает действие (кроме `auth.login_failed` — best-effort).
 - **Поиск `q`** ищет подстроку буквально: `%`, `_` и `\` экранируются, `q=a_b` не найдёт `axb`.
 
 Правила AML-скрининга (`submitKyc` — компания и каждый бенефициар; `submitApplication` — заявка). Пороги и обоснования — в [`internal/aml/rules.go`](internal/aml/rules.go):
@@ -361,11 +364,11 @@ curl -b b.txt $API/deals
 cmd/server/main.go            сборка зависимостей вручную, http.Server, graceful shutdown
 internal/
   http/                       СЛОЙ 1 — транспорт
-    middleware/               RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta,
+    middleware/               RequestID, RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta,
                               Authenticate (сессия → principal), Authorize (x-roles, x-kyc-required),
                               CSRF
     handler/                  пишем руками: *Handler реализует контракт
-      <tag>.go                операции тега: auth.go, offers.go, … (заглушки → 501)
+      <tag>.go                операции тега: auth.go, offers.go, … (нереализованные → 501)
       router.go               цепочка middleware + роутинг всех тегов
       errors.go               apperr.Code → HTTP-статус: одно место на весь API
       validate.go             валидация запроса по спеке → VALIDATION_ERROR с полями
@@ -393,7 +396,7 @@ queries/                      SQL для sqlc
 
 К ним ведёт F12 из `handler/<tag>.go`. Модели (`Offer`, `Error`, enum'ы) — в `internal/http/api/models.gen.go`.
 
-Путь запроса `GET /api/v1/dictionaries/countries`: `RequestLog → Recover → SecurityHeaders → MaxBody → WithRequestMeta → Authenticate → Authorize → CSRF → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
+Путь запроса `GET /api/v1/dictionaries/countries`: `RequestID → RequestLog → Recover → SecurityHeaders → MaxBody → WithRequestMeta → Authenticate → Authorize → CSRF → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
 
 Почему модели — один пакет, а сервер — пакет на тег: схемы ссылаются друг на друга по кругу (`organizations` ↔ `auth` ↔ `aml`), а Go запрещает циклы импортов. Операции же независимы, поэтому каждый тег — свой пакет со своим интерфейсом на 1–13 методов ([ADR-0003](../docs/adr/0003-server-package-per-tag.md)). sqlc устроен так же: запросы по доменам, `models.go` общий.
 

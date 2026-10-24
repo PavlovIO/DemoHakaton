@@ -36,7 +36,8 @@ func NewRouter(h *Handler) http.Handler {
 	}
 
 	return middleware.Chain(routes(h),
-		middleware.RequestLog, // самый внешний: логируем и отбитые запросы
+		middleware.RequestID(), // самый внешний: id нужен уже строке RequestLog
+		middleware.RequestLog,  // логируем и отбитые запросы
 		middleware.Recover(func(w http.ResponseWriter, r *http.Request) { // паника в валидаторе -> 500 в формате Error
 			WriteError(w, r, apperr.New(apperr.CodeInternal, "panic"))
 		}),

@@ -19,6 +19,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/config"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
@@ -134,10 +135,11 @@ func run(ctx context.Context) error {
 
 func newLogger(cfg config.Config) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	var h slog.Handler = slog.NewTextHandler(os.Stdout, opts)
 	if cfg.LogFormat == "json" {
-		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+		h = slog.NewJSONHandler(os.Stdout, opts)
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+	return slog.New(middleware.ContextHandler{Handler: h}) // request_id и user_id в каждой строке запроса
 }
 
 // newPool создаёт пул и сразу проверяет соединение: без БД сервер не стартует (fail fast).

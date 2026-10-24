@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
@@ -54,11 +55,21 @@ func Authenticate(a Authenticator, writeErr ErrorWriter) func(http.Handler) http
 				return
 			}
 
+			logPrincipal(r.Context(), *principal)
 			ctx := context.WithValue(r.Context(), principalContextKey, *principal)
 			ctx = context.WithValue(ctx, sessionTokenContextKey, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// logPrincipal дописывает пользователя в строки лога запроса; у admin организации нет.
+func logPrincipal(ctx context.Context, p service.Principal) {
+	attrs := []slog.Attr{slog.String("user_id", p.UserID.String())}
+	if p.OrgID != nil {
+		attrs = append(attrs, slog.String("org_id", p.OrgID.String()))
+	}
+	WithLogAttrs(ctx, attrs...)
 }
 
 // PrincipalFromContext возвращает principal из контекста запроса.

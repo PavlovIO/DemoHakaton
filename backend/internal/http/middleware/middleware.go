@@ -1,4 +1,9 @@
 // Package middleware — обёртки net/http вокруг всего API.
+//
+// Порядок в handler.NewRouter: RequestID → RequestLog → Recover → SecurityHeaders → MaxBody →
+// WithRequestMeta → Authenticate → Authorize → CSRF. RequestID — первым: его id и атрибуты
+// пользователя (WithLogAttrs из Authenticate) ContextHandler пишет во все строки лога запроса,
+// включая строку RequestLog.
 package middleware
 
 import (
