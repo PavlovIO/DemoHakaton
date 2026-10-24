@@ -123,7 +123,7 @@ func TestRouterErrors(t *testing.T) {
 		{"invalid uuid in path", "/api/v1/applications/not-a-uuid", 400, "VALIDATION_ERROR", "applicationId"},
 		{"invalid query param", "/api/v1/applications?page=abc", 400, "VALIDATION_ERROR", "page"},
 		{"unknown route", "/api/v1/nope", 404, "NOT_FOUND", ""},
-		{"not implemented yet", "/api/v1/deals", 501, "NOT_IMPLEMENTED", ""},
+		{"not implemented yet", "/api/v1/notifications", 501, "NOT_IMPLEMENTED", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
