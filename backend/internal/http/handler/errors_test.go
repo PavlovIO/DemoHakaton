@@ -144,15 +144,26 @@ func TestRouterErrors(t *testing.T) {
 }
 
 // Ещё не реализованная операция (BE-12) отвечает 501 в формате Error; все такие — только для admin.
+// Аутентификация и роль проверяются раньше 501: заглушка не раскрывает маршрут чужим.
 func TestNotImplemented(t *testing.T) {
 	fixture, deps := authFixture()
 	deps.Auth = &cookieAuth{fakeAuth: *fixture}
 	deps.Dicts, deps.DB = fakeDicts{}, okDB{}
 	srv := newTestServer(t, deps)
+	const path = "/api/v1/admin/aml/flags"
 
-	resp, body := sessionRequest(t, srv, "admin", "GET", "/api/v1/admin/aml/flags", "", nil)
-
-	wantError(t, resp, body, http.StatusNotImplemented, "NOT_IMPLEMENTED", "")
+	t.Run("admin", func(t *testing.T) {
+		resp, body := sessionRequest(t, srv, "admin", "GET", path, "", nil)
+		wantError(t, resp, body, http.StatusNotImplemented, "NOT_IMPLEMENTED", "")
+	})
+	t.Run("без сессии", func(t *testing.T) {
+		resp, body := get(t, srv, path)
+		wantError(t, resp, body, http.StatusUnauthorized, "UNAUTHORIZED", "")
+	})
+	t.Run("не admin", func(t *testing.T) {
+		resp, body := sessionRequest(t, srv, "borrower-verified", "GET", path, "", nil)
+		wantError(t, resp, body, http.StatusForbidden, "FORBIDDEN", "")
+	})
 }
 
 func TestHealthz(t *testing.T) {
