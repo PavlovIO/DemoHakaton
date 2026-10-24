@@ -37,7 +37,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | ✅ | `POST /offers/{offerId}/accept`, `GET /deals`, `GET /deals/{dealId}` — принятие оффера в одной транзакции, сделка-снапшот с комиссией, видимость сделок сторонам и admin |
 | ✅ | `GET`/`POST /offers/{offerId}/messages` — чат сторон оффера: polling, отметка прочтения, уведомление другой стороне, лимит отправки |
 | ✅ | `GET /notifications`, `POST /notifications/{notificationId}/read`, `POST /notifications/read-all` — лента уведомлений с `unread_total` |
-| ⏳ 501 | остальные 13 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET /admin/organizations`, `GET /admin/organizations/{organizationId}`, `POST …/kyc/approve`, `POST …/kyc/reject`, `POST /admin/applications/{applicationId}/approve`, `POST …/reject`, `GET /admin/users`, `POST /admin/users/{userId}/block`, `POST …/unblock` — очередь и карточка компании, решения по KYC, модерация заявок, блокировка |
+| ⏳ 501 | остальные 4 (`adminListAmlFlags`, `adminResolveAmlFlag` — BE-13; `adminAnalyticsSummary`, `adminListAuditLog` — BE-14) — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -232,9 +233,9 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | Тип | Событие | Кому |
 |---|---|---|
 | `kyc_submitted` | `submitKyc` | админам |
-| `kyc_approved`, `kyc_rejected` | `adminApproveKyc`, `adminRejectKyc` (BE-12, ещё `501`) | компании |
+| `kyc_approved`, `kyc_rejected` | `adminApproveKyc`, `adminRejectKyc` | компании |
 | `application_submitted` | `submitApplication` | админам |
-| `application_published`, `application_rejected` | `adminApproveApplication`, `adminRejectApplication` (BE-12, ещё `501`) | компании-заёмщику |
+| `application_published`, `application_rejected` | `adminApproveApplication`, `adminRejectApplication` | компании-заёмщику |
 | `offer_received` | `createOffer` | компании-заёмщику |
 | `offer_accepted` | `acceptOffer` | кредитору принятого оффера |
 | `offer_rejected` | `rejectOffer`; `acceptOffer`, `cancelApplication`, `rejectAllOffers` — каждому кредитору автоматически отклонённого `sent`-оффера | кредитору |
@@ -248,19 +249,27 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/admin/organizations` | Компании; очередь верификации — `kyc_status=under_review` | A |
-| GET | `/admin/organizations/{organizationId}` | Полная карточка: документы, бенефициары, AML-флаги, пользователи | A |
+| GET | `/admin/organizations` | Компании; очередь верификации — `kyc_status=under_review`. Фильтры `kyc_status` (несколько — ИЛИ), `type`, `country_code`, `q` (подстрока названия или рег. номера); пагинация | A |
+| GET | `/admin/organizations/{organizationId}` | Полная карточка: документы, бенефициары, AML-флаги (открытые сверху), пользователи, последняя сверка с реестром (`registry_check: null`, если сверки не было) | A |
 | POST | `/admin/organizations/{organizationId}/kyc/approve` | Верифицировать (`under_review` → `verified`) | A |
 | POST | `/admin/organizations/{organizationId}/kyc/reject` | Отклонить с причиной (`under_review` → `rejected`) | A |
 | POST | `/admin/applications/{applicationId}/approve` | Опубликовать заявку (`moderation` → `published`) | A |
 | POST | `/admin/applications/{applicationId}/reject` | Вернуть на доработку с причиной (`moderation` → `rejected`) | A |
 | GET | `/admin/aml/flags` | AML-флаги rule-based скрининга (санкции, FATF, порог суммы). Фильтры `status`, `severity`, `organization_id`, `application_id`; пагинация | A |
 | POST | `/admin/aml/flags/{flagId}/resolve` | Закрыть AML-флаг | A |
-| GET | `/admin/users` | Пользователи | A |
+| GET | `/admin/users` | Пользователи. Фильтры `role`, `status`, `q` (подстрока email); пагинация | A |
 | POST | `/admin/users/{userId}/block` | Заблокировать (удаляет все его сессии) | A |
 | POST | `/admin/users/{userId}/unblock` | Разблокировать | A |
 | GET | `/admin/audit-log` | Журнал действий пользователей | A |
 | GET | `/admin/analytics/summary` | Аналитика: число заявок, средний размер, топ-страны | A |
+
+Ошибки и правила решений админа:
+- **KYC approve:** компания не в `under_review` → `409 INVALID_STATUS_TRANSITION`; у компании есть открытый AML-флаг `severity=high` → `409 CONFLICT` («У компании есть открытые AML-флаги высокой серьёзности»), состояние не меняется. Переход проверяется раньше флагов. Флаг, закрытый как `false_positive` или `confirmed`, approve не блокирует.
+- **Публикацию заявки** открытые флаги не блокируют: они видны на экране модерации (`GET /admin/aml/flags?application_id=`), решение за админом.
+- **Причина отказа видна компании:** KYC — `kyc_reject_reason` в `GET /organizations/me` и `GET /auth/me`; заявка — `moderation_comment` (владельцу и admin, кредиторам — нет). `reason` обязателен, не короче 3 символов (иначе `400 VALIDATION_ERROR`); необязательный `comment` при approve пишется только в историю статусов.
+- **Блокировка:** администратора (в том числе себя) заблокировать нельзя → `403 FORBIDDEN`. Блокировка удаляет все сессии пользователя; доступ теряется и без этого — сессия заблокированного не проходит проверку (`401`), вход отклоняется. Повторный block и unblock уже активного → `200` без новых записей. Разблокировка сессии не восстанавливает: пользователь входит заново.
+- Каждое решение пишет `status_history` (`actor_role = admin`) и `audit_log` (`kyc.approve`, `kyc.reject`, `application.approve`, `application.reject`, `user.block`, `user.unblock` — с IP и User-Agent), решения по KYC и заявкам — ещё и уведомление компании. Два параллельных решения по одной сущности сериализуются блокировкой строки: второе получает `409 INVALID_STATUS_TRANSITION`.
+- **Поиск `q`** ищет подстроку буквально: `%`, `_` и `\` экранируются, `q=a_b` не найдёт `axb`.
 
 ### system
 
