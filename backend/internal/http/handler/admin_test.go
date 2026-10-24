@@ -359,7 +359,7 @@ func TestAdminUsers(t *testing.T) {
 	})
 
 	t.Run("block администратора — 403 от сервиса", func(t *testing.T) {
-		srv := newAdminServer(t, &fakeAdmin{err: apperr.Forbidden("Нельзя заблокировать администратора")})
+		srv := newAdminServer(t, &fakeAdmin{err: apperr.Forbidden("Нельзя менять статус администратора")})
 		resp, body := sessionRequest(t, srv, "admin", "POST", "/api/v1/admin/users/"+userID.String()+"/block",
 			"application/json", strings.NewReader(`{"reason":"по ошибке"}`))
 		wantError(t, resp, body, http.StatusForbidden, "FORBIDDEN", "")

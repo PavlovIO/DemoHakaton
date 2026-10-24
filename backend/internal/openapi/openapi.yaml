@@ -352,6 +352,7 @@ paths:
         - admin
   /admin/users/{userId}/unblock:
     post:
+      description: '403 `FORBIDDEN` — статус администратора не меняется: администратора нельзя заблокировать, поэтому и разблокировать нечего. Повторная разблокировка идемпотентна.'
       operationId: adminUnblockUser
       parameters:
         - $ref: '#/components/parameters/UserId'
