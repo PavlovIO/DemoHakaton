@@ -1085,7 +1085,7 @@ paths:
           $ref: '#/components/responses/InvalidTransition'
         "429":
           $ref: '#/components/responses/RateLimited'
-      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted; admin — только чтение, 403)
       tags:
         - chat
       x-roles:

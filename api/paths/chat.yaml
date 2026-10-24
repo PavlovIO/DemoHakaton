@@ -33,7 +33,7 @@ paths:
       tags: [chat]
       operationId: sendMessage
       x-roles: [borrower, lender]
-      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted; admin — только чтение, 403)
       description: Текст хранится как есть и рендерится фронтом только как текст (никакого HTML).
       parameters:
         - $ref: '../components.yaml#/components/parameters/OfferId'
