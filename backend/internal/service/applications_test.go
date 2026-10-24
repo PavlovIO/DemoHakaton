@@ -280,7 +280,7 @@ func TestApplicationsList(t *testing.T) {
 		if !a.HasMyOffer.Valid || !a.HasMyOffer.Bool || a.ViewerRole != repository.UserRoleLender {
 			t.Fatalf("has_my_offer = %+v", a.HasMyOffer)
 		}
-		if len(a.Statuses) != 1 || a.Statuses[0] != repository.ApplicationStatusPublished ||
+		if len(a.Statuses) != 1 || a.Statuses[0] != "published" ||
 			len(a.TargetCountries) != 2 || a.TargetCountries[1] != "AE" || a.TransferMethods[0] != "sepa" {
 			t.Fatalf("filters = %+v", a)
 		}

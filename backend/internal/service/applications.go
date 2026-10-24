@@ -208,7 +208,7 @@ func (s *Applications) List(ctx context.Context, p Principal, f ApplicationFilte
 	count := repository.CountApplicationsVisibleParams{
 		ViewerRole:        p.ViewerRole(),
 		ViewerOrg:         p.ViewerOrg(),
-		Statuses:          repositoryStatuses(f.Statuses),
+		Statuses:          statusFilter(f.Statuses),
 		TargetCountries:   f.TargetCountries,
 		TransferMethods:   f.TransferMethods,
 		Currency:          optionalText(f.Currency),
@@ -605,13 +605,14 @@ func applicationAudit(action string, p Principal, id uuid.UUID) AuditEvent {
 	return AuditEvent{Action: action, UserID: &p.UserID, EntityType: repository.EntityTypeApplication, EntityID: id.String()}
 }
 
-func repositoryStatuses(in []ApplicationStatus) []repository.ApplicationStatus {
+// statusFilter — статусы для narg statuses (text[]: см. ListApplicationsVisible).
+func statusFilter(in []ApplicationStatus) []string {
 	if len(in) == 0 {
 		return nil // NULL — фильтр не задан
 	}
-	out := make([]repository.ApplicationStatus, len(in))
+	out := make([]string, len(in))
 	for i, st := range in {
-		out[i] = repository.ApplicationStatus(st)
+		out[i] = string(st)
 	}
 	return out
 }
