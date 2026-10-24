@@ -16,6 +16,7 @@ import (
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
@@ -52,6 +53,26 @@ func newKycFixture(t *testing.T, deps service.KycDeps) *kycFixture {
 	deps.Tx = service.NewTxManager(tx)
 	f.kyc = service.NewKyc(deps)
 	return f
+}
+
+// prepareForSubmit добавляет обязательные документы и бенефициара — всё, что submitKyc
+// проверяет у заёмщика.
+func (f *kycFixture) prepareForSubmit(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	for _, dt := range requiredDocs {
+		_, err := f.tx.Exec(ctx, `INSERT INTO kyc_documents (organization_id, doc_type, storage_key, file_name,
+			mime_type, size_bytes, sha256, uploaded_by_user_id)
+			VALUES ($1, $2, $3, 'doc.pdf', 'application/pdf', 10, sha256('x'), $4)`,
+			f.orgID, dt, uuid.NewString(), f.userID)
+		if err != nil {
+			t.Fatalf("document %s: %v", dt, err)
+		}
+	}
+	if _, err := f.tx.Exec(ctx, `INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent)
+		VALUES ($1, 'Иванов И.И.', 'RU', 100)`, f.orgID); err != nil {
+		t.Fatalf("beneficiary: %v", err)
+	}
 }
 
 // randomLEI — 20 символов [A-Z0-9]: LEI уникален, а демо-сид уже занимает свои.
@@ -175,19 +196,7 @@ func TestSubmitKycIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	insertTestUser(ctx, t, f.tx, repository.UserRoleAdmin, nil) // хотя бы один активный админ
-	for _, dt := range requiredDocs {
-		_, err := f.tx.Exec(ctx, `INSERT INTO kyc_documents (organization_id, doc_type, storage_key, file_name,
-			mime_type, size_bytes, sha256, uploaded_by_user_id)
-			VALUES ($1, $2, $3, 'doc.pdf', 'application/pdf', 10, sha256('x'), $4)`,
-			f.orgID, dt, uuid.NewString(), f.userID)
-		if err != nil {
-			t.Fatalf("document %s: %v", dt, err)
-		}
-	}
-	if _, err := f.tx.Exec(ctx, `INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent)
-		VALUES ($1, 'Иванов И.И.', 'RU', 100)`, f.orgID); err != nil {
-		t.Fatalf("beneficiary: %v", err)
-	}
+	f.prepareForSubmit(t)
 	admins := f.count(t, `SELECT count(*) FROM users WHERE role = 'admin' AND status = 'active'`)
 	notes := func(typ repository.NotificationType) int {
 		return f.count(t, `SELECT count(*) FROM notifications WHERE type = $1 AND entity_id = $2`, typ, f.orgID.String())
@@ -232,4 +241,43 @@ func TestSubmitKycIntegration(t *testing.T) {
 			t.Fatalf("aml_flags = %d, want 1 (дедупликация)", n)
 		}
 	})
+}
+
+// Снапшот мок-реестра при submitKyc (BE-06, шаг 7): одна строка registry_checks с
+// organization_id компании и сырым ответом.
+func TestSubmitKycRegistrySnapshotIntegration(t *testing.T) {
+	f := newKycFixture(t, service.KycDeps{Files: newFakeFiles(), Screener: aml.NoopScreener{}, Verifier: registry.NewMock()})
+	ctx := context.Background()
+
+	// ИНН «Альфы» из мок-фикстур. Если демо-сид уже занял его, освобождаем номер внутри
+	// транзакции теста — она откатывается в Cleanup.
+	const alphaINN = "7700000009"
+	if _, err := f.tx.Exec(ctx, `UPDATE organizations SET registration_number = registration_number || '-it'
+		WHERE country_code = 'RU' AND registration_number = $1`, alphaINN); err != nil {
+		t.Fatalf("free INN: %v", err)
+	}
+	if _, err := f.tx.Exec(ctx, `UPDATE organizations SET name = 'ООО «Альфа»', registration_number = $2 WHERE id = $1`,
+		f.orgID, alphaINN); err != nil {
+		t.Fatalf("set INN: %v", err)
+	}
+	insertTestUser(ctx, t, f.tx, repository.UserRoleAdmin, nil)
+	f.prepareForSubmit(t)
+
+	if _, err := f.kyc.SubmitKyc(ctx, f.p, service.ClientMeta{UserAgent: "it"}); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	var (
+		source string
+		found  bool
+		hasRaw bool
+		rows   int
+	)
+	err := f.tx.QueryRow(ctx, `SELECT source::text, found, raw_response IS NOT NULL, count(*) OVER ()
+		FROM registry_checks WHERE organization_id = $1`, f.orgID).Scan(&source, &found, &hasRaw, &rows)
+	if err != nil {
+		t.Fatalf("registry_checks: %v", err)
+	}
+	if rows != 1 || source != "mock" || !found || !hasRaw {
+		t.Fatalf("строк %d, source %q, found %v, raw %v; want 1, mock, true, true", rows, source, found, hasRaw)
+	}
 }
