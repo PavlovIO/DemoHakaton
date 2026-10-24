@@ -22,7 +22,7 @@ type ServerInterface interface {
 	// ListMessages Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
 	// (GET /offers/{offerId}/messages)
 	ListMessages(w http.ResponseWriter, r *http.Request, offerID OfferID, params ListMessagesParams)
-	// SendMessage Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+	// SendMessage Написать в чат (стороны оффера; оффер в статусе sent или accepted; admin — только чтение, 403)
 	// (POST /offers/{offerId}/messages)
 	SendMessage(w http.ResponseWriter, r *http.Request, offerID OfferID)
 }
@@ -442,7 +442,7 @@ type StrictServerInterface interface {
 	// ListMessages Сообщения чата по офферу (заёмщик ↔ кредитор; admin — только чтение)
 	// (GET /offers/{offerId}/messages)
 	ListMessages(ctx context.Context, request ListMessagesRequestObject) (ListMessagesResponseObject, error)
-	// SendMessage Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+	// SendMessage Написать в чат (стороны оффера; оффер в статусе sent или accepted; admin — только чтение, 403)
 	// (POST /offers/{offerId}/messages)
 	SendMessage(ctx context.Context, request SendMessageRequestObject) (SendMessageResponseObject, error)
 }
