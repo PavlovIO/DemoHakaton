@@ -66,7 +66,7 @@ erDiagram
 |---|---|---|
 | `CreateApplication` | `:one` | Новая заявка в статусе `draft` |
 | `GetApplicationVisible` | `:one` | Заявка по `id`, если её видит `viewer_role`/`viewer_org`. Видимость: `borrower` — заявки своей компании, `lender` — `published` и заявки со своим оффером, `admin` — все. Чужая и несуществующая одинаково → 0 строк → `404` |
-| `GetApplicationForUpdate` | `:one` | `SELECT … FOR UPDATE` заявки по `offer_id`. Первый шаг транзакции принятия оффера |
+| `LockApplicationByOfferForBorrower` | `:one` | `SELECT … FOR UPDATE OF a` заявки по `offer_id`, если она компании заёмщика (иначе 0 строк → 404). Статус не фильтруется — его проверяет сервис (409). Первый шаг транзакции принятия оффера |
 | `UpdateApplication` | `:one` | Частичное обновление полей (`COALESCE`) |
 | `SubmitApplication` | `:one` | → `moderation`, ставит `submitted_at`, очищает `moderation_comment` |
 | `ApproveApplication` | `:one` | → `published`, ставит `published_at` |
@@ -79,7 +79,6 @@ erDiagram
 `CreateStatusHistory` тоже лежит в `applications.sql`, но относится к [`status_history`](status_history.md).
 
 Замечания:
-- `GetApplicationForUpdate` не фильтрует по `borrower_organization_id` и `status`, хотя пример в [schema.md](../schema.md#принятие-оффера-post-offersofferidaccept) делает это в SQL. Владельца и `status = 'published'` сервис должен проверить сам по возвращённым полям.
 - `UPDATE` пока работают по одному `id`, без `organization_id`: фильтр владельца в `WHERE` добавляет BE-07.
 - В `UPDATE`-запросах нет условия по текущему статусу: допустимость перехода проверяет сервис.
 - `ListApplicationsVisible` для витрины не джойнит `organizations` (имя и страну заёмщика) и не возвращает `my_offer_id`. Их придётся догружать отдельно или расширить запрос.

@@ -212,32 +212,42 @@ erDiagram
 
 ### Принятие оффера (`POST /offers/{offerId}/accept`)
 
-Всё выполняется в одной транзакции. `FOR UPDATE` на заявке сериализует параллельные клики. Если гонка всё же прорвётся, второй коммит упадёт на `offers_one_accepted_uq`.
+Всё выполняется в одной транзакции (`service.Deals.AcceptOffer`). `FOR UPDATE` на заявке сериализует параллельные клики: в `READ COMMITTED` вторая транзакция после ожидания видит новую версию строки (`agreed`) и получает 409. Если гонка всё же прорвётся, второй коммит упадёт на `offers_one_accepted_uq` / `deals_application_id_key` / `deals_offer_id_key` — сервис отвечает тем же 409 `INVALID_STATUS_TRANSITION`.
 
 ```sql
 BEGIN;
--- 1. Блокируем заявку и одновременно проверяем владельца и статус
+-- 1. Блокируем заявку и проверяем владельца (LockApplicationByOfferForBorrower).
+--    Статус НЕ фильтруется: иначе «уже agreed» и «чужая» обе дали бы 0 строк,
+--    и 404 от 409 не отличить. Статус заявки сервис проверяет по заблокированной
+--    строке → 409.
 SELECT a.* FROM applications a
   JOIN offers o ON o.application_id = a.id
  WHERE o.id = $offer_id
    AND a.borrower_organization_id = $my_org_id     -- IDOR: чужая заявка → 0 строк → 404
-   AND a.status = 'published'
-   FOR UPDATE OF a;                                -- 0 строк при верном владельце → 409
+   FOR UPDATE OF a;
 
--- 2. Принимаем оффер (должна обновиться ровно 1 строка, иначе 409)
+-- 2. Блокируем сам оффер (LockOfferForAccept): статус (sent) и valid_until сервис
+--    проверяет по заблокированной строке → 409; условия до снапшота не поменяются.
+SELECT * FROM offers WHERE id = $offer_id AND application_id = $app_id FOR UPDATE;
+
+-- 3. Принимаем оффер (должна обновиться ровно 1 строка, иначе 409); снапшот сделки —
+--    из RETURNING этой строки
 UPDATE offers SET status = 'accepted', decided_at = now()
- WHERE id = $offer_id AND status = 'sent';
+ WHERE id = $offer_id AND status = 'sent' AND application_id = $app_id
+RETURNING *;
 
--- 3. Остальные активные офферы отклоняем
+-- 4. Остальные активные офферы отклоняем
 UPDATE offers SET status = 'rejected', reject_reason = 'another_offer_accepted', decided_at = now()
  WHERE application_id = $app_id AND status = 'sent'
 RETURNING id, lender_organization_id;              -- им нужны уведомления
 
--- 4. Заявка → agreed
-UPDATE applications SET status = 'agreed', accepted_offer_id = $offer_id WHERE id = $app_id;
+-- 5. Заявка → agreed
+UPDATE applications SET status = 'agreed', accepted_offer_id = $offer_id
+ WHERE id = $app_id AND status = 'published';
 
--- 5. Снапшот сделки, 6. status_history, 7. notifications, 8. audit_log
-INSERT INTO deals (...) SELECT ... RETURNING *;
+-- 6. Снапшот сделки: fee_amount = round(amount × fee_percent / 100, 2) считает сервис
+-- 7. status_history, 8. notifications, 9. audit_log
+INSERT INTO deals (...) VALUES (...) RETURNING *;
 COMMIT;
 ```
 
@@ -310,8 +320,8 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `sessions.sql` | sessions (+ users, organizations) | `CreateSession`, `GetSessionByTokenHash`, `TouchSession`, `DeleteSessionByTokenHash`, `DeleteSessionsByUserID`, `DeleteExpiredSessions` |
 | `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `GetOrganizationForUpdate`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations`, `ListBeneficiariesByOrg`, `DeleteBeneficiariesByOrg`, `CreateBeneficiary` |
 | `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `GetKycDocumentVisible`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
-| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationVisible`, `GetApplicationForUpdate`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplicationsVisible`, `CountApplicationsVisible`, `CreateStatusHistory` |
-| `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListApplicationOffersVisible`, `ListOffersVisible`, `CountOffersVisible`, `LockApplicationForLender`, `AcceptOffer`, `RejectOffer`, `WithdrawOffer`, `RejectSentOffersByApplication` |
+| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationVisible`, `LockApplicationByOfferForBorrower`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplicationsVisible`, `CountApplicationsVisible`, `CreateStatusHistory` |
+| `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListApplicationOffersVisible`, `ListOffersVisible`, `CountOffersVisible`, `LockApplicationForLender`, `LockOfferForAccept`, `AcceptOffer`, `RejectOffer`, `WithdrawOffer`, `RejectSentOffersByApplication` |
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessages`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
 | `notifications.sql` | notifications | `CreateNotification`, `ListNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
@@ -325,11 +335,9 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - `sanctions_entries` — нет запросов загрузчика списков.
 
 Расхождения с примерами выше:
-- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). `GetApplicationForUpdate`, `ListMessages` и `AcceptOffer` пока фильтруют только по `id`; фильтр владельца в `WHERE` им добавляют BE-09, BE-10 (таблица в плане BE-04). `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`.
-- **Принятие оффера.** `GetApplicationForUpdate` не проверяет владельца и `status = 'published'`. Остальные `sent`-офферы отклоняет `RejectSentOffersByApplication` (с `RETURNING` для уведомлений кредиторам).
+- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). `ListMessages` пока фильтрует только по `id`; фильтр владельца в `WHERE` ему добавляет BE-10 (таблица в плане BE-04). `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`.
 - **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
 - **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
-- **Сделка.** `fee_amount` считается в SQL (`CreateDeal`), а не в бэкенде.
 - **Переходы статусов** заявок и решения админа по KYC (`ApproveKyc`, `RejectKyc`) не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`, у `UpdateOrganization` и `SubmitKycForReview` — `kyc_status IN ('draft','rejected')` плюс `GetOrganizationForUpdate`). Параллельные запросы могут проскочить проверку сервиса.
 
 ## Что сознательно не делаем в MVP

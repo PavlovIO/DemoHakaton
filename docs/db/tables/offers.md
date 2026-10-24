@@ -67,14 +67,15 @@ erDiagram
 | `ListOffersVisible` | `:many` | То же правило видимости и колонки; фильтры `statuses`, `application_id`, `lender_org_filter`, `borrower_org_filter`, `created_from`/`created_to`, пагинация |
 | `CountOffersVisible` | `:one` | Счётчик для того же фильтра |
 | `LockApplicationForLender` | `:one` | `FOR SHARE` на заявку при создании оффера; видимость заявки для `lender` (`published` или есть его оффер) |
-| `AcceptOffer` | `:one` | `sent` → `accepted`. 0 строк = оффер уже не активен (409) |
+| `LockOfferForAccept` | `:one` | `SELECT … FOR UPDATE` оффера заблокированной заявки (`id` и `application_id`). Второй шаг принятия: статус и `valid_until` проверяются по заблокированной строке, условия не меняются до снапшота |
+| `AcceptOffer` | `:one` | `sent` → `accepted`, только оффер заблокированной заявки (`AND application_id = …`). 0 строк = оффер уже не активен (409). Снапшот сделки — из `RETURNING` |
 | `RejectOffer` | `:one` | Заёмщик отклоняет: → `rejected` (`rejected_by_borrower`) с комментарием; `borrower_org` — в `WHERE` |
 | `WithdrawOffer` | `:one` | Кредитор отзывает: → `withdrawn`; `lender_org` — в `WHERE` |
 | `RejectSentOffersByApplication` | `:many` | Все `sent`-офферы заявки → `rejected` с причиной (`application_cancelled`, `rejected_by_borrower`, `another_offer_accepted`); `RETURNING id, lender_organization_id` для уведомлений |
 
 Все переходы стоят с `AND status = 'sent'` в `WHERE`, поэтому повторное действие вернёт 0 строк, а не испортит данные.
 
-Порядок транзакции принятия: `GetApplicationForUpdate` → `AcceptOffer` → `RejectSentOffersByApplication` → `AgreeApplication` → `CreateDeal` → `CreateStatusHistory` → `CreateNotification` → `CreateAuditLog`.
+Порядок транзакции принятия: `LockApplicationByOfferForBorrower` → `LockOfferForAccept` → `AcceptOffer` → `RejectSentOffersByApplication` (+ история и `offer_rejected` каждому) → `AgreeApplication` → `CreateDeal` → `CreateStatusHistory` → `CreateNotificationsForOrganization` (`offer_accepted`) → `CreateAuditLog` → `GetDealVisible`.
 
 Замечания:
 - `statuses` — `text[]` с `CAST` в `offer_status[]` в SQL: pgx не кодирует массив enum без регистрации типа.
