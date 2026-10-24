@@ -49,3 +49,12 @@ SELECT id, email, role, status, organization_id, created_at
 FROM users
 WHERE organization_id = $1
 ORDER BY created_at, id;
+
+-- name: GetUserForUpdate :one
+-- Блокировка пользователя для block/unblock (BE-12): два параллельных решения не запишут
+-- историю дважды — второе увидит уже новый статус и ответит без записей.
+SELECT id, email, password_hash, role, status, organization_id,
+       blocked_reason, last_login_at, created_at, updated_at
+FROM users
+WHERE id = $1
+FOR UPDATE;

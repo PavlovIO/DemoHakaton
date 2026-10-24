@@ -159,6 +159,34 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const getUserForUpdate = `-- name: GetUserForUpdate :one
+SELECT id, email, password_hash, role, status, organization_id,
+       blocked_reason, last_login_at, created_at, updated_at
+FROM users
+WHERE id = $1
+FOR UPDATE
+`
+
+// Блокировка пользователя для block/unblock (BE-12): два параллельных решения не запишут
+// историю дважды — второе увидит уже новый статус и ответит без записей.
+func (q *Queries) GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUserForUpdate, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.OrganizationID,
+		&i.BlockedReason,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, email, role, status, organization_id, created_at
 FROM users

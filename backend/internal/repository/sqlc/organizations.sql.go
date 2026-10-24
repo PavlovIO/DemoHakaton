@@ -257,6 +257,40 @@ func (q *Queries) ListBeneficiariesByOrg(ctx context.Context, organizationID uui
 	return items, nil
 }
 
+const listBeneficiariesByOrganizations = `-- name: ListBeneficiariesByOrganizations :many
+SELECT id, organization_id, full_name, citizenship_country_code, ownership_percent, created_at FROM beneficiaries
+WHERE organization_id = ANY($1::uuid[])
+ORDER BY organization_id, created_at, id
+`
+
+// Бенефициары страницы админского списка компаний (BE-12) одним запросом вместо N.
+func (q *Queries) ListBeneficiariesByOrganizations(ctx context.Context, organizationIds []uuid.UUID) ([]Beneficiary, error) {
+	rows, err := q.db.Query(ctx, listBeneficiariesByOrganizations, organizationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Beneficiary{}
+	for rows.Next() {
+		var i Beneficiary
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.FullName,
+			&i.CitizenshipCountryCode,
+			&i.OwnershipPercent,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizations = `-- name: ListOrganizations :many
 SELECT id, type, name, country_code, registration_number, lei, legal_address,
        kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
