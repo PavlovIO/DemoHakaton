@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,6 +33,27 @@ const (
 	defaultPageSize = 20
 	defaultSort     = "created_at_desc"
 )
+
+// pageWindow — страница и её размер с умолчаниями контракта и LIMIT/OFFSET для SQL.
+// У page в контракте нет maximum: смещение за пределом int32 упирается в MaxInt32 —
+// это страница за концом списка (пусто, total честный), а не отрицательный OFFSET (500)
+// или переполнение в чужую страницу.
+func pageWindow(page, pageSize int) (outPage, outSize int, limit, offset int32) {
+	if page < 1 {
+		page = defaultPage
+	}
+	if pageSize < 1 {
+		pageSize = defaultPageSize
+	}
+	limit, offset = math.MaxInt32, math.MaxInt32
+	if pageSize < math.MaxInt32 {
+		limit = int32(pageSize)
+	}
+	if page-1 <= math.MaxInt32/pageSize {
+		offset = int32((page - 1) * pageSize)
+	}
+	return page, pageSize, limit, offset
+}
 
 // OrgShort — компания в карточке заявки.
 type OrgShort struct {
@@ -193,13 +215,7 @@ func (s *Applications) List(ctx context.Context, p Principal, f ApplicationFilte
 	if p.ViewerRole() != repository.UserRoleLender {
 		f.HasMyOffer = nil
 	}
-	page, pageSize := f.Page, f.PageSize
-	if page < 1 {
-		page = defaultPage
-	}
-	if pageSize < 1 {
-		pageSize = defaultPageSize
-	}
+	page, pageSize, limit, offset := pageWindow(f.Page, f.PageSize)
 	sort := f.Sort
 	if sort == "" {
 		sort = defaultSort
@@ -237,8 +253,8 @@ func (s *Applications) List(ctx context.Context, p Principal, f ApplicationFilte
 		BorrowerOrgFilter: count.BorrowerOrgFilter,
 		HasMyOffer:        count.HasMyOffer,
 		Sort:              sort,
-		PageLimit:         int32(pageSize),              //nolint:gosec // ≤ 100 по контракту
-		PageOffset:        int32((page - 1) * pageSize), //nolint:gosec // page ограничен контрактом
+		PageLimit:         limit,
+		PageOffset:        offset,
 	})
 	if err != nil {
 		return ApplicationPage{}, fmt.Errorf("list applications: %w", err)
@@ -447,7 +463,7 @@ func (s *Applications) Cancel(ctx context.Context, p Principal, meta ClientMeta,
 		if err != nil {
 			return err
 		}
-		if _, err := s.rejectSentOffers(ctx, q, p, cur, repository.OfferRejectReasonApplicationCancelled); err != nil {
+		if _, err := rejectSentOffers(ctx, q, s.notifier, p, cur, repository.OfferRejectReasonApplicationCancelled); err != nil {
 			return err
 		}
 		if _, err := q.CancelApplication(ctx, repository.CancelApplicationParams{ID: id, FromStatus: cur.Status}); err != nil {
@@ -482,7 +498,7 @@ func (s *Applications) RejectAllOffers(ctx context.Context, p Principal, id uuid
 		if !canRejectAllOffers(ApplicationStatus(cur.Status)) {
 			return apperr.New(apperr.CodeInvalidTransition, "Отклонить офферы можно только у опубликованной заявки")
 		}
-		n, err = s.rejectSentOffers(ctx, q, p, cur, repository.OfferRejectReasonRejectedByBorrower)
+		n, err = rejectSentOffers(ctx, q, s.notifier, p, cur, repository.OfferRejectReasonRejectedByBorrower)
 		return err
 	})
 	return n, err
@@ -491,7 +507,8 @@ func (s *Applications) RejectAllOffers(ctx context.Context, p Principal, id uuid
 // rejectSentOffers — каскадное отклонение sent-офферов заблокированной заявки: история
 // каждого оффера и offer_rejected его кредитору. actor — заёмщик: отклонение вызвало его
 // действие, причина — в comment (DECISIONS п. 12). Возвращает число отклонённых.
-func (s *Applications) rejectSentOffers(ctx context.Context, q repository.Querier, p Principal,
+// Общая для cancel, reject-offers и acceptOffer (BE-09); вызывать после блокировки заявки.
+func rejectSentOffers(ctx context.Context, q repository.Querier, n Notifier, p Principal,
 	app repository.Application, reason repository.OfferRejectReason,
 ) (int, error) {
 	rejected, err := q.RejectSentOffersByApplication(ctx, repository.RejectSentOffersByApplicationParams{
@@ -509,7 +526,7 @@ func (s *Applications) rejectSentOffers(ctx context.Context, q repository.Querie
 		}); err != nil {
 			return 0, err
 		}
-		if err := s.notifier.NotifyOrganization(ctx, q, o.LenderOrganizationID, Notification{
+		if err := n.NotifyOrganization(ctx, q, o.LenderOrganizationID, Notification{
 			Type: repository.NotificationTypeOfferRejected, Title: title,
 			EntityType: repository.EntityTypeOffer, EntityID: o.ID.String(),
 		}); err != nil {

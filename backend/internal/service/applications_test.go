@@ -46,6 +46,16 @@ type fakeAppStore struct {
 	countOffersArg *repository.CountOffersVisibleParams
 	appOffersArg   *repository.ListApplicationOffersVisibleParams
 	unread         int64 // unread_messages каждой строки *OffersVisible
+	// Сделочные запросы — deals_test.go.
+	calls         []string // порядок вызовов транзакции принятия оффера
+	deals         []repository.Deal
+	agreeArg      *repository.AgreeApplicationParams
+	createDealArg *repository.CreateDealParams
+	createDealErr error
+	// beforeAccept — оффер меняется между чтением и UPDATE: снапшот должен взять RETURNING.
+	beforeAccept  func(*repository.Offer)
+	listDealsArg  *repository.ListDealsVisibleParams
+	countDealsArg *repository.CountDealsVisibleParams
 }
 
 func newFakeAppStore() *fakeAppStore {
@@ -134,11 +144,13 @@ func (s *fakeAppStore) CreateApplication(_ context.Context, arg repository.Creat
 }
 
 func (s *fakeAppStore) CreateStatusHistory(_ context.Context, arg repository.CreateStatusHistoryParams) (repository.StatusHistory, error) {
+	s.calls = append(s.calls, "CreateStatusHistory")
 	s.history = append(s.history, arg)
 	return repository.StatusHistory{}, nil
 }
 
 func (s *fakeAppStore) CreateAuditLog(_ context.Context, arg repository.CreateAuditLogParams) (repository.AuditLog, error) {
+	s.calls = append(s.calls, "CreateAuditLog")
 	s.audit = append(s.audit, arg)
 	return repository.AuditLog{}, nil
 }
@@ -568,6 +580,7 @@ func TestApplicationsSubmit(t *testing.T) {
 }
 
 func (s *fakeAppStore) RejectSentOffersByApplication(_ context.Context, arg repository.RejectSentOffersByApplicationParams) ([]repository.RejectSentOffersByApplicationRow, error) {
+	s.calls = append(s.calls, "RejectSentOffersByApplication")
 	s.rejectArg = &arg
 	rows := []repository.RejectSentOffersByApplicationRow{}
 	for i, o := range s.offers {
@@ -592,6 +605,7 @@ func (s *fakeAppStore) CancelApplication(_ context.Context, arg repository.Cance
 }
 
 func (s *fakeAppStore) CreateNotificationsForOrganization(_ context.Context, arg repository.CreateNotificationsForOrganizationParams) (int64, error) {
+	s.calls = append(s.calls, "CreateNotificationsForOrganization")
 	s.orgNotices = append(s.orgNotices, arg)
 	return 1, nil
 }

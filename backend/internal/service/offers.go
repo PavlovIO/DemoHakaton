@@ -128,13 +128,7 @@ func (s *Offers) List(ctx context.Context, p Principal, f OfferFilter) (OfferPag
 	if p.ViewerRole() != repository.UserRoleAdmin {
 		f.LenderOrgID, f.BorrowerOrgID = nil, nil
 	}
-	page, pageSize := f.Page, f.PageSize
-	if page < 1 {
-		page = defaultPage
-	}
-	if pageSize < 1 {
-		pageSize = defaultPageSize
-	}
+	page, pageSize, limit, offset := pageWindow(f.Page, f.PageSize)
 	count := repository.CountOffersVisibleParams{
 		ViewerRole:        p.ViewerRole(),
 		ViewerOrg:         p.ViewerOrg(),
@@ -155,8 +149,8 @@ func (s *Offers) List(ctx context.Context, p Principal, f OfferFilter) (OfferPag
 		BorrowerOrgFilter: count.BorrowerOrgFilter,
 		CreatedFrom:       count.CreatedFrom,
 		CreatedTo:         count.CreatedTo,
-		PageLimit:         int32(pageSize),              //nolint:gosec // ≤ 100 по контракту
-		PageOffset:        int32((page - 1) * pageSize), //nolint:gosec // page ограничен контрактом
+		PageLimit:         limit,
+		PageOffset:        offset,
 	})
 	if err != nil {
 		return OfferPage{}, fmt.Errorf("list offers: %w", err)
