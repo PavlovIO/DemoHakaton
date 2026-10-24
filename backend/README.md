@@ -30,8 +30,9 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 |---|---|
 | ✅ | `GET /healthz`, `GET /dictionaries/countries`, `GET /dictionaries/currencies`, `GET /dictionaries/transfer-methods` |
 | ✅ | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — вместе с сессией, CSRF и rate limit (ниже) |
-| ✅ | `GET`/`PATCH /organizations/me`, `GET`/`POST /organizations/me/documents`, `DELETE /organizations/me/documents/{documentId}`, `GET /documents/{documentId}/file`, `POST /organizations/me/kyc/submit` — профиль, бенефициары, KYC-документы и отправка на проверку с AML-скринингом |
-| ⏳ 501 | остальные 36 (в т.ч. `GET /registry/lookup`) — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET`/`PATCH /organizations/me`, `GET`/`POST /organizations/me/documents`, `DELETE /organizations/me/documents/{documentId}`, `GET /documents/{documentId}/file`, `POST /organizations/me/kyc/submit` — профиль, бенефициары, KYC-документы и отправка на проверку с AML-скринингом и сверкой с реестром |
+| ✅ | `GET /registry/lookup` — поиск компании в мок-реестре для автозаполнения |
+| ⏳ 501 | остальные 35 — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -109,10 +110,11 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | `CONFLICT` | 409 | конфликт данных (например, email уже занят; реквизиты компании изменились во время `kyc/submit`) |
 | `INVALID_STATUS_TRANSITION` | 409 | переход статуса не разрешён (см. «Статусы») |
 | `FILE_TOO_LARGE` | 413 | загружаемый документ больше 10 МБ |
-| `RATE_LIMITED` | 429 | слишком много попыток (`login`, `register`); заголовок `Retry-After` — через сколько секунд повторить |
+| `RATE_LIMITED` | 429 | слишком много попыток (`login`, `register`, `registry/lookup`); заголовок `Retry-After` — через сколько секунд повторить |
 | `INTERNAL` | 500 | непредвиденная ошибка; подробности только в логе сервера |
 | `NOT_IMPLEMENTED` | 501 | операция есть в контракте, но ещё не реализована |
 | `UNAVAILABLE` | 503 | нет соединения с БД (`/healthz`) |
+| `UPSTREAM_UNAVAILABLE` | 502 | внешний реестр не ответил (`registry/lookup`) — реквизиты заполняются вручную |
 
 ### Пагинация и polling
 
@@ -148,11 +150,12 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | DELETE | `/organizations/me/documents/{documentId}` | Удалить свой документ (только `draft` / `rejected`) → `204` | B, L |
 | POST | `/organizations/me/kyc/submit` | Отправить компанию на верификацию (`draft` / `rejected` → `under_review`) | B, L |
 | GET | `/documents/{documentId}/file` | Скачать файл документа | владелец, A |
-| GET | `/registry/lookup` | Автозаполнение по реестру: ЕГРЮЛ для RU, GLEIF по LEI для остальных. **В MVP — мок** (ADR-0001, п. 6) | все |
+| GET | `/registry/lookup` | Автозаполнение по реестру: ИНН/ОГРН для RU, LEI для остальных. **В MVP — мок** (ADR-0001, п. 6) | все |
 
 - **Загрузка документа:** в `multipart/form-data` поле `doc_type` должно идти **до** `file` — сервер читает файл потоком и без типа не знает, куда его отнести; иначе `400 VALIDATION_ERROR`. Файл больше 10 МБ — `413 FILE_TOO_LARGE`.
 - **Скачивание** `GET /documents/{documentId}/file`: только владелец документа или admin (чужой — `404`); ответ с `Content-Disposition: attachment`, чтобы браузер не исполнял файл в контексте сайта.
 - **Отправка на проверку:** нужны обязательные документы и хотя бы один бенефициар (`400` с `details` по каждому недостающему). Сверка с реестром не блокирует отправку: при сбое реестра компания всё равно уходит в `under_review`, админ сверяет вручную. Если реквизиты изменились параллельно со сверкой — `409 CONFLICT`, повторить.
+- **Поиск в реестре** `GET /registry/lookup` (без логина): реестр — мок на фикстурах демо-компаний, `source: "mock"`. Номер: для RU — ИНН (10 цифр) или ОГРН (13), для остальных стран — LEI (20 символов, регистр не важен); другой формат — `400` с `field: number`. Не нашли — `200` с `found: false`. Лимит — 10 запросов в минуту с IP и 60 в минуту всего, сверх — `429` с `Retry-After`. Реестр не ответил — `502 UPSTREAM_UNAVAILABLE` (в моке — номер `RU`/`0000000000`). Lookup в БД не пишет: снапшот в `registry_checks` сохраняет только `kyc/submit`.
 
 ### dictionaries — справочники
 
