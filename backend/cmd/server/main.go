@@ -71,19 +71,22 @@ func run(ctx context.Context) error {
 	limiter := service.NewMemoryRateLimiter()
 	authService := auth.NewAuth(queries, txManager, cfg.SessionTTL, limiter, auth.DefaultAuthLimits)
 	companyRegistry := registry.NewMock() // в MVP реестр — только мок (DECISIONS п. 17)
+	// AML-скрининг читает только локальную БД (санкции, FATF): submitKyc и submit заявки
+	// при его ошибке откатываются (fail-closed).
+	screener := aml.NewRuleScreener(queries)
 	h := handler.New(handler.Deps{
 		DB:    pool,
 		Dicts: dictionaries.NewDictionaries(queries),
 		Auth:  authService,
 		Kyc: kyc.NewKyc(kyc.KycDeps{
 			Store: queries, Tx: txManager, Files: documents,
-			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
+			Screener: screener,
 			Verifier: companyRegistry,
 		}),
 		Registry: kyc.NewRegistry(companyRegistry, limiter),
 		Applications: lending.NewApplications(lending.ApplicationsDeps{
 			Store: queries, Tx: txManager,
-			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
+			Screener: screener,
 		}),
 		Offers:        lending.NewOffers(lending.OffersDeps{Store: queries, Tx: txManager}),
 		Deals:         lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),

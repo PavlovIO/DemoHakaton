@@ -283,3 +283,57 @@ func TestSubmitKycRegistrySnapshotIntegration(t *testing.T) {
 		t.Fatalf("строк %d, source %q, found %v, raw %v; want 1, mock, true, true", rows, source, found, hasRaw)
 	}
 }
+
+// Настоящий скрининг (RuleScreener) на мок-списке: бенефициар из списка с гражданством IR
+// даёт sanctions_match/high и high_risk_jurisdiction/high, одно уведомление на админа;
+// повторная подача после rejected новых флагов не создаёт.
+func TestSubmitKycAmlIntegration(t *testing.T) {
+	ctx := context.Background()
+	f := newKycFixture(t, kyc.KycDeps{Files: newFakeFiles(), Screener: aml.NoopScreener{}})
+	// Скрининг читает санкции и FATF в транзакции фикстуры: Store появляется только в ней.
+	f.kyc = kyc.NewKyc(kyc.KycDeps{Store: f.q, Tx: service.NewTxManager(f.tx), Files: newFakeFiles(), Screener: aml.NewRuleScreener(f.q)})
+	servicetest.RequireSanctionsMock(ctx, t, f.tx)
+	servicetest.InsertUser(ctx, t, f.tx, repository.UserRoleAdmin, nil)
+	f.prepareForSubmit(t)
+	if _, err := f.tx.Exec(ctx, `UPDATE beneficiaries SET ownership_percent = 50 WHERE organization_id = $1`, f.orgID); err != nil {
+		t.Fatalf("ownership: %v", err)
+	}
+	if _, err := f.tx.Exec(ctx, `INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent)
+		VALUES ($1, 'Золотарёв Кирилл', 'IR', 50)`, f.orgID); err != nil {
+		t.Fatalf("beneficiary: %v", err)
+	}
+	admins := f.count(t, `SELECT count(*) FROM users WHERE role = 'admin' AND status = 'active'`)
+	flags := func() []string {
+		rows, err := f.tx.Query(ctx, `SELECT rule || '/' || severity FROM aml_flags WHERE organization_id = $1 ORDER BY id`, f.orgID)
+		if err != nil {
+			t.Fatalf("flags: %v", err)
+		}
+		got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatalf("flags: %v", err)
+		}
+		return got
+	}
+
+	if _, err := f.kyc.SubmitKyc(ctx, f.p, service.ClientMeta{}); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	want := []string{"high_risk_jurisdiction/high", "sanctions_match/high"}
+	if got := flags(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("flags = %v, want %v", got, want)
+	}
+	if n := f.count(t, `SELECT count(*) FROM notifications WHERE type = 'aml_flag_created' AND entity_id = $1`, f.orgID.String()); n != admins {
+		t.Fatalf("aml_flag_created = %d, want одно на каждого из %d админов", n, admins)
+	}
+
+	if _, err := f.tx.Exec(ctx, `UPDATE organizations SET kyc_status = 'rejected', kyc_reject_reason = 'нет устава'
+		WHERE id = $1`, f.orgID); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	if _, err := f.kyc.SubmitKyc(ctx, f.p, service.ClientMeta{}); err != nil {
+		t.Fatalf("resubmit: %v", err)
+	}
+	if got := flags(); len(got) != len(want) {
+		t.Fatalf("после повторной подачи flags = %v, want без новых", got)
+	}
+}
