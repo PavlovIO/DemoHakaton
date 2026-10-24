@@ -146,11 +146,13 @@ lint-api:
 
 # Ломающие изменения контракта. По умолчанию сравнивает с origin/main (нужен fetch);
 # BASE_SPEC=<файл> — сравнить с готовым файлом (так делает CI).
+# api/oasdiff-levels.txt понижает до WARN новое значение enum в ответе: единственный клиент —
+# фронт из этого репо, его типы генерируются из той же спеки.
 BASE_REF  ?= origin/main
 BASE_SPEC ?= $(BASE_REF):$(API_SPEC)
 OASDIFF_FLAGS ?=
 diff-api:
-	$(OASDIFF) breaking "$(BASE_SPEC)" $(API_SPEC) --fail-on ERR -l ru $(OASDIFF_FLAGS)
+	$(OASDIFF) breaking "$(BASE_SPEC)" $(API_SPEC) --fail-on ERR -l ru --severity-levels api/oasdiff-levels.txt $(OASDIFF_FLAGS)
 
 # Сгенерированное совпадает с источниками (то, что проверяет CI gen-check).
 gen-check: gen
