@@ -16,5 +16,50 @@
       timeout: 3s
       retries: 10
 
+  # Бэкенд (Dockerfile.backend). Схему и демо-данные готовит make db с хоста, поэтому
+  # порядок: make db → make backend-up (он же кладёт demo-PDF в volume документов).
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: runtime
+    image: liquidity-platform/backend:dev
+    container_name: lp_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Внутри сети compose Postgres — по имени сервиса, а не localhost из .env.
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgres://${POSTGRES_USER:-lp}:${POSTGRES_PASSWORD:-lp_dev_password}@postgres:5432/${POSTGRES_DB:-liquidity_platform}?sslmode=disable}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SESSION_TTL: ${SESSION_TTL:-24h}
+      # false — локально по http://localhost; за HTTPS-прокси — true.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-0}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - lp_documents:/var/lib/liquidity-platform/documents
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/v1/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Одноразовый: demo-PDF сида BE-16 в volume документов (make backend-seed-files).
+  # Профиль seed — docker compose up его не запускает.
+  seed-files:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: seed-files
+    image: liquidity-platform/backend-seed-files:dev
+    profiles: [seed]
+    volumes:
+      - lp_documents:/var/lib/liquidity-platform/documents
+
 volumes:
   lp_postgres_data:
+  lp_documents:

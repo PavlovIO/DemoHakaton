@@ -44,7 +44,27 @@ curl localhost:8080/api/v1/healthz
 
 Официальный UK Sanctions List: скачайте CSV со страницы [The UK Sanctions List](https://www.gov.uk/government/publications/the-uk-sanctions-list) (ссылка «CSV», без регистрации) и выполните `make load-sanctions SANCTIONS_SOURCE=uk_fcdo SANCTIONS_FILE=path/to/UK-Sanctions-List.csv`. Файл в репозиторий не коммитится. Загрузчик подключается через `MIGRATE_DATABASE_URL`, а без неё — через `DATABASE_URL`.
 
-Загруженные KYC-документы сервер хранит в каталоге `DOCUMENT_STORAGE_DIR` (по умолчанию `storage/documents` в корне репо, в `.gitignore`; права `0700`, файлы `0600` под случайными именами). Каталог должен переживать перезапуски: когда появится контейнер бэкенда — named volume на этот путь. Сервер не стартует, если в каталог нельзя писать.
+Загруженные KYC-документы сервер хранит в каталоге `DOCUMENT_STORAGE_DIR` (по умолчанию `storage/documents` в корне репо, в `.gitignore`; права `0700`, файлы `0600` под случайными именами). Каталог должен переживать перезапуски: в контейнере это named volume (см. ниже). Сервер не стартует, если в каталог нельзя писать.
+
+### Бэкенд в Docker
+
+Вместо `make run` бэкенд можно поднять контейнером (`Dockerfile.backend` в корне, сервис `backend` в `docker-compose.yml`). Схему, санкции и SQL-сид по-прежнему готовит `make db` с хоста:
+
+```sh
+make db        # Postgres + миграции + санкции + демо-данные
+make backend-up    # demo-PDF в volume документов, сборка образа, API на http://localhost:8080/api/v1
+make backend-logs  # логи бэкенда (JSON)
+```
+
+| Что | Как |
+|---|---|
+| Образ | Многоэтапная сборка: Go из `toolchain` в `go.mod`, статический бинарник на `alpine`, пользователь `app` (uid 10001), не root |
+| БД | `postgres:5432` внутри сети compose из `POSTGRES_*`; другая — `BACKEND_DATABASE_URL` |
+| Документы | volume `lp_documents` → `/var/lib/liquidity-platform/documents`; `make backend-seed-files` (входит в `backend-up`) кладёт туда PDF сида. `make db-reset` удаляет и его |
+| Порт | `BACKEND_PORT` (по умолчанию `8080`); одновременно с `make run` — задайте другой |
+| Настройки | `LOG_LEVEL`, `SESSION_TTL`, `COOKIE_SECURE` (по умолчанию `false` — локальный http), `CORS_ALLOWED_ORIGINS`, `DB_MAX_CONNS` — из `.env`; `LOG_FORMAT=json` |
+
+`make down` останавливает и бэкенд, и Postgres. CI (`backend.yml`, джоба `docker`) собирает оба образа и поднимает compose до healthy.
 
 ### Демо-данные
 
