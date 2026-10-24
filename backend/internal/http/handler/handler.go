@@ -145,6 +145,8 @@ type AdminService interface {
 	UnblockUser(ctx context.Context, p service.Principal, id uuid.UUID, meta service.ClientMeta) (admin.User, error)
 	ListAmlFlags(ctx context.Context, p service.Principal, f admin.AmlFlagFilter) (admin.AmlFlagPage, error)
 	ResolveAmlFlag(ctx context.Context, p service.Principal, id int64, resolution repository.AmlFlagStatus, comment string, meta service.ClientMeta) (admin.AmlFlag, error)
+	AnalyticsSummary(ctx context.Context, p service.Principal, f admin.AnalyticsFilter) (admin.AnalyticsSummary, error)
+	ListAuditLog(ctx context.Context, p service.Principal, f admin.AuditLogFilter) (admin.AuditLogPage, error)
 }
 
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.

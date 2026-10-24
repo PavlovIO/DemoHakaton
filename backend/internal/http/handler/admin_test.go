@@ -38,6 +38,10 @@ type fakeAdmin struct {
 	gotFlags      *admin.AmlFlagFilter
 	gotFlagID     int64
 	gotResolution repository.AmlFlagStatus
+
+	gotSummary *admin.AnalyticsFilter
+	gotAudit   *admin.AuditLogFilter
+	auditPage  admin.AuditLogPage
 }
 
 var registryResultMock = registry.Result{

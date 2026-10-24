@@ -1,14 +1,13 @@
 package handler
 
 // Операции тега admin (adminapi.StrictServerInterface). Решения и карточка компании —
-// service/admin (BE-12), AML-флаги — BE-13; аналитика и журнал — BE-14: пока 501.
+// service/admin (BE-12), AML-флаги — BE-13, аналитика и журнал аудита — BE-14.
 
 import (
 	"context"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/adminapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
@@ -60,12 +59,90 @@ func (h *Handler) AdminResolveAMLFlag(ctx context.Context, req adminapi.AdminRes
 	return adminapi.AdminResolveAMLFlag200JSONResponse(amlFlagToAPI(flag)), nil
 }
 
-func (h *Handler) AdminAnalyticsSummary(context.Context, adminapi.AdminAnalyticsSummaryRequestObject) (adminapi.AdminAnalyticsSummaryResponseObject, error) {
-	return nil, apperr.NotImplemented("adminAnalyticsSummary")
+// AdminAnalyticsSummary — сводка за период; from > to — 400 из сервиса.
+func (h *Handler) AdminAnalyticsSummary(ctx context.Context, req adminapi.AdminAnalyticsSummaryRequestObject) (adminapi.AdminAnalyticsSummaryResponseObject, error) {
+	p, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f := admin.AnalyticsFilter{CreatedFrom: req.Params.CreatedFrom, CreatedTo: req.Params.CreatedTo}
+	if req.Params.TopN != nil {
+		f.TopN = *req.Params.TopN
+	}
+	summary, err := h.admin.AnalyticsSummary(ctx, p, f)
+	if err != nil {
+		return nil, err
+	}
+	byStatus := make(map[string]int, len(summary.ApplicationsByStatus))
+	for status, n := range summary.ApplicationsByStatus {
+		byStatus[status] = int(n)
+	}
+	amounts := make([]api.CurrencyStat, len(summary.AmountsByCurrency))
+	for i, c := range summary.AmountsByCurrency {
+		amounts[i] = api.CurrencyStat{Currency: c.Currency, Count: int(c.Count), TotalAmount: c.TotalAmount, AverageAmount: c.AverageAmount}
+	}
+	return adminapi.AdminAnalyticsSummary200JSONResponse{
+		ApplicationsTotal:    int(summary.ApplicationsTotal),
+		ApplicationsByStatus: byStatus,
+		OffersTotal:          int(summary.OffersTotal),
+		DealsTotal:           int(summary.DealsTotal),
+		AmountsByCurrency:    amounts,
+		TopDemandCountries:   countryStatsToAPI(summary.TopDemandCountries),
+		TopSupplyCountries:   countryStatsToAPI(summary.TopSupplyCountries),
+	}, nil
 }
 
-func (h *Handler) AdminListAuditLog(context.Context, adminapi.AdminListAuditLogRequestObject) (adminapi.AdminListAuditLogResponseObject, error) {
-	return nil, apperr.NotImplemented("adminListAuditLog")
+func countryStatsToAPI(stats []admin.CountryStat) []api.CountryStat {
+	out := make([]api.CountryStat, len(stats))
+	for i, s := range stats {
+		out[i] = api.CountryStat{CountryCode: s.CountryCode, Count: int(s.Count)}
+	}
+	return out
+}
+
+// AdminListAuditLog — журнал действий с фильтрами контракта.
+func (h *Handler) AdminListAuditLog(ctx context.Context, req adminapi.AdminListAuditLogRequestObject) (adminapi.AdminListAuditLogResponseObject, error) {
+	p, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q := req.Params
+	f := admin.AuditLogFilter{
+		UserID: q.UserID, Action: q.Action, EntityID: q.EntityID,
+		CreatedFrom: q.CreatedFrom, CreatedTo: q.CreatedTo,
+	}
+	if q.EntityType != nil {
+		entityType := string(*q.EntityType)
+		f.EntityType = &entityType
+	}
+	f.Page, f.PageSize = pageParams(q.Page, q.PageSize)
+	page, err := h.admin.ListAuditLog(ctx, p, f)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]api.AuditLogEntry, len(page.Items))
+	for i, e := range page.Items {
+		items[i] = auditLogEntryToAPI(e)
+	}
+	return adminapi.AdminListAuditLog200JSONResponse{
+		Items: items, Total: int(page.Total), Page: page.Page, PageSize: page.PageSize,
+	}, nil
+}
+
+func auditLogEntryToAPI(e admin.AuditLogEntry) api.AuditLogEntry {
+	out := api.AuditLogEntry{
+		ID: e.ID, UserID: e.UserID, Action: e.Action, EntityID: e.EntityID,
+		UserAgent: e.UserAgent, Meta: e.Meta, CreatedAt: e.CreatedAt,
+	}
+	if e.EntityType != nil {
+		entityType := api.EntityType(*e.EntityType)
+		out.EntityType = &entityType
+	}
+	if e.IP != nil {
+		ip := e.IP.String()
+		out.IP = &ip
+	}
+	return out
 }
 
 // AdminListOrganizations — очередь верификации и поиск компаний.
