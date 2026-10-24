@@ -2,7 +2,9 @@ package aml_test
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
@@ -25,7 +27,7 @@ func TestSearchSanctionsThresholdIndependent(t *testing.T) {
 			t.Fatalf("set guc: %v", err)
 		}
 		rows, err := repository.New(tx).SearchSanctions(ctx, repository.SearchSanctionsParams{
-			Query: query, MinSimilarity: 0.4, MaxCandidates: 20,
+			Query: query, MinSimilarity: 0.4, EntityKinds: []string{"person", "other"}, MaxCandidates: 20,
 		})
 		if err != nil {
 			t.Fatalf("search: %v", err)
@@ -46,5 +48,33 @@ func TestSearchSanctionsThresholdIndependent(t *testing.T) {
 	}
 	if !slices.Equal(low, high) {
 		t.Fatalf("GUC 0.3 → %v, GUC 0.4 → %v", low, high)
+	}
+}
+
+// Фильтр entity_kind стоит до LIMIT: 25 персон, похожих на название компании по триграммам
+// сильнее организации, не вытесняют её из кандидатов, и компания получает флаг.
+func TestScreenOrganizationKindBeforeLimit(t *testing.T) {
+	ctx := context.Background()
+	tx := servicetest.BeginTx(t)
+	insert := func(id, kind, name string) {
+		t.Helper()
+		if _, err := tx.Exec(ctx, `INSERT INTO sanctions_entries (source, external_id, entity_kind, name, name_normalized)
+			VALUES ('test', $1, $2, $3, $4)`, id, kind, name, aml.Normalize(name)); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	for i := range 25 {
+		insert(fmt.Sprintf("P-%02d", i), "person", fmt.Sprintf("Quorvex Trading %c", 'a'+i))
+	}
+	insert("O-1", "organization", "Quorvex Tradinq Ltd")
+
+	got, err := aml.RuleScreener{}.ScreenOrganization(ctx, repository.New(tx), aml.OrganizationSubject{
+		Name: "Quorvex Trading", CountryCode: "RU",
+	})
+	if err != nil {
+		t.Fatalf("screen: %v", err)
+	}
+	if len(got) != 1 || got[0].Rule != repository.AmlRuleSanctionsMatch || !strings.Contains(got[0].Details, "O-1") {
+		t.Fatalf("находки = %+v, нужна sanctions_match по O-1", got)
 	}
 }

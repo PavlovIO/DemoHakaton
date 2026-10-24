@@ -38,7 +38,7 @@ erDiagram
 
 | Запрос | Файл | Тип | Что делает |
 |---|---|---|---|
-| `SearchSanctions` | `admin.sql` | `:many` | Кандидаты: `name_normalized % @query` и `similarity ≥ @min_similarity`, возвращает `trgm_score`, сортировка `trgm_score DESC, id`, лимит |
+| `SearchSanctions` | `admin.sql` | `:many` | Кандидаты: `name_normalized % @query`, `similarity ≥ @min_similarity` и `entity_kind = ANY(@entity_kinds)` (до лимита), возвращает `trgm_score`, сортировка `trgm_score DESC, id`, лимит |
 | `DeleteSanctionsBySource` | `sanctions.sql` | `:execrows` | Удалить все записи источника |
 | `InsertSanctionsEntries` | `sanctions.sql` | `:copyfrom` | Залить записи источника (COPY) |
 

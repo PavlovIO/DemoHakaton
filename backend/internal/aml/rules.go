@@ -229,13 +229,13 @@ func registryNameMatches(name string, registryNames []string) bool {
 
 // Какие записи списка сравниваются с субъектом: название компании с персоной не путаем.
 var (
-	organizationKinds = map[string]bool{"organization": true, "other": true}
-	personKinds       = map[string]bool{"person": true, "other": true}
+	organizationKinds = []string{"organization", "other"}
+	personKinds       = []string{"person", "other"}
 )
 
 // screenSanctions ищет субъекта в санкционных списках. Флаг — один на субъект, по лучшему
 // кандидату: на распространённом имени иначе была бы лавина флагов.
-func screenSanctions(ctx context.Context, store Store, name string, kinds map[string]bool, subjectLabel string) ([]Finding, error) {
+func screenSanctions(ctx context.Context, store Store, name string, kinds []string, subjectLabel string) ([]Finding, error) {
 	var (
 		best      repository.SearchSanctionsRow
 		bestScore float64
@@ -245,15 +245,12 @@ func screenSanctions(ctx context.Context, store Store, name string, kinds map[st
 			continue
 		}
 		candidates, err := store.SearchSanctions(ctx, repository.SearchSanctionsParams{
-			Query: query, MinSimilarity: candidateMinSimilarity, MaxCandidates: maxSanctionCandidates,
+			Query: query, MinSimilarity: candidateMinSimilarity, EntityKinds: kinds, MaxCandidates: maxSanctionCandidates,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("search sanctions: %w", err)
 		}
 		for _, c := range candidates {
-			if !kinds[c.EntityKind] {
-				continue
-			}
 			if score := roundScore(nameScore(query, c.NameNormalized)); score > bestScore {
 				best, bestScore = c, score
 			}

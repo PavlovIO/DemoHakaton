@@ -14,7 +14,7 @@ import (
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
-// fakeStore отдаёт заданных кандидатов на любой запрос и FATF-статусы по коду страны.
+// fakeStore отдаёт заданных кандидатов нужного entity_kind (как SQL) и FATF-статусы по коду страны.
 type fakeStore struct {
 	candidates []repository.SearchSanctionsRow
 	fatf       map[string]repository.FatfList
@@ -24,7 +24,13 @@ type fakeStore struct {
 
 func (s *fakeStore) SearchSanctions(_ context.Context, p repository.SearchSanctionsParams) ([]repository.SearchSanctionsRow, error) {
 	s.queries = append(s.queries, p.Query)
-	return s.candidates, s.err
+	var out []repository.SearchSanctionsRow
+	for _, c := range s.candidates {
+		if slices.Contains(p.EntityKinds, c.EntityKind) {
+			out = append(out, c)
+		}
+	}
+	return out, s.err
 }
 
 func (s *fakeStore) ListCountriesFatf(_ context.Context, codes []string) ([]repository.ListCountriesFatfRow, error) {

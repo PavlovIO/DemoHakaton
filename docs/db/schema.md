@@ -301,6 +301,7 @@ SELECT id, source, external_id, entity_kind, name, name_normalized,
   FROM sanctions_entries
  WHERE name_normalized % @query                               -- GIN-индекс
    AND similarity(name_normalized, @query) >= @min_similarity -- 0.4: результат не зависит от GUC
+   AND entity_kind = ANY(@entity_kinds)                       -- до LIMIT: персоны не вытесняют организацию
  ORDER BY trgm_score DESC, id LIMIT 20;
 -- Кандидатов досчитать Jaro-Winkler в Go. ≥ 0.90 → флаг high, 0.85–0.90 → medium (ручная проверка).
 ```

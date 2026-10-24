@@ -61,12 +61,14 @@ RETURNING *;
 -- similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
 -- результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
 -- ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
--- утекает в чужие запросы.
+-- утекает в чужие запросы. entity_kind фильтруется до LIMIT: иначе на большом списке
+-- топ кандидатов по названию компании могут занять персоны, и организацию не сравнят.
 SELECT id, source, external_id, entity_kind, name, name_normalized,
        similarity(name_normalized, @query::text)::real AS trgm_score
 FROM sanctions_entries
 WHERE name_normalized % @query::text
   AND similarity(name_normalized, @query::text) >= @min_similarity::real
+  AND entity_kind = ANY(@entity_kinds::text[])
 ORDER BY trgm_score DESC, id
 LIMIT @max_candidates;
 

@@ -552,14 +552,16 @@ SELECT id, source, external_id, entity_kind, name, name_normalized,
 FROM sanctions_entries
 WHERE name_normalized % $1::text
   AND similarity(name_normalized, $1::text) >= $2::real
+  AND entity_kind = ANY($3::text[])
 ORDER BY trgm_score DESC, id
-LIMIT $3
+LIMIT $4
 `
 
 type SearchSanctionsParams struct {
-	Query         string  `json:"query"`
-	MinSimilarity float32 `json:"min_similarity"`
-	MaxCandidates int32   `json:"max_candidates"`
+	Query         string   `json:"query"`
+	MinSimilarity float32  `json:"min_similarity"`
+	EntityKinds   []string `json:"entity_kinds"`
+	MaxCandidates int32    `json:"max_candidates"`
 }
 
 type SearchSanctionsRow struct {
@@ -576,9 +578,15 @@ type SearchSanctionsRow struct {
 // similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
 // результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
 // ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
-// утекает в чужие запросы.
+// утекает в чужие запросы. entity_kind фильтруется до LIMIT: иначе на большом списке
+// топ кандидатов по названию компании могут занять персоны, и организацию не сравнят.
 func (q *Queries) SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SearchSanctionsRow, error) {
-	rows, err := q.db.Query(ctx, searchSanctions, arg.Query, arg.MinSimilarity, arg.MaxCandidates)
+	rows, err := q.db.Query(ctx, searchSanctions,
+		arg.Query,
+		arg.MinSimilarity,
+		arg.EntityKinds,
+		arg.MaxCandidates,
+	)
 	if err != nil {
 		return nil, err
 	}

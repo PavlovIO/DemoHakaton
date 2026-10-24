@@ -202,7 +202,8 @@ type Querier interface {
 	// similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
 	// результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
 	// ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
-	// утекает в чужие запросы.
+	// утекает в чужие запросы. entity_kind фильтруется до LIMIT: иначе на большом списке
+	// топ кандидатов по названию компании могут занять персоны, и организацию не сравнят.
 	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SearchSanctionsRow, error)
 	SubmitApplication(ctx context.Context, arg SubmitApplicationParams) (Application, error)
 	SubmitKycForReview(ctx context.Context, id uuid.UUID) (Organization, error)
