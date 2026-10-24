@@ -11,7 +11,8 @@
 //  2. Новый тег в спеке = новый пакет <tag>api (скопировать gen.go и register.go соседнего),
 //     строки в generatedTags (routes_test.go), в routes() (router.go) и в проверках ниже.
 //  3. Бизнес-логику держать в internal/service; хендлер только переводит api-типы ⇄ доменные.
-//     У операции в спеке — x-roles (и x-kyc-required): их проверяет middleware.Authorize.
+//     У операции в спеке — x-roles (и x-kyc-required): их проверяет middleware.Authorize,
+//     а сервис повторяет через p.RequireRole(...) и p.RequireKYCVerified().
 //     Principal брать через currentPrincipal(ctx); сущность читать запросами *Visible
 //     с p.ViewerRole(), p.ViewerOrg() — чужое и несуществующее дают 404.
 //  4. Ошибки НЕ собирать через типизированные XxxNNNJSONResponse: вернуть nil, apperr.X(...).
@@ -74,6 +75,7 @@ type KycService interface {
 	UploadDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, docType repository.KycDocumentType, fileName string, content io.Reader) (repository.KycDocument, error)
 	DeleteDocument(ctx context.Context, p service.Principal, id uuid.UUID) error
 	OpenDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.DocumentFile, error)
+	SubmitKyc(ctx context.Context, p service.Principal, meta service.ClientMeta) (service.OrganizationProfile, error)
 }
 
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.

@@ -239,8 +239,17 @@ func documentToAPI(d repository.KycDocument) api.KYCDocument {
 	}
 }
 
-func (h *Handler) SubmitKYC(context.Context, organizationsapi.SubmitKYCRequestObject) (organizationsapi.SubmitKYCResponseObject, error) {
-	return nil, apperr.NotImplemented("submitKYC")
+// SubmitKYC отправляет компанию на проверку: draft|rejected → under_review.
+func (h *Handler) SubmitKYC(ctx context.Context, _ organizationsapi.SubmitKYCRequestObject) (organizationsapi.SubmitKYCResponseObject, error) {
+	p, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := h.kyc.SubmitKyc(ctx, p, middleware.ClientMetaFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return organizationsapi.SubmitKYC200JSONResponse(profileToAPI(profile)), nil
 }
 
 func (h *Handler) RegistryLookup(context.Context, organizationsapi.RegistryLookupRequestObject) (organizationsapi.RegistryLookupResponseObject, error) {

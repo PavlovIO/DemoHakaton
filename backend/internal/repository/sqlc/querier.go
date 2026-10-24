@@ -36,6 +36,9 @@ type Querier interface {
 	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	// Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
+	// в INSERT … SELECT sqlc не выводит тип параметра из колонки.
+	CreateNotificationsForAdmins(ctx context.Context, arg CreateNotificationsForAdminsParams) (int64, error)
 	CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateRegistryCheck(ctx context.Context, arg CreateRegistryCheckParams) (RegistryCheck, error)
@@ -78,6 +81,10 @@ type Querier interface {
 	GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
+	// и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
+	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+	HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error)
 	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]Application, error)

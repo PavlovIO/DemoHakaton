@@ -5,6 +5,19 @@ INSERT INTO aml_flags (
     $1, $2, $3, $4, $5
 ) RETURNING *;
 
+-- name: HasSimilarAmlFlag :one
+-- Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
+-- и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
+-- копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+SELECT EXISTS (
+    SELECT 1 FROM aml_flags
+    WHERE organization_id = sqlc.arg('organization_id')::uuid
+      AND application_id IS NOT DISTINCT FROM sqlc.narg('application_id')::uuid
+      AND rule = sqlc.arg('rule')::aml_rule
+      AND details = sqlc.arg('details')::text
+      AND status IN ('open', 'false_positive')
+);
+
 -- name: ListAmlFlags :many
 SELECT * FROM aml_flags
 WHERE (sqlc.narg('status')::aml_flag_status IS NULL OR status = sqlc.narg('status')::aml_flag_status)
