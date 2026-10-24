@@ -34,6 +34,10 @@ type fakeAdmin struct {
 	gotID       uuid.UUID
 	gotMetaUA   string
 	unblockedID uuid.UUID
+
+	gotFlags      *admin.AmlFlagFilter
+	gotFlagID     int64
+	gotResolution repository.AmlFlagStatus
 }
 
 var registryResultMock = registry.Result{
@@ -414,6 +418,106 @@ func TestAdminUsers(t *testing.T) {
 		}
 		if raw := decodeObject(t, body); raw["status"] != "active" {
 			t.Fatalf("body = %s", body)
+		}
+	})
+}
+
+func (f *fakeAdmin) ListAmlFlags(_ context.Context, _ service.Principal, filter admin.AmlFlagFilter) (admin.AmlFlagPage, error) {
+	f.gotFlags = &filter
+	flag := admin.AmlFlag{
+		ID: 7, Organization: admin.OrgShort{ID: adminTestOrg.ID, Name: "ООО Альфа", CountryCode: "RU"},
+		Rule: "sanctions_match", Severity: "high", Details: "совпадение", Status: "open",
+	}
+	return admin.AmlFlagPage{Items: []admin.AmlFlag{flag}, Total: 1, Page: 1, PageSize: 20}, f.err
+}
+
+func (f *fakeAdmin) ResolveAmlFlag(_ context.Context, _ service.Principal, id int64, resolution repository.AmlFlagStatus, comment string, _ service.ClientMeta) (admin.AmlFlag, error) {
+	f.gotFlagID, f.gotResolution, f.gotReason = id, resolution, comment
+	now := time.Now()
+	return admin.AmlFlag{
+		ID: id, Organization: admin.OrgShort{ID: adminTestOrg.ID, Name: "ООО Альфа", CountryCode: "RU"},
+		Rule: "sanctions_match", Severity: "high", Details: "совпадение", Status: string(resolution),
+		ResolutionComment: &comment, ResolvedAt: &now,
+	}, f.err
+}
+
+func TestAdminListAMLFlags(t *testing.T) {
+	fake := &fakeAdmin{}
+	srv := newAdminServer(t, fake)
+	appID := uuid.New()
+
+	resp, body := sessionRequest(t, srv, "admin", "GET",
+		"/api/v1/admin/aml/flags?severity=high&status=open&application_id="+appID.String()+"&page=2&page_size=5", "", nil)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body %s", resp.StatusCode, body)
+	}
+	f := fake.gotFlags
+	if f == nil || *f.Severity != "high" || *f.Status != "open" || *f.ApplicationID != appID ||
+		f.OrganizationID != nil || f.Page != 2 || f.PageSize != 5 {
+		t.Fatalf("filter = %+v", f)
+	}
+	raw := decodeObject(t, body)
+	items, _ := raw["items"].([]any)
+	if raw["total"] != float64(1) || len(items) != 1 {
+		t.Fatalf("body = %s", body)
+	}
+	org, _ := items[0].(map[string]any)["organization"].(map[string]any)
+	if org["name"] != "ООО Альфа" || org["country_code"] != "RU" || org["id"] != adminTestOrg.ID.String() {
+		t.Fatalf("organization = %v", org)
+	}
+}
+
+func TestAdminListAMLFlagsDefaultPage(t *testing.T) {
+	fake := &fakeAdmin{}
+	srv := newAdminServer(t, fake)
+	resp, body := sessionRequest(t, srv, "admin", "GET", "/api/v1/admin/aml/flags", "", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d; body %s", resp.StatusCode, body)
+	}
+	if f := fake.gotFlags; f.Page != 1 || f.PageSize != 20 || f.Status != nil || f.Severity != nil {
+		t.Fatalf("filter = %+v", f)
+	}
+}
+
+func TestAdminResolveAMLFlag(t *testing.T) {
+	t.Run("решение и комментарий доходят до сервиса", func(t *testing.T) {
+		fake := &fakeAdmin{}
+		srv := newAdminServer(t, fake)
+		resp, body := sessionRequest(t, srv, "admin", "POST", "/api/v1/admin/aml/flags/7/resolve",
+			"application/json", strings.NewReader(`{"resolution":"false_positive","comment":"однофамилец"}`))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d; body %s", resp.StatusCode, body)
+		}
+		if fake.gotFlagID != 7 || fake.gotResolution != repository.AmlFlagStatusFalsePositive || fake.gotReason != "однофамилец" {
+			t.Fatalf("args = %d %s %q", fake.gotFlagID, fake.gotResolution, fake.gotReason)
+		}
+		raw := decodeObject(t, body)
+		if raw["status"] != "false_positive" || raw["resolved_at"] == nil {
+			t.Fatalf("body = %s", body)
+		}
+	})
+
+	t.Run("короткий комментарий — 400", func(t *testing.T) {
+		srv := newAdminServer(t, &fakeAdmin{})
+		resp, body := sessionRequest(t, srv, "admin", "POST", "/api/v1/admin/aml/flags/7/resolve",
+			"application/json", strings.NewReader(`{"resolution":"confirmed","comment":"ok"}`))
+		wantError(t, resp, body, http.StatusBadRequest, "VALIDATION_ERROR", "comment")
+	})
+
+	t.Run("ошибки сервиса — 404 и 409", func(t *testing.T) {
+		for _, c := range []struct {
+			err    error
+			status int
+			code   string
+		}{
+			{apperr.NotFound("AML-флаг не найден"), http.StatusNotFound, "NOT_FOUND"},
+			{apperr.InvalidTransition("confirmed", "false_positive"), http.StatusConflict, "INVALID_STATUS_TRANSITION"},
+		} {
+			srv := newAdminServer(t, &fakeAdmin{err: c.err})
+			resp, body := sessionRequest(t, srv, "admin", "POST", "/api/v1/admin/aml/flags/7/resolve",
+				"application/json", strings.NewReader(`{"resolution":"confirmed","comment":"подтверждаю"}`))
+			wantError(t, resp, body, c.status, c.code, "")
 		}
 	})
 }

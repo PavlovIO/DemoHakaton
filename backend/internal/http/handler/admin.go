@@ -1,7 +1,7 @@
 package handler
 
 // Операции тега admin (adminapi.StrictServerInterface). Решения и карточка компании —
-// service/admin (BE-12); AML-флаги — BE-13, аналитика и журнал — BE-14: пока 501.
+// service/admin (BE-12), AML-флаги — BE-13; аналитика и журнал — BE-14: пока 501.
 
 import (
 	"context"
@@ -12,15 +12,52 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/adminapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
+	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/admin"
 )
 
-func (h *Handler) AdminListAMLFlags(context.Context, adminapi.AdminListAMLFlagsRequestObject) (adminapi.AdminListAMLFlagsResponseObject, error) {
-	return nil, apperr.NotImplemented("adminListAMLFlags")
+// AdminListAMLFlags — AML-флаги всех компаний с фильтрами.
+func (h *Handler) AdminListAMLFlags(ctx context.Context, req adminapi.AdminListAMLFlagsRequestObject) (adminapi.AdminListAMLFlagsResponseObject, error) {
+	p, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q := req.Params
+	f := admin.AmlFlagFilter{OrganizationID: q.OrganizationID, ApplicationID: q.ApplicationID}
+	if q.Status != nil {
+		st := string(*q.Status)
+		f.Status = &st
+	}
+	if q.Severity != nil {
+		sev := string(*q.Severity)
+		f.Severity = &sev
+	}
+	f.Page, f.PageSize = pageParams(q.Page, q.PageSize)
+	page, err := h.admin.ListAmlFlags(ctx, p, f)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]api.AMLFlag, len(page.Items))
+	for i, flag := range page.Items {
+		items[i] = amlFlagToAPI(flag)
+	}
+	return adminapi.AdminListAMLFlags200JSONResponse{
+		Items: items, Total: int(page.Total), Page: page.Page, PageSize: page.PageSize,
+	}, nil
 }
 
-func (h *Handler) AdminResolveAMLFlag(context.Context, adminapi.AdminResolveAMLFlagRequestObject) (adminapi.AdminResolveAMLFlagResponseObject, error) {
-	return nil, apperr.NotImplemented("adminResolveAMLFlag")
+// AdminResolveAMLFlag — open → false_positive | confirmed; 404 — нет флага, 409 — уже закрыт.
+func (h *Handler) AdminResolveAMLFlag(ctx context.Context, req adminapi.AdminResolveAMLFlagRequestObject) (adminapi.AdminResolveAMLFlagResponseObject, error) {
+	p, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	flag, err := h.admin.ResolveAmlFlag(ctx, p, req.FlagID, repository.AmlFlagStatus(req.Body.Resolution),
+		req.Body.Comment, middleware.ClientMetaFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return adminapi.AdminResolveAMLFlag200JSONResponse(amlFlagToAPI(flag)), nil
 }
 
 func (h *Handler) AdminAnalyticsSummary(context.Context, adminapi.AdminAnalyticsSummaryRequestObject) (adminapi.AdminAnalyticsSummaryResponseObject, error) {

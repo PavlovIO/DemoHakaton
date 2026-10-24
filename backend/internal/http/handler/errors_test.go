@@ -143,14 +143,14 @@ func TestRouterErrors(t *testing.T) {
 	}
 }
 
-// Ещё не реализованная операция (BE-12) отвечает 501 в формате Error; все такие — только для admin.
+// Ещё не реализованная операция (BE-14) отвечает 501 в формате Error; все такие — только для admin.
 // Аутентификация и роль проверяются раньше 501: заглушка не раскрывает маршрут чужим.
 func TestNotImplemented(t *testing.T) {
 	fixture, deps := authFixture()
 	deps.Auth = &cookieAuth{fakeAuth: *fixture}
 	deps.Dicts, deps.DB = fakeDicts{}, okDB{}
 	srv := newTestServer(t, deps)
-	const path = "/api/v1/admin/aml/flags"
+	const path = "/api/v1/admin/audit-log"
 
 	t.Run("admin", func(t *testing.T) {
 		resp, body := sessionRequest(t, srv, "admin", "GET", path, "", nil)
