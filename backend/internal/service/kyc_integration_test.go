@@ -32,28 +32,18 @@ type kycFixture struct {
 
 func newKycFixture(t *testing.T, deps service.KycDeps) *kycFixture {
 	t.Helper()
-	pool := newPool(t)
 	ctx := context.Background()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	tx := beginTestTx(t)
 
 	f := &kycFixture{tx: tx, q: repository.New(tx)}
-	err = tx.QueryRow(ctx, `INSERT INTO organizations (type, name, country_code, registration_number, legal_address)
+	err := tx.QueryRow(ctx, `INSERT INTO organizations (type, name, country_code, registration_number, legal_address)
 		VALUES ('borrower', 'KYC Integration', 'RU', $1, 'Москва') RETURNING id`,
-		uuid.NewString()[:20]).Scan(&f.orgID)
+		uniqueRegistrationNumber()).Scan(&f.orgID)
 	if err != nil {
 		t.Fatalf("organization: %v", err)
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO users (email, password_hash, role, organization_id)
-		VALUES ($1, 'x', 'borrower', $2) RETURNING id`,
-		"kyc-"+uuid.NewString()+"@example.test", f.orgID).Scan(&f.userID)
-	if err != nil {
-		t.Fatalf("user: %v", err)
-	}
 	orgID := f.orgID
+	f.userID = insertTestUser(ctx, t, tx, repository.UserRoleBorrower, &orgID)
 	f.p = service.Principal{UserID: f.userID, OrgID: &orgID, Role: "borrower", KycStatus: "draft"}
 
 	deps.Store = f.q

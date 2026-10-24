@@ -19,6 +19,7 @@ import (
 )
 
 // listLimit больше, чем строк в демо-сиде: id фикстуры не отрезаются пагинацией.
+// Если сид дорастёт до limit, проверка Count == len(List) у admin упадёт ложно.
 const listLimit = 1000
 
 type viewer struct {
@@ -30,31 +31,47 @@ type viewer struct {
 // visibilityFixture — id сущностей фикстуры по именам из плана BE-04.
 type visibilityFixture map[string]uuid.UUID
 
+// id — id по имени; опечатка в имени роняет тест, а не подставляет uuid.Nil.
+func (fx visibilityFixture) id(t *testing.T, name string) uuid.UUID {
+	t.Helper()
+	id, ok := fx[name]
+	if !ok {
+		t.Fatalf("в фикстуре нет %q", name)
+	}
+	return id
+}
+
 // visibleEntity — запросы одной сущности; правило видимости задаётся отдельно, руками.
+// get возвращает id найденной строки, чтобы тест сверил, что пришла запрошенная сущность.
 type visibleEntity struct {
 	notFoundMsg string
-	get         func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) error
+	get         func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) (uuid.UUID, error)
 	list        func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error)
 	count       func(ctx context.Context, q *repository.Queries, v viewer) (int64, error)
 }
 
+// rowIDs — id строк списка в исходном порядке.
+func rowIDs[T any](rows []T, id func(T) uuid.UUID) []uuid.UUID {
+	ids := make([]uuid.UUID, len(rows))
+	for i, r := range rows {
+		ids[i] = id(r)
+	}
+	return ids
+}
+
 var applicationsVisible = visibleEntity{
 	notFoundMsg: "Заявка не найдена",
-	get: func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) error {
-		_, err := q.GetApplicationVisible(ctx, repository.GetApplicationVisibleParams{
+	get: func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) (uuid.UUID, error) {
+		row, err := q.GetApplicationVisible(ctx, repository.GetApplicationVisibleParams{
 			ID: id, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return err
+		return row.ID, err
 	},
 	list: func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error) {
 		rows, err := q.ListApplicationsVisible(ctx, repository.ListApplicationsVisibleParams{
 			Limit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		ids := make([]uuid.UUID, len(rows))
-		for i, r := range rows {
-			ids[i] = r.ID
-		}
-		return ids, err
+		return rowIDs(rows, func(r repository.Application) uuid.UUID { return r.ID }), err
 	},
 	count: func(ctx context.Context, q *repository.Queries, v viewer) (int64, error) {
 		return q.CountApplicationsVisible(ctx, repository.CountApplicationsVisibleParams{
@@ -65,21 +82,17 @@ var applicationsVisible = visibleEntity{
 
 var offersVisible = visibleEntity{
 	notFoundMsg: "Оффер не найден",
-	get: func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) error {
-		_, err := q.GetOfferVisible(ctx, repository.GetOfferVisibleParams{
+	get: func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) (uuid.UUID, error) {
+		row, err := q.GetOfferVisible(ctx, repository.GetOfferVisibleParams{
 			ID: id, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return err
+		return row.ID, err
 	},
 	list: func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error) {
 		rows, err := q.ListOffersVisible(ctx, repository.ListOffersVisibleParams{
 			Limit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		ids := make([]uuid.UUID, len(rows))
-		for i, r := range rows {
-			ids[i] = r.ID
-		}
-		return ids, err
+		return rowIDs(rows, func(r repository.Offer) uuid.UUID { return r.ID }), err
 	},
 	count: func(ctx context.Context, q *repository.Queries, v viewer) (int64, error) {
 		return q.CountOffersVisible(ctx, repository.CountOffersVisibleParams{
@@ -90,21 +103,17 @@ var offersVisible = visibleEntity{
 
 var dealsVisible = visibleEntity{
 	notFoundMsg: "Сделка не найдена",
-	get: func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) error {
-		_, err := q.GetDealVisible(ctx, repository.GetDealVisibleParams{
+	get: func(ctx context.Context, q *repository.Queries, v viewer, id uuid.UUID) (uuid.UUID, error) {
+		row, err := q.GetDealVisible(ctx, repository.GetDealVisibleParams{
 			ID: id, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return err
+		return row.ID, err
 	},
 	list: func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error) {
 		rows, err := q.ListDealsVisible(ctx, repository.ListDealsVisibleParams{
 			Limit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		ids := make([]uuid.UUID, len(rows))
-		for i, r := range rows {
-			ids[i] = r.ID
-		}
-		return ids, err
+		return rowIDs(rows, func(r repository.Deal) uuid.UUID { return r.ID }), err
 	},
 	count: func(ctx context.Context, q *repository.Queries, v viewer) (int64, error) {
 		return q.CountDealsVisible(ctx, repository.CountDealsVisibleParams{
@@ -114,22 +123,17 @@ var dealsVisible = visibleEntity{
 }
 
 func TestVisibilityIntegration(t *testing.T) {
-	pool := newPool(t)
 	ctx := context.Background()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	tx := beginTestTx(t)
 
 	fx := seedVisibilityFixture(ctx, t, tx)
 	q := repository.New(tx)
 
 	viewers := []viewer{
-		{"B1", repository.UserRoleBorrower, fx["B1"]},
-		{"B2", repository.UserRoleBorrower, fx["B2"]},
-		{"L1", repository.UserRoleLender, fx["L1"]},
-		{"L2", repository.UserRoleLender, fx["L2"]},
+		{"B1", repository.UserRoleBorrower, fx.id(t, "B1")},
+		{"B2", repository.UserRoleBorrower, fx.id(t, "B2")},
+		{"L1", repository.UserRoleLender, fx.id(t, "L1")},
+		{"L2", repository.UserRoleLender, fx.id(t, "L2")},
 		// У admin нет организации: viewer_org = uuid.Nil, ветка admin его не читает.
 		{"admin", repository.UserRoleAdmin, uuid.Nil},
 	}
@@ -178,9 +182,25 @@ func TestVisibilityIntegration(t *testing.T) {
 		},
 	}
 
+	viewerNames := make([]string, len(viewers))
+	for i, v := range viewers {
+		viewerNames[i] = v.name
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			all := strings.Fields(tt.all)
+			// Опечатка в таблице ожиданий иначе тихо превратилась бы в «не видит».
+			for name, entities := range tt.visible {
+				if !slices.Contains(viewerNames, name) {
+					t.Fatalf("в ожиданиях неизвестный зритель %q", name)
+				}
+				for _, e := range strings.Fields(entities) {
+					if !slices.Contains(all, e) {
+						t.Fatalf("%s: в ожиданиях сущность %q вне %q", name, e, tt.all)
+					}
+				}
+			}
 			for _, v := range viewers {
 				visible := strings.Fields(tt.visible[v.name])
 				listed, err := tt.entity.list(ctx, q, v)
@@ -197,20 +217,24 @@ func TestVisibilityIntegration(t *testing.T) {
 				}
 
 				for _, name := range all {
+					id := fx.id(t, name)
 					want := slices.Contains(visible, name)
-					if got := slices.Contains(listed, fx[name]); got != want {
+					if got := slices.Contains(listed, id); got != want {
 						t.Errorf("%s: %s в списке = %v, want %v", v.name, name, got, want)
 					}
-					err := tt.entity.get(ctx, q, v, fx[name])
+					gotID, err := tt.entity.get(ctx, q, v, id)
 					switch {
 					case want && err != nil:
 						t.Errorf("%s: get %s: %v", v.name, name, err)
+					case want && gotID != id:
+						t.Errorf("%s: get %s вернул id %s", v.name, name, gotID)
 					case !want:
 						assertNotFound(t, tt.entity, err, v.name+" get "+name)
 					}
 				}
 				// Чужое неотличимо от несуществующего: тот же NOT_FOUND.
-				assertNotFound(t, tt.entity, tt.entity.get(ctx, q, v, uuid.New()), v.name+" get случайного id")
+				_, err = tt.entity.get(ctx, q, v, uuid.New())
+				assertNotFound(t, tt.entity, err, v.name+" get случайного id")
 			}
 
 			// Закрыто по умолчанию: роль без организации не видит ничего.
@@ -263,17 +287,20 @@ func seedVisibilityFixture(ctx context.Context, t *testing.T, tx pgx.Tx) visibil
 		}
 	}
 
-	orgs := []struct{ name, orgType, country string }{
-		{"B1", "borrower", "RU"}, {"B2", "borrower", "RU"},
-		{"L1", "lender", "AE"}, {"L2", "lender", "CN"},
+	orgs := []struct {
+		name    string
+		role    repository.UserRole
+		country string
+	}{
+		{"B1", repository.UserRoleBorrower, "RU"}, {"B2", repository.UserRoleBorrower, "RU"},
+		{"L1", repository.UserRoleLender, "AE"}, {"L2", repository.UserRoleLender, "CN"},
 	}
 	for _, o := range orgs {
 		insert(o.name, `INSERT INTO organizations (type, name, country_code, registration_number, legal_address)
 			VALUES ($1, $2, $3, $4, 'Адрес') RETURNING id`,
-			o.orgType, "Visibility "+o.name, o.country, uuid.NewString()[:20])
-		insert("user"+o.name, `INSERT INTO users (email, password_hash, role, organization_id)
-			VALUES ($1, 'x', $2, $3) RETURNING id`,
-			"visibility-"+uuid.NewString()+"@example.test", o.orgType, fx[o.name])
+			o.role, "Visibility "+o.name, o.country, uniqueRegistrationNumber())
+		orgID := fx.id(t, o.name)
+		fx["user"+o.name] = insertTestUser(ctx, t, tx, o.role, &orgID)
 	}
 
 	apps := []struct{ name, org, status string }{
@@ -285,7 +312,7 @@ func seedVisibilityFixture(ctx context.Context, t *testing.T, tx pgx.Tx) visibil
 				amount, currency, target_country_code, purpose, term_months, transfer_method)
 			VALUES ($1, $2, $3, 1000000, 'RUB', 'AE', 'Пополнение оборотных средств', 12, 'swift')
 			RETURNING id`,
-			fx[a.org], fx["user"+a.org], a.status)
+			fx.id(t, a.org), fx.id(t, "user"+a.org), a.status)
 	}
 
 	offers := []struct{ name, lender, app string }{
@@ -295,16 +322,16 @@ func seedVisibilityFixture(ctx context.Context, t *testing.T, tx pgx.Tx) visibil
 		insert(o.name, `INSERT INTO offers (application_id, lender_organization_id, created_by_user_id,
 				amount, currency, interest_rate_annual, repayment_schedule)
 			VALUES ($1, $2, $3, 1000000, 'RUB', 8, 'bullet') RETURNING id`,
-			fx[o.app], fx[o.lender], fx["user"+o.lender])
+			fx.id(t, o.app), fx.id(t, o.lender), fx.id(t, "user"+o.lender))
 	}
-	exec("O3 accepted", `UPDATE offers SET status = 'accepted', decided_at = now() WHERE id = $1`, fx["O3"])
+	exec("O3 accepted", `UPDATE offers SET status = 'accepted', decided_at = now() WHERE id = $1`, fx.id(t, "O3"))
 	exec("A4 agreed", `UPDATE applications SET status = 'agreed', accepted_offer_id = $2 WHERE id = $1`,
-		fx["A4"], fx["O3"])
+		fx.id(t, "A4"), fx.id(t, "O3"))
 
 	insert("D1", `INSERT INTO deals (application_id, offer_id, borrower_organization_id, lender_organization_id,
 			amount, currency, interest_rate_annual, term_months, target_country_code, transfer_method,
 			repayment_schedule)
 		VALUES ($1, $2, $3, $4, 1000000, 'RUB', 8, 12, 'AE', 'swift', 'bullet') RETURNING id`,
-		fx["A4"], fx["O3"], fx["B2"], fx["L1"])
+		fx.id(t, "A4"), fx.id(t, "O3"), fx.id(t, "B2"), fx.id(t, "L1"))
 	return fx
 }
