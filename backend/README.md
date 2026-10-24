@@ -32,7 +32,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | ✅ | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — вместе с сессией, CSRF и rate limit (ниже) |
 | ✅ | `GET`/`PATCH /organizations/me`, `GET`/`POST /organizations/me/documents`, `DELETE /organizations/me/documents/{documentId}`, `GET /documents/{documentId}/file`, `POST /organizations/me/kyc/submit` — профиль, бенефициары, KYC-документы и отправка на проверку с AML-скринингом и сверкой с реестром |
 | ✅ | `GET /registry/lookup` — поиск компании в мок-реестре для автозаполнения |
-| ⏳ 501 | остальные 35 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET`/`POST /applications`, `GET`/`PATCH /applications/{applicationId}`, `POST …/submit`, `POST …/cancel`, `POST …/reject-offers`, `GET …/history` — заявки: витрина с фильтрами, статусы, история, уведомления |
+| ⏳ 501 | остальные 27 — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -169,14 +170,16 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/applications` | Список (по роли): заёмщику — свои в любом статусе, кредитору — витрина `published` и заявки с его офферами (архив), admin — все. Фильтры: `status` и `target_country` (несколько значений — ИЛИ), `currency`, `amount_min`/`amount_max` (только вместе с `currency`), `term_min`/`term_max`, `created_from`/`created_to`; кредитору — `has_my_offer` (архив откликов), admin — `borrower_organization_id`. Сортировка `sort` (по дате создания или публикации, сумме, сроку), пагинация | авториз. |
+| GET | `/applications` | Список (по роли): заёмщику — свои в любом статусе, кредитору — витрина `published` и заявки с его офферами (архив), admin — все. Фильтры: `status`, `target_country` и `transfer_method` (несколько значений — ИЛИ), `currency`, `amount_min`/`amount_max` (только вместе с `currency`), `term_min`/`term_max`, `created_from`/`created_to`; кредитору — `has_my_offer` (архив откликов), admin — `borrower_organization_id`. Сортировка `sort` (по дате создания или публикации, сумме, сроку), пагинация | авториз. |
 | POST | `/applications` | Создать заявку в статусе `draft` (KYC verified) → `201` | B |
 | GET | `/applications/{applicationId}` | Карточка заявки | авториз. |
 | PATCH | `/applications/{applicationId}` | Редактировать (владелец, `draft` / `rejected`) | B |
 | POST | `/applications/{applicationId}/submit` | На модерацию (`draft` / `rejected` → `moderation`) | B |
-| POST | `/applications/{applicationId}/cancel` | Отменить (любой статус, кроме `agreed` / `cancelled`) | B |
-| POST | `/applications/{applicationId}/reject-offers` | Отклонить все текущие офферы; заявка остаётся `published` | B |
-| GET | `/applications/{applicationId}/history` | История смены статусов заявки и её офферов | авториз. |
+| POST | `/applications/{applicationId}/cancel` | Отменить (любой статус, кроме `agreed` / `cancelled`); все `sent`-офферы → `rejected` с причиной `application_cancelled`, их кредиторам — `offer_rejected` | B |
+| POST | `/applications/{applicationId}/reject-offers` | Отклонить все `sent`-офферы (причина `rejected_by_borrower`) → `{"rejected_count": n}`, `0` — тоже `200`; заявка остаётся `published` | B |
+| GET | `/applications/{applicationId}/history` | История смены статусов заявки и её офферов; кредитор видит только свои офферы и без комментариев модерации | авториз. |
+
+Ошибки заявок: `amount_min`/`amount_max` без `currency` → `400 VALIDATION_ERROR` (поле в `details`); чужая или невидимая заявка → `404 NOT_FOUND`; `PATCH` вне `draft`/`rejected`, `submit`/`cancel` из недопустимого статуса, `reject-offers` вне `published` → `409 INVALID_STATUS_TRANSITION`. `offers_count` — все офферы заявки в любом статусе (только владельцу и admin); `transfer_method_comment: ""` в `PATCH` очищает комментарий.
 
 ### offers — предложения кредиторов
 
