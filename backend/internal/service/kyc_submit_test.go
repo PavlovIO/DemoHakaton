@@ -106,6 +106,7 @@ func TestSubmitKyc(t *testing.T) {
 		noBeneficiary bool
 		screener      fakeScreener
 		verifier      service.CompanyVerifier
+		onLock        func(org *repository.Organization) // параллельная правка между lookup и FOR UPDATE
 	}
 	without := func(skip ...repository.KycDocumentType) []repository.KycDocumentType {
 		var out []repository.KycDocumentType
@@ -134,6 +135,9 @@ func TestSubmitKyc(t *testing.T) {
 		}
 		if !su.noBeneficiary {
 			store.beneficiaries = []repository.Beneficiary{{ID: uuid.New(), OrganizationID: store.org.ID, FullName: "Иванов И.И.", CitizenshipCountryCode: "RU"}}
+		}
+		if su.onLock != nil {
+			store.onLock = func() { su.onLock(&store.org) }
 		}
 		screener := su.screener
 		kyc := service.NewKyc(service.KycDeps{
@@ -268,6 +272,16 @@ func TestSubmitKyc(t *testing.T) {
 			t.Fatalf("Registry = %+v", screener.subject.Registry)
 		}
 		if !store.submitted || len(store.registryRows) != 0 {
+			t.Fatalf("submitted = %v, registry_checks = %+v", store.submitted, store.registryRows)
+		}
+	})
+
+	t.Run("идентификаторы сменились после сверки с реестром — 409, перехода нет", func(t *testing.T) {
+		store, _, _, err := run(t, setup{status: repository.KycStatusDraft, docs: requiredDocs,
+			verifier: fakeVerifier{result: registry.Result{Source: registry.SourceMock, Query: "7707083893", Found: true}},
+			onLock:   func(org *repository.Organization) { org.RegistrationNumber = "7700000000" }})
+		wantCode(t, err, apperr.CodeConflict)
+		if store.submitted || len(store.registryRows) != 0 {
 			t.Fatalf("submitted = %v, registry_checks = %+v", store.submitted, store.registryRows)
 		}
 	})
