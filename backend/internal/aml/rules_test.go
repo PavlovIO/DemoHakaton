@@ -139,7 +139,7 @@ func TestScreenOrganizationSanctions(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			store := &fakeStore{candidates: c.candidates}
-			got, err := NewRuleScreener(store).ScreenOrganization(context.Background(), c.subject)
+			got, err := RuleScreener{}.ScreenOrganization(context.Background(), store, c.subject)
 			if err != nil {
 				t.Fatalf("ScreenOrganization: %v", err)
 			}
@@ -157,7 +157,7 @@ func TestScreenOrganizationFatf(t *testing.T) {
 			{FullName: "Al Sabah", CitizenshipCountryCode: "KW"},
 		},
 	}
-	got, err := NewRuleScreener(store).ScreenOrganization(context.Background(), subject)
+	got, err := RuleScreener{}.ScreenOrganization(context.Background(), store, subject)
 	if err != nil {
 		t.Fatalf("ScreenOrganization: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestScreenOrganizationRegistry(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			subject := OrganizationSubject{Name: "Альфа", CountryCode: "RU", Registry: c.registry}
-			got, err := NewRuleScreener(&fakeStore{}).ScreenOrganization(context.Background(), subject)
+			got, err := RuleScreener{}.ScreenOrganization(context.Background(), &fakeStore{}, subject)
 			if err != nil {
 				t.Fatalf("ScreenOrganization: %v", err)
 			}
@@ -226,7 +226,7 @@ func TestScreenOrganizationRegistry(t *testing.T) {
 
 func TestScreenOrganizationShortNameNotSearched(t *testing.T) {
 	store := &fakeStore{candidates: []repository.SearchSanctionsRow{candidate("M-9", "person", "li")}}
-	got, err := NewRuleScreener(store).ScreenOrganization(context.Background(), beneficiary("Li"))
+	got, err := RuleScreener{}.ScreenOrganization(context.Background(), store, beneficiary("Li"))
 	if err != nil {
 		t.Fatalf("ScreenOrganization: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestScreenOrganizationShortNameNotSearched(t *testing.T) {
 
 func TestScreenOrganizationStoreError(t *testing.T) {
 	store := &fakeStore{err: errors.New("db down")}
-	got, err := NewRuleScreener(store).ScreenOrganization(context.Background(), beneficiary("Ivanov Ivan"))
+	got, err := RuleScreener{}.ScreenOrganization(context.Background(), store, beneficiary("Ivanov Ivan"))
 	if err == nil {
 		t.Fatal("ошибка Store проглочена")
 	}
@@ -288,7 +288,7 @@ func TestScreenApplication(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			store := &fakeStore{fatf: map[string]repository.FatfList{"IR": repository.FatfListBlack}}
-			got, err := NewRuleScreener(store).ScreenApplication(context.Background(), c.subject)
+			got, err := RuleScreener{}.ScreenApplication(context.Background(), store, c.subject)
 			if err != nil {
 				t.Fatalf("ScreenApplication: %v", err)
 			}

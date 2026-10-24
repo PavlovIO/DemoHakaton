@@ -33,7 +33,7 @@ var requiredLenderDocuments = []repository.KycDocumentType{repository.KycDocumen
 
 // OrgScreener — AML-скрининг компании (aml.Screener).
 type OrgScreener interface {
-	ScreenOrganization(ctx context.Context, s aml.OrganizationSubject) ([]aml.Finding, error)
+	ScreenOrganization(ctx context.Context, store aml.Store, s aml.OrganizationSubject) ([]aml.Finding, error)
 }
 
 // CompanyVerifier — сверка с реестром (registry.CompanyVerifier, BE-06).
@@ -170,7 +170,7 @@ func (k *Kyc) screen(ctx context.Context, q repository.Querier, org repository.O
 	for i, b := range rows {
 		persons[i] = aml.Person{FullName: b.FullName, CitizenshipCountryCode: b.CitizenshipCountryCode}
 	}
-	findings, err := k.screener.ScreenOrganization(ctx, aml.OrganizationSubject{
+	findings, err := k.screener.ScreenOrganization(ctx, q, aml.OrganizationSubject{
 		Name: org.Name, CountryCode: org.CountryCode, Beneficiaries: persons, Registry: reg,
 	})
 	if err != nil {

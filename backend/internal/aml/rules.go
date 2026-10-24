@@ -34,7 +34,7 @@ const (
 	scorePrecision = 1e4
 )
 
-// Store — то, что скринингу нужно от БД; *repository.Queries ему удовлетворяет.
+// Store — то, что скринингу нужно от БД; repository.Querier ему удовлетворяет.
 type Store interface {
 	SearchSanctions(ctx context.Context, arg repository.SearchSanctionsParams) ([]repository.SearchSanctionsRow, error)
 	ListCountriesFatf(ctx context.Context, codes []string) ([]repository.ListCountriesFatfRow, error)
@@ -42,19 +42,12 @@ type Store interface {
 
 // RuleScreener — скрининг по правилам BE-13: FATF, санкционные списки, сверка с реестром,
 // порог суммы. Только находит: флаги пишет вызывающий в своей транзакции.
-type RuleScreener struct {
-	store Store
-}
+type RuleScreener struct{}
 
-var _ Screener = (*RuleScreener)(nil)
-
-// NewRuleScreener создаёт скрининг поверх store.
-func NewRuleScreener(store Store) *RuleScreener {
-	return &RuleScreener{store: store}
-}
+var _ Screener = RuleScreener{}
 
 // ScreenOrganization проверяет компанию и каждого её бенефициара.
-func (s *RuleScreener) ScreenOrganization(ctx context.Context, subj OrganizationSubject) ([]Finding, error) {
+func (RuleScreener) ScreenOrganization(ctx context.Context, store Store, subj OrganizationSubject) ([]Finding, error) {
 	jurisdictions := []jurisdiction{{subj.CountryCode, "Страна регистрации " + subj.CountryCode}}
 	for _, p := range subj.Beneficiaries {
 		jurisdictions = append(jurisdictions, jurisdiction{
@@ -62,17 +55,17 @@ func (s *RuleScreener) ScreenOrganization(ctx context.Context, subj Organization
 			fmt.Sprintf("Гражданство бенефициара «%s» %s", p.FullName, p.CitizenshipCountryCode),
 		})
 	}
-	findings, err := s.screenFatf(ctx, jurisdictions)
+	findings, err := screenFatf(ctx, store, jurisdictions)
 	if err != nil {
 		return nil, err
 	}
-	company, err := s.screenSanctions(ctx, subj.Name, organizationKinds, "компании")
+	company, err := screenSanctions(ctx, store, subj.Name, organizationKinds, "компании")
 	if err != nil {
 		return nil, err
 	}
 	findings = append(findings, company...)
 	for _, p := range subj.Beneficiaries {
-		f, err := s.screenSanctions(ctx, p.FullName, personKinds, "бенефициара")
+		f, err := screenSanctions(ctx, store, p.FullName, personKinds, "бенефициара")
 		if err != nil {
 			return nil, err
 		}
@@ -82,8 +75,8 @@ func (s *RuleScreener) ScreenOrganization(ctx context.Context, subj Organization
 }
 
 // ScreenApplication проверяет заявку: страну назначения по FATF и сумму по порогу.
-func (s *RuleScreener) ScreenApplication(ctx context.Context, subj ApplicationSubject) ([]Finding, error) {
-	findings, err := s.screenFatf(ctx, []jurisdiction{{subj.TargetCountryCode, "Страна назначения " + subj.TargetCountryCode}})
+func (RuleScreener) ScreenApplication(ctx context.Context, store Store, subj ApplicationSubject) ([]Finding, error) {
+	findings, err := screenFatf(ctx, store, []jurisdiction{{subj.TargetCountryCode, "Страна назначения " + subj.TargetCountryCode}})
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +129,7 @@ var fatfListLabel = map[repository.FatfList]string{
 
 // screenFatf проверяет страны по спискам FATF одним запросом: находка на каждую страну
 // из списка, в порядке jurisdictions.
-func (s *RuleScreener) screenFatf(ctx context.Context, jurisdictions []jurisdiction) ([]Finding, error) {
+func screenFatf(ctx context.Context, store Store, jurisdictions []jurisdiction) ([]Finding, error) {
 	var codes []string
 	for _, j := range jurisdictions {
 		if j.code != "" && !slices.Contains(codes, j.code) {
@@ -146,7 +139,7 @@ func (s *RuleScreener) screenFatf(ctx context.Context, jurisdictions []jurisdict
 	if len(codes) == 0 {
 		return nil, nil
 	}
-	rows, err := s.store.ListCountriesFatf(ctx, codes)
+	rows, err := store.ListCountriesFatf(ctx, codes)
 	if err != nil {
 		return nil, fmt.Errorf("list countries fatf: %w", err)
 	}
@@ -242,7 +235,7 @@ var (
 
 // screenSanctions ищет субъекта в санкционных списках. Флаг — один на субъект, по лучшему
 // кандидату: на распространённом имени иначе была бы лавина флагов.
-func (s *RuleScreener) screenSanctions(ctx context.Context, name string, kinds map[string]bool, subjectLabel string) ([]Finding, error) {
+func screenSanctions(ctx context.Context, store Store, name string, kinds map[string]bool, subjectLabel string) ([]Finding, error) {
 	var (
 		best      repository.SearchSanctionsRow
 		bestScore float64
@@ -251,7 +244,7 @@ func (s *RuleScreener) screenSanctions(ctx context.Context, name string, kinds m
 		if len([]rune(query)) < minQueryLen {
 			continue
 		}
-		candidates, err := s.store.SearchSanctions(ctx, repository.SearchSanctionsParams{
+		candidates, err := store.SearchSanctions(ctx, repository.SearchSanctionsParams{
 			Query: query, MinSimilarity: candidateMinSimilarity, MaxCandidates: maxSanctionCandidates,
 		})
 		if err != nil {

@@ -290,8 +290,7 @@ func TestSubmitKycRegistrySnapshotIntegration(t *testing.T) {
 func TestSubmitKycAmlIntegration(t *testing.T) {
 	ctx := context.Background()
 	f := newKycFixture(t, kyc.KycDeps{Files: newFakeFiles(), Screener: aml.NoopScreener{}})
-	// Скрининг читает санкции и FATF в транзакции фикстуры: Store появляется только в ней.
-	f.kyc = kyc.NewKyc(kyc.KycDeps{Store: f.q, Tx: service.NewTxManager(f.tx), Files: newFakeFiles(), Screener: aml.NewRuleScreener(f.q)})
+	f.kyc = kyc.NewKyc(kyc.KycDeps{Store: f.q, Tx: service.NewTxManager(f.tx), Files: newFakeFiles(), Screener: aml.RuleScreener{}})
 	servicetest.RequireSanctionsMock(ctx, t, f.tx)
 	servicetest.InsertUser(ctx, t, f.tx, repository.UserRoleAdmin, nil)
 	f.prepareForSubmit(t)

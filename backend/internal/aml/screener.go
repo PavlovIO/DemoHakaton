@@ -57,10 +57,12 @@ type Finding struct {
 }
 
 // Screener проверяет компанию и заявку по AML-правилам. Ошибка — операция откатывается
-// целиком (fail-closed): без скрининга статус не меняется.
+// целиком (fail-closed): без скрининга статус не меняется. store — querier транзакции
+// вызывающего: скрининг идёт под блокировкой строки, и второе соединение из пула на каждый
+// submit исчерпало бы пул при параллельных подачах.
 type Screener interface {
-	ScreenOrganization(ctx context.Context, s OrganizationSubject) ([]Finding, error)
-	ScreenApplication(ctx context.Context, s ApplicationSubject) ([]Finding, error)
+	ScreenOrganization(ctx context.Context, store Store, s OrganizationSubject) ([]Finding, error)
+	ScreenApplication(ctx context.Context, store Store, s ApplicationSubject) ([]Finding, error)
 }
 
 // NoopScreener — скрининг без находок: для тестов, где AML не проверяется.
@@ -69,11 +71,11 @@ type NoopScreener struct{}
 var _ Screener = NoopScreener{}
 
 // ScreenOrganization — находок нет.
-func (NoopScreener) ScreenOrganization(context.Context, OrganizationSubject) ([]Finding, error) {
+func (NoopScreener) ScreenOrganization(context.Context, Store, OrganizationSubject) ([]Finding, error) {
 	return nil, nil
 }
 
 // ScreenApplication — находок нет.
-func (NoopScreener) ScreenApplication(context.Context, ApplicationSubject) ([]Finding, error) {
+func (NoopScreener) ScreenApplication(context.Context, Store, ApplicationSubject) ([]Finding, error) {
 	return nil, nil
 }

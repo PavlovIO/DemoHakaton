@@ -73,7 +73,7 @@ func run(ctx context.Context) error {
 	companyRegistry := registry.NewMock() // в MVP реестр — только мок (DECISIONS п. 17)
 	// AML-скрининг читает только локальную БД (санкции, FATF): submitKyc и submit заявки
 	// при его ошибке откатываются (fail-closed).
-	screener := aml.NewRuleScreener(queries)
+	screener := aml.RuleScreener{}
 	h := handler.New(handler.Deps{
 		DB:    pool,
 		Dicts: dictionaries.NewDictionaries(queries),
