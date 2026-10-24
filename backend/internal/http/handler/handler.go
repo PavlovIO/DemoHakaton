@@ -45,6 +45,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/admin"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
@@ -131,6 +132,19 @@ type NotificationService interface {
 	MarkAllRead(ctx context.Context, p service.Principal) error
 }
 
+// AdminService — операции тега admin (admin.Admin).
+type AdminService interface {
+	ListOrganizations(ctx context.Context, p service.Principal, f admin.OrganizationFilter) (admin.OrganizationPage, error)
+	GetOrganization(ctx context.Context, p service.Principal, id uuid.UUID) (admin.OrganizationDetails, error)
+	ApproveKyc(ctx context.Context, p service.Principal, id uuid.UUID, comment *string, meta service.ClientMeta) (kyc.OrganizationProfile, error)
+	RejectKyc(ctx context.Context, p service.Principal, id uuid.UUID, reason string, meta service.ClientMeta) (kyc.OrganizationProfile, error)
+	ApproveApplication(ctx context.Context, p service.Principal, id uuid.UUID, comment *string, meta service.ClientMeta) (lending.Application, error)
+	RejectApplication(ctx context.Context, p service.Principal, id uuid.UUID, reason string, meta service.ClientMeta) (lending.Application, error)
+	ListUsers(ctx context.Context, p service.Principal, f admin.UserFilter) (admin.UserPage, error)
+	BlockUser(ctx context.Context, p service.Principal, id uuid.UUID, reason string, meta service.ClientMeta) (admin.User, error)
+	UnblockUser(ctx context.Context, p service.Principal, id uuid.UUID, meta service.ClientMeta) (admin.User, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
 	DB            Pinger
@@ -143,6 +157,7 @@ type Deps struct {
 	Deals         DealService
 	Chat          ChatService
 	Notifications NotificationService
+	Admin         AdminService
 	CookieSecure  bool
 }
 
@@ -158,6 +173,7 @@ type Handler struct {
 	deals         DealService
 	chat          ChatService
 	notifications NotificationService
+	admin         AdminService
 	cookieSecure  bool
 }
 
@@ -176,5 +192,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, admin: d.Admin, cookieSecure: d.CookieSecure}
 }
