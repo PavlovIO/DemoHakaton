@@ -296,6 +296,57 @@ func TestAuthRegister(t *testing.T) {
 	})
 }
 
+func TestAuthRegisterAudit(t *testing.T) {
+	ip := netip.MustParseAddr("192.0.2.7")
+	meta := service.ClientMeta{IP: &ip, UserAgent: "register-agent"}
+	input := auth.RegisterInput{Email: "audit-reg@example.com", Password: "1234567890", Role: "borrower", Org: auth.RegisterOrganizationInput{Name: "A", CountryCode: "RU", RegistrationNumber: "audit-reg-1", LegalAddress: "addr"}}
+
+	t.Run("writes auth.register", func(t *testing.T) {
+		store := newFakeAuthStore()
+		session, err := newTestAuth(store).Register(context.Background(), input, meta)
+		if err != nil {
+			t.Fatalf("Register() err = %v", err)
+		}
+		if len(store.audit) != 1 {
+			t.Fatalf("audit entries = %d, want 1", len(store.audit))
+		}
+		entry := store.audit[0]
+		userID := session.Me.User.ID
+		if entry.Action != "auth.register" {
+			t.Errorf("audit action = %q, want auth.register", entry.Action)
+		}
+		if !entry.UserID.Valid || uuid.UUID(entry.UserID.Bytes) != userID {
+			t.Errorf("audit user id = %+v, want %s", entry.UserID, userID)
+		}
+		if entry.EntityType.EntityType != repository.EntityTypeUser || entry.EntityID.String != userID.String() {
+			t.Errorf("audit entity = %+v/%+v, want user/%s", entry.EntityType, entry.EntityID, userID)
+		}
+		if entry.Ip == nil || *entry.Ip != ip || entry.UserAgent.String != meta.UserAgent {
+			t.Errorf("audit client = %v/%+v, want %v/%q", entry.Ip, entry.UserAgent, ip, meta.UserAgent)
+		}
+		var gotMeta map[string]string
+		if err := json.Unmarshal(entry.Meta, &gotMeta); err != nil {
+			t.Fatalf("decode audit meta %s: %v", entry.Meta, err)
+		}
+		if gotMeta["organization_id"] != session.Me.Organization.ID.String() {
+			t.Errorf("audit meta = %s, want organization_id %s", entry.Meta, session.Me.Organization.ID)
+		}
+	})
+
+	// Регистрация без следа в журнале хуже отказа: сбой записи откатывает пользователя.
+	t.Run("audit failure rolls back", func(t *testing.T) {
+		store := newFakeAuthStore()
+		store.auditErr = errors.New("audit storage unavailable")
+		session, err := newTestAuth(store).Register(context.Background(), input, meta)
+		if session != nil || err == nil {
+			t.Fatalf("Register() = (%v, %v), want error", session, err)
+		}
+		if len(store.users) != 0 || len(store.sessions) != 0 {
+			t.Fatalf("failed register left state: users=%d sessions=%d", len(store.users), len(store.sessions))
+		}
+	})
+}
+
 func TestAuthLogin(t *testing.T) {
 	store := newFakeAuthStore()
 	svc := newTestAuth(store)

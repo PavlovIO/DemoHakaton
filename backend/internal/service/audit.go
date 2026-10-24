@@ -12,8 +12,8 @@ import (
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
-// Минимальная версия хелпера аудита из BE-14, шаг 1 (README планов, «Общие куски кода»):
-// BE-14 переводит Auth.audit на WriteAudit. Константы действий живут в доменных пакетах.
+// Все записи audit_log идут через WriteAudit (BE-14). Константы действий живут в доменных
+// пакетах: auth, kyc, lending, admin.
 
 // ClientMeta содержит сетевую информацию клиента для сессии и аудита.
 type ClientMeta struct {
