@@ -332,6 +332,7 @@ func (e RegisterRequestRole) Valid() bool {
 const (
 	RegistryLookupResultSourceEgrulDadata RegistryLookupResultSource = "egrul_dadata"
 	RegistryLookupResultSourceGleif       RegistryLookupResultSource = "gleif"
+	RegistryLookupResultSourceMock        RegistryLookupResultSource = "mock"
 )
 
 // Valid indicates whether the value is a known member of the RegistryLookupResultSource enum.
@@ -340,6 +341,8 @@ func (e RegistryLookupResultSource) Valid() bool {
 	case RegistryLookupResultSourceEgrulDadata:
 		return true
 	case RegistryLookupResultSourceGleif:
+		return true
+	case RegistryLookupResultSourceMock:
 		return true
 	default:
 		return false
@@ -1061,11 +1064,13 @@ type RegistryLookupResult struct {
 	RegistrationNumber *string    `json:"registration_number,omitempty"`
 
 	// RegistryStatus Статус в реестре (active, liquidating, liquidated, ...)
-	RegistryStatus *string                    `json:"registry_status,omitempty"`
-	Source         RegistryLookupResultSource `json:"source"`
+	RegistryStatus *string `json:"registry_status,omitempty"`
+
+	// Source Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний (в MVP реестр только мок).
+	Source RegistryLookupResultSource `json:"source"`
 }
 
-// RegistryLookupResultSource defines model for RegistryLookupResult.Source.
+// RegistryLookupResultSource Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний (в MVP реестр только мок).
 type RegistryLookupResultSource string
 
 // RepaymentSchedule bullet — всё в конце срока; annuity — равные платежи;

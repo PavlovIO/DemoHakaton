@@ -42,7 +42,7 @@ type ServerInterface interface {
 	// SubmitKYC Отправить компанию на верификацию
 	// (POST /organizations/me/kyc/submit)
 	SubmitKYC(w http.ResponseWriter, r *http.Request)
-	// RegistryLookup Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+	// RegistryLookup Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
 	// (GET /registry/lookup)
 	RegistryLookup(w http.ResponseWriter, r *http.Request, params RegistryLookupParams)
 }
@@ -964,7 +964,7 @@ type StrictServerInterface interface {
 	// SubmitKYC Отправить компанию на верификацию
 	// (POST /organizations/me/kyc/submit)
 	SubmitKYC(ctx context.Context, request SubmitKYCRequestObject) (SubmitKYCResponseObject, error)
-	// RegistryLookup Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+	// RegistryLookup Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
 	// (GET /registry/lookup)
 	RegistryLookup(ctx context.Context, request RegistryLookupRequestObject) (RegistryLookupResponseObject, error)
 }

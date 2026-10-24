@@ -31,6 +31,7 @@ func TestErrorMapping(t *testing.T) {
 		{apperr.RateLimited(), 429, "RATE_LIMITED"},
 		{apperr.NotImplemented("listDeals"), 501, "NOT_IMPLEMENTED"},
 		{apperr.Unavailable("db down", errors.New("dial")), 503, "UNAVAILABLE"},
+		{apperr.UpstreamUnavailable("registry down", errors.New("timeout")), 502, "UPSTREAM_UNAVAILABLE"},
 		{errors.New("boom"), 500, "INTERNAL"},
 		// Доменная ошибка, обёрнутая через fmt.Errorf("...: %w"), всё равно распознаётся.
 		{wrap(apperr.NotFound("nope")), 404, "NOT_FOUND"},
@@ -99,7 +100,7 @@ func TestEveryCodeHasStatus(t *testing.T) {
 		apperr.CodeValidation, apperr.CodeUnauthorized, apperr.CodeForbidden, apperr.CodeCSRFInvalid,
 		apperr.CodeKYCNotVerified, apperr.CodeNotFound, apperr.CodeConflict, apperr.CodeInvalidTransition,
 		apperr.CodeRateLimited, apperr.CodeInternal, apperr.CodeNotImplemented, apperr.CodeUnavailable,
-		apperr.CodeFileTooLarge,
+		apperr.CodeFileTooLarge, apperr.CodeUpstreamUnavailable,
 	}
 	for _, c := range codes {
 		if s := handler.StatusOf(c); s == http.StatusInternalServerError && c != apperr.CodeInternal {

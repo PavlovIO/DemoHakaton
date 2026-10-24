@@ -165,8 +165,10 @@ paths:
     get:
       tags: [organizations]
       operationId: registryLookup
-      summary: Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
-      description: Доступно без логина на шаге регистрации; жёсткий rate limit.
+      summary: Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
+      description: >-
+        Доступно без логина на шаге регистрации. В MVP реестр — мок на фикстурах
+        демо-компаний. Rate limit: 10 запросов в минуту с IP и 60 в минуту всего (429).
       security: []
       parameters:
         - name: country_code
