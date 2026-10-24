@@ -34,4 +34,5 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `MarkMessagesRead` | `:exec` | Upsert указателя. Через `GREATEST` указатель только растёт, назад не откатывается |
-| `CountUnreadMessages` | `:one` | Читает указатель через `LEFT JOIN` (см. [`messages`](messages.md)) |
+
+Указатель читает подзапрос `unread_messages` в `*OffersVisible` (см. [`offers`](offers.md)).
