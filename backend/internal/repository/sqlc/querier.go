@@ -36,6 +36,7 @@ type Querier interface {
 	// округления — в одном месте, в Go; NULL ⇔ fee_percent NULL (deals_fee_chk).
 	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
 	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)
+	// Только после GetOfferVisible в той же транзакции: запрос не проверяет, что автор — сторона оффера.
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	// Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
@@ -108,8 +109,12 @@ type Querier interface {
 	// они только сужают выборку и не могут её открыть.
 	ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]ListDealsVisibleRow, error)
 	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error)
-	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
-	ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error)
+	// Polling: сообщения с id > after_id по возрастанию; after_id = 0 → самые старые max_rows штук
+	// (не последние: «последние N» потребовали бы ORDER BY id DESC, в MVP не нужно).
+	// Правило видимости — то же, что у GetOfferVisible: чужой чат даёт 0 строк, но сервис
+	// всё равно сначала зовёт GetOfferVisible, чтобы отличить 404 от пустого чата.
+	// JOIN organizations внутренний: автор — всегда borrower или lender (admin не пишет).
+	ListMessagesVisible(ctx context.Context, arg ListMessagesVisibleParams) ([]ListMessagesVisibleRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error)
@@ -128,11 +133,18 @@ type Querier interface {
 	// принимают. Условие совпадает с видимостью заявки для lender в GetApplicationVisible:
 	// невидимая — 0 строк → 404. Порядок блокировок общий: сначала заявка, потом офферы.
 	LockApplicationForLender(ctx context.Context, arg LockApplicationForLenderParams) (LockApplicationForLenderRow, error)
+	// Транзакционная блокировка чата оффера перед CreateMessage. id из IDENTITY выдаётся до коммита,
+	// и без блокировки сообщение 10 может закоммититься после 11: клиент, уже получивший 11,
+	// опрашивает с after_id = 11 и 10 не увидит никогда (а MarkMessagesRead сочтёт его прочитанным).
+	// Под блокировкой сообщения одного оффера коммитятся в порядке id. Первый ключ — пространство
+	// «чат», чтобы не пересекаться с другими advisory-блокировками.
+	LockOfferChat(ctx context.Context, offerID uuid.UUID) error
 	// Второй шаг acceptOffer, после LockApplicationByOfferForBorrower: блокирует принимаемый
 	// оффер, чтобы его статус, valid_until и условия не поменялись до UPDATE и снапшота сделки.
 	// Видимость не нужна: владельца уже проверила блокировка заявки, application_id — та же заявка.
 	LockOfferForAccept(ctx context.Context, arg LockOfferForAcceptParams) (Offer, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
+	// Только после GetOfferVisible: запрос не проверяет, что читатель — сторона оффера.
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
