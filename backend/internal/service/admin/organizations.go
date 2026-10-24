@@ -81,32 +81,37 @@ func (a *Admin) ListOrganizations(ctx context.Context, p service.Principal, f Or
 	if f.Type != nil {
 		count.Type = repository.NullOrganizationType{OrganizationType: repository.OrganizationType(*f.Type), Valid: true}
 	}
-	orgs, err := a.store.ListOrganizations(ctx, repository.ListOrganizationsParams{
-		Limit: limit, Offset: offset,
-		KycStatuses: count.KycStatuses, Type: count.Type, CountryCode: count.CountryCode, Q: count.Q,
+	out := OrganizationPage{Page: page, PageSize: size}
+	// Страница, total и бенефициары — в одном снимке: иначе компания, зарегистрированная
+	// между запросами, попадёт в total, но не в items.
+	err := a.tx.ReadSnapshot(ctx, func(q repository.Querier) error {
+		orgs, err := q.ListOrganizations(ctx, repository.ListOrganizationsParams{
+			Limit: limit, Offset: offset,
+			KycStatuses: count.KycStatuses, Type: count.Type, CountryCode: count.CountryCode, Q: count.Q,
+		})
+		if err != nil {
+			return fmt.Errorf("list organizations: %w", err)
+		}
+		if out.Total, err = q.CountOrganizations(ctx, count); err != nil {
+			return fmt.Errorf("count organizations: %w", err)
+		}
+		out.Items, err = withBeneficiaries(ctx, q, orgs)
+		return err
 	})
-	if err != nil {
-		return OrganizationPage{}, fmt.Errorf("list organizations: %w", err)
-	}
-	total, err := a.store.CountOrganizations(ctx, count)
-	if err != nil {
-		return OrganizationPage{}, fmt.Errorf("count organizations: %w", err)
-	}
-	items, err := a.withBeneficiaries(ctx, orgs)
 	if err != nil {
 		return OrganizationPage{}, err
 	}
-	return OrganizationPage{Items: items, Total: total, Page: page, PageSize: size}, nil
+	return out, nil
 }
 
 // withBeneficiaries — бенефициары страницы одним запросом: Organization в контракте
 // требует beneficiaries и в списке.
-func (a *Admin) withBeneficiaries(ctx context.Context, orgs []repository.Organization) ([]kyc.OrganizationProfile, error) {
+func withBeneficiaries(ctx context.Context, q repository.Querier, orgs []repository.Organization) ([]kyc.OrganizationProfile, error) {
 	ids := make([]uuid.UUID, len(orgs))
 	for i, o := range orgs {
 		ids[i] = o.ID
 	}
-	rows, err := a.store.ListBeneficiariesByOrganizations(ctx, ids)
+	rows, err := q.ListBeneficiariesByOrganizations(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("list beneficiaries: %w", err)
 	}
@@ -133,23 +138,39 @@ func (a *Admin) GetOrganization(ctx context.Context, p service.Principal, orgID 
 	if err := requireAdmin(p); err != nil {
 		return OrganizationDetails{}, err
 	}
-	profile, err := kyc.LoadProfile(ctx, a.store, orgID)
+	var out OrganizationDetails
+	// Все части карточки — в одном снимке: админ решает по ней, и статус KYC из одного
+	// состояния БД рядом с флагами из другого (решение другого админа между запросами)
+	// ввёл бы его в заблуждение.
+	err := a.tx.ReadSnapshot(ctx, func(q repository.Querier) error {
+		var err error
+		out, err = loadOrganizationDetails(ctx, q, orgID)
+		return err
+	})
 	if err != nil {
 		return OrganizationDetails{}, err
 	}
-	docs, err := a.store.ListKycDocumentsByOrg(ctx, orgID)
+	return out, nil
+}
+
+func loadOrganizationDetails(ctx context.Context, q repository.Querier, orgID uuid.UUID) (OrganizationDetails, error) {
+	profile, err := kyc.LoadProfile(ctx, q, orgID)
+	if err != nil {
+		return OrganizationDetails{}, err
+	}
+	docs, err := q.ListKycDocumentsByOrg(ctx, orgID)
 	if err != nil {
 		return OrganizationDetails{}, fmt.Errorf("list kyc documents: %w", err)
 	}
-	flagRows, err := a.store.ListAmlFlagsByOrganization(ctx, orgID)
+	flagRows, err := q.ListAmlFlagsByOrganization(ctx, orgID)
 	if err != nil {
 		return OrganizationDetails{}, fmt.Errorf("list aml flags: %w", err)
 	}
-	userRows, err := a.store.ListUsersByOrganization(ctx, pgtype.UUID{Bytes: orgID, Valid: true})
+	userRows, err := q.ListUsersByOrganization(ctx, pgtype.UUID{Bytes: orgID, Valid: true})
 	if err != nil {
 		return OrganizationDetails{}, fmt.Errorf("list organization users: %w", err)
 	}
-	check, err := a.latestRegistryCheck(ctx, orgID)
+	check, err := latestRegistryCheck(ctx, q, orgID)
 	if err != nil {
 		return OrganizationDetails{}, err
 	}
@@ -174,8 +195,8 @@ func (a *Admin) GetOrganization(ctx context.Context, p service.Principal, orgID 
 }
 
 // latestRegistryCheck — последний снапшот реестра; нет сверки — nil, а не 404.
-func (a *Admin) latestRegistryCheck(ctx context.Context, orgID uuid.UUID) (*registry.Result, error) {
-	rc, err := a.store.GetLatestRegistryCheck(ctx, pgtype.UUID{Bytes: orgID, Valid: true})
+func latestRegistryCheck(ctx context.Context, q repository.Querier, orgID uuid.UUID) (*registry.Result, error) {
+	rc, err := q.GetLatestRegistryCheck(ctx, pgtype.UUID{Bytes: orgID, Valid: true})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

@@ -73,6 +73,9 @@ func TestGetOrganization(t *testing.T) {
 		if rc == nil || rc.Source != "mock" || !rc.Found || rc.Name != "ООО Альфа" || !rc.CheckedAt.Equal(checkedAt) {
 			t.Fatalf("registry_check = %+v", rc)
 		}
+		if db.snapshots != 1 {
+			t.Fatalf("snapshots = %d, want 1: части карточки читаются в одном снимке", db.snapshots)
+		}
 	})
 
 	t.Run("нет компании — 404", func(t *testing.T) {
@@ -120,6 +123,9 @@ func TestListOrganizations(t *testing.T) {
 		if got.Items[0].Beneficiaries == nil || len(got.Items[0].Beneficiaries) != 0 || len(got.Items[1].Beneficiaries) != 1 {
 			t.Fatalf("beneficiaries = %v / %v", got.Items[0].Beneficiaries, got.Items[1].Beneficiaries)
 		}
+		if db.snapshots != 1 {
+			t.Fatalf("snapshots = %d, want 1: страница и total в одном снимке", db.snapshots)
+		}
 	})
 
 	t.Run("без фильтров — NULL в запросе", func(t *testing.T) {
@@ -160,6 +166,9 @@ func TestListUsers(t *testing.T) {
 		}
 		if got.Total != 1 || len(got.Items) != 1 || got.Items[0].OrganizationID != nil || got.Page != 1 {
 			t.Fatalf("page = %+v", got)
+		}
+		if db.snapshots != 1 {
+			t.Fatalf("snapshots = %d, want 1: страница и total в одном снимке", db.snapshots)
 		}
 	})
 

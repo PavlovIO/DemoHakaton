@@ -34,7 +34,7 @@ type adminDB interface {
 }
 
 func newIntegrationAdmin(db adminDB) *admin.Admin {
-	return admin.New(admin.Deps{Store: repository.New(db), Tx: service.NewTxManager(db)})
+	return admin.New(admin.Deps{Tx: service.NewTxManager(db)})
 }
 
 // insertCompany — заёмщик из RU в статусе status с одним пользователем.

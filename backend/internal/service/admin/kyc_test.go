@@ -15,7 +15,7 @@ import (
 )
 
 func newAdmin(db *fakeDB) *admin.Admin {
-	return admin.New(admin.Deps{Store: db, Tx: fakeTx{db: db}})
+	return admin.New(admin.Deps{Tx: fakeTx{db: db}})
 }
 
 func TestApproveKyc(t *testing.T) {

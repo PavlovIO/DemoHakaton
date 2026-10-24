@@ -47,6 +47,7 @@ type fakeDB struct {
 	orgCountArg     *repository.CountOrganizationsParams
 	userListArg     *repository.ListUsersParams
 	userCountArg    *repository.CountUsersParams
+	snapshots       int // вызовы ReadSnapshot: чтение из нескольких запросов должно идти в одном
 }
 
 func newFakeDB() *fakeDB {
@@ -64,6 +65,11 @@ func (f *fakeDB) withOrg(status repository.KycStatus) *repository.Organization {
 type fakeTx struct{ db *fakeDB }
 
 func (t fakeTx) InTx(_ context.Context, fn func(q repository.Querier) error) error { return fn(t.db) }
+
+func (t fakeTx) ReadSnapshot(_ context.Context, fn func(q repository.Querier) error) error {
+	t.db.snapshots++
+	return fn(t.db)
+}
 
 func adminPrincipal() service.Principal {
 	return service.Principal{UserID: uuid.New(), Role: string(repository.UserRoleAdmin)}
