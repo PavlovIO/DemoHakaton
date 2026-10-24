@@ -37,6 +37,15 @@ type fakeAppStore struct {
 	nextNumber    int64
 	storedHistory []repository.StatusHistory // ответ ListApplicationHistory
 	historyArg    *repository.ListApplicationHistoryParams
+	// Офферные запросы — offers_test.go.
+	createArg      *repository.CreateOfferParams
+	createErr      error
+	rejectOfferArg *repository.RejectOfferParams
+	withdrawArg    *repository.WithdrawOfferParams
+	listOffersArg  *repository.ListOffersVisibleParams
+	countOffersArg *repository.CountOffersVisibleParams
+	appOffersArg   *repository.ListApplicationOffersVisibleParams
+	unread         int64 // unread_messages каждой строки *OffersVisible
 }
 
 func newFakeAppStore() *fakeAppStore {

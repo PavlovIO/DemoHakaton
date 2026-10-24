@@ -605,8 +605,8 @@ func applicationAudit(action string, p Principal, id uuid.UUID) AuditEvent {
 	return AuditEvent{Action: action, UserID: &p.UserID, EntityType: repository.EntityTypeApplication, EntityID: id.String()}
 }
 
-// statusFilter — статусы для narg statuses (text[]: см. ListApplicationsVisible).
-func statusFilter(in []ApplicationStatus) []string {
+// statusFilter — статусы заявок или офферов для narg statuses (text[]: см. ListApplicationsVisible).
+func statusFilter[S ~string](in []S) []string {
 	if len(in) == 0 {
 		return nil // NULL — фильтр не задан
 	}
