@@ -53,6 +53,9 @@ func (a *Admin) ListAuditLog(ctx context.Context, p service.Principal, f AuditLo
 	if err := requireAdmin(p); err != nil {
 		return AuditLogPage{}, err
 	}
+	if err := validatePeriod(f.CreatedFrom, f.CreatedTo); err != nil {
+		return AuditLogPage{}, err
+	}
 	page, size, limit, offset := service.PageWindow(f.Page, f.PageSize)
 	count := repository.CountAuditLogParams{
 		UserID:      pgconv.UUID(f.UserID),

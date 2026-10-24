@@ -56,9 +56,8 @@ func (a *Admin) AnalyticsSummary(ctx context.Context, p service.Principal, f Ana
 	if err := requireAdmin(p); err != nil {
 		return AnalyticsSummary{}, err
 	}
-	if f.CreatedFrom != nil && f.CreatedTo != nil && f.CreatedFrom.After(*f.CreatedTo) {
-		return AnalyticsSummary{}, apperr.Validation("Некорректный период",
-			apperr.FieldError{Field: "created_to", Message: "должно быть не раньше created_from"})
+	if err := validatePeriod(f.CreatedFrom, f.CreatedTo); err != nil {
+		return AnalyticsSummary{}, err
 	}
 	topN := int32(DefaultTopN)
 	if f.TopN > 0 {
@@ -143,4 +142,14 @@ func topSupply(ctx context.Context, q repository.Querier, from, to pgtype.Timest
 		stats = append(stats, CountryStat{CountryCode: row.CountryCode, Count: int64(row.Count)})
 	}
 	return stats, nil
+}
+
+// validatePeriod отклоняет обратный период: [from, to) с from > to всегда пуст, и пустой
+// ответ выглядел бы как «за период ничего не было».
+func validatePeriod(from, to *time.Time) error {
+	if from != nil && to != nil && from.After(*to) {
+		return apperr.Validation("Некорректный период",
+			apperr.FieldError{Field: "created_to", Message: "должно быть не раньше created_from"})
+	}
+	return nil
 }
