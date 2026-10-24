@@ -35,6 +35,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/organizationsapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/systemapi"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 )
 
 // Pinger — проверка соединения с БД для /healthz (*pgxpool.Pool подходит).
@@ -49,16 +50,30 @@ type DictionaryService interface {
 	TransferMethods(ctx context.Context) ([]repository.TransferMethod, error)
 }
 
+// AuthService — используемые HTTP-слоем операции аутентификации.
+type AuthService interface {
+	Register(ctx context.Context, in service.RegisterInput, meta service.ClientMeta) (*service.Session, error)
+	Login(ctx context.Context, email, password string, meta service.ClientMeta) (*service.Session, error)
+	Logout(ctx context.Context, token string) error
+	Me(ctx context.Context, principal service.Principal) (*service.Me, error)
+	// Authenticate — проверка сессии для middleware.Authenticate.
+	Authenticate(ctx context.Context, token string) (*service.Principal, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
-	DB    Pinger
-	Dicts DictionaryService
+	DB           Pinger
+	Dicts        DictionaryService
+	Auth         AuthService
+	CookieSecure bool
 }
 
 // Handler логирует через slog.Default() — его настраивает cmd/server.
 type Handler struct {
-	db    Pinger
-	dicts DictionaryService
+	db           Pinger
+	dicts        DictionaryService
+	auth         AuthService
+	cookieSecure bool
 }
 
 // Компилятор проверяет, что Handler реализует все операции спеки: по интерфейсу на тег.
@@ -76,5 +91,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, cookieSecure: d.CookieSecure}
 }

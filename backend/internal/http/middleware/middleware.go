@@ -1,5 +1,4 @@
 // Package middleware — обёртки net/http вокруг всего API.
-// Сюда же позже лягут auth (сессия из cookie), CSRF и rate limit.
 package middleware
 
 import (
@@ -9,6 +8,10 @@ import (
 	"runtime/debug"
 	"time"
 )
+
+// ErrorWriter пишет ошибку в едином формате API (в проде — handler.WriteError).
+// middleware не может импортировать handler (цикл импортов), поэтому получает его параметром.
+type ErrorWriter func(w http.ResponseWriter, r *http.Request, err error)
 
 // Chain применяет middleware так, что первый в списке — самый внешний.
 func Chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler {

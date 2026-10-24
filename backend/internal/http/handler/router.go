@@ -23,13 +23,22 @@ const BaseURL = "/api/v1"
 // NewRouter собирает http.Handler всего API: сгенерированный роутинг каждого тега (routes)
 // + strict-обёртка + единый формат ошибок на всех уровнях + общие middleware.
 func NewRouter(h *Handler) http.Handler {
+	// Без сервиса аутентификации все защищённые ручки молча отвечали бы 401 — лучше не стартовать.
+	if h.auth == nil {
+		panic("handler: Deps.Auth is nil")
+	}
+
 	return middleware.Chain(routes(h),
 		middleware.RequestLog, // самый внешний: логируем и отбитые запросы
 		middleware.Recover(func(w http.ResponseWriter, r *http.Request) { // паника в валидаторе -> 500 в формате Error
 			WriteError(w, r, apperr.New(apperr.CodeInternal, "panic"))
 		}),
+		middleware.SecurityHeaders(),
 		middleware.MaxBody(bodyLimit), // до валидатора: он читает тело целиком в память
-		validateRequests(),            // внутри Recover, снаружи роутинга спеки
+		middleware.WithRequestMeta(),
+		middleware.Authenticate(h.auth, WriteError),
+		middleware.CSRF(WriteError),
+		validateRequests(), // внутри Recover, снаружи роутинга спеки
 	)
 }
 

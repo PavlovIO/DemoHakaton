@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
@@ -62,6 +64,9 @@ func ErrorBody(err error) (int, api.Error) {
 // 5xx — уровень Error с полной причиной, 4xx — Debug (это нормальная работа API).
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	status, body := ErrorBody(err)
+	if e, ok := apperr.As(err); ok && e.Code == apperr.CodeRateLimited && e.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(e.RetryAfter)))
+	}
 
 	attrs := []any{"method", r.Method, "path", r.URL.Path, "status", status, "code", body.Error.Code, "err", err}
 	if status >= http.StatusInternalServerError {
@@ -71,6 +76,17 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	writeJSON(w, status, body)
+}
+
+func retryAfterSeconds(d time.Duration) int {
+	seconds := int(d / time.Second)
+	if d%time.Second != 0 {
+		seconds++
+	}
+	if seconds < 1 {
+		return 1
+	}
+	return seconds
 }
 
 // requestError — ошибки разбора запроса до вызова хендлера: битый JSON, неверный path/query-параметр.

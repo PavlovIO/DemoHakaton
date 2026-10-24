@@ -51,9 +51,13 @@ func run(ctx context.Context) error {
 	defer pool.Close()
 
 	queries := repository.New(pool)
+	txManager := service.NewTxManager(pool)
+	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, service.NewMemoryRateLimiter(), service.DefaultAuthLimits)
 	h := handler.New(handler.Deps{
-		DB:    pool,
-		Dicts: service.NewDictionaries(queries),
+		DB:           pool,
+		Dicts:        service.NewDictionaries(queries),
+		Auth:         auth,
+		CookieSecure: cfg.CookieSecure,
 	})
 
 	srv := &http.Server{

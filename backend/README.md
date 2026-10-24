@@ -29,9 +29,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | Работает | Операции |
 |---|---|
 | ✅ | `GET /healthz`, `GET /dictionaries/countries`, `GET /dictionaries/currencies`, `GET /dictionaries/transfer-methods` |
-| ⏳ 501 | остальные 47 — реализуются по образцу справочников (см. «Как добавить операцию») |
-
-Аутентификация, CSRF и rate limit ниже описаны так, как их фиксирует контракт. Middleware для них — в работе вместе с операциями `auth`.
+| ✅ | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — вместе с сессией, CSRF и rate limit (ниже) |
+| ⏳ 501 | остальные 43 — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -48,8 +47,9 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 1. `POST /auth/login` ставит две cookie (`POST /auth/register` — тоже: после регистрации пользователь сразу залогинен):
    - `session` — `HttpOnly; Secure; SameSite=Lax`, непрозрачный токен; в БД хранится только его хэш;
    - `csrf_token` — **не** `HttpOnly`: фронт читает её из JavaScript.
-2. Каждый запрос, кроме `GET`/`HEAD`/`OPTIONS`, обязан передать заголовок `X-CSRF-Token` со значением cookie `csrf_token` (double-submit). Иначе — `403 CSRF_INVALID`.
+2. Каждый запрос, кроме `GET`/`HEAD`/`OPTIONS`, обязан передать заголовок `X-CSRF-Token` со значением cookie `csrf_token` (double-submit). Иначе — `403 CSRF_INVALID`. Исключение: операции с `security: []` (`register`, `login`) CSRF не проверяют — до входа cookie `csrf_token` нет; от login-CSRF защищает обязательный `Content-Type: application/json`.
 3. Фронт ходит с `credentials: "include"`.
+4. Rate limit проверяется до хэширования пароля: `login` — 10 попыток на один email и 50 с одного IP за 15 минут (успешный вход сбрасывает счётчик email), `register` — 10 с одного IP за час. Превышение — `429 RATE_LIMITED` с заголовком `Retry-After`. Счётчики в памяти процесса.
 
 Без сессии доступны только: `POST /auth/register`, `POST /auth/login`, справочники `GET /dictionaries/*`, `GET /registry/lookup` и `GET /healthz`. Всё остальное без сессии — `401 UNAUTHORIZED`.
 
@@ -284,7 +284,7 @@ curl -b b.txt $API/deals
 cmd/server/main.go            сборка зависимостей вручную, http.Server, graceful shutdown
 internal/
   http/                       СЛОЙ 1 — транспорт
-    middleware/               RequestLog, Recover, MaxBody
+    middleware/               RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta, Authenticate, CSRF
     handler/                  пишем руками: *Handler реализует контракт
       <tag>.go                операции тега: auth.go, offers.go, … (заглушки → 501)
       router.go               цепочка middleware + роутинг всех тегов

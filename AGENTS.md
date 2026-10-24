@@ -35,7 +35,7 @@ MVP платформы ликвидности: SPA (React + Vite + TypeScript + 
 ## Безопасность
 
 Схема аутентификации описана в `api/openapi.root.yaml` (`info.description`) и `backend/README.md` («Аутентификация», «Роли и доступ») — не меняй её без обсуждения.
-- **CSRF:** сессия — HttpOnly-cookie `session`; все запросы, кроме GET/HEAD/OPTIONS, обязаны слать `X-CSRF-Token`, равный cookie `csrf_token` (double-submit), иначе `403 CSRF_INVALID`. Не делай исключений для мутирующих эндпоинтов и не меняй состояние в GET.
+- **CSRF:** сессия — HttpOnly-cookie `session`; все запросы, кроме GET/HEAD/OPTIONS, обязаны слать `X-CSRF-Token`, равный cookie `csrf_token` (double-submit), иначе `403 CSRF_INVALID`. Исключение: операции с `security: []` (`register`, `login`) CSRF не проверяют — до входа cookie `csrf_token` нет; от login-CSRF защищает обязательный `Content-Type: application/json`. Других исключений для мутирующих эндпоинтов не делай и не меняй состояние в GET.
 - **Доступ (IDOR):** владение проверяется в каждом запросе к сущности — в SQL всегда `AND org_id = <организация пользователя>`. Чужая сущность → `404`, не `403`. Роль (`borrower`/`lender`/`admin`) проверяй в сервисе, а не только на фронте.
 - **SQL:** только параметризованные запросы через sqlc (`backend/queries/`); никакой склейки SQL из строк.
 - **Входные данные:** ограничения (`maxLength`, `format`, `enum`, `minimum`) задаются в схемах контракта — их проверяет `handler/validate.go`; не дублируй валидацию вручную в хендлере.

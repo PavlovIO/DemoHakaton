@@ -8,6 +8,7 @@ package apperr
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Code — машиночитаемый код ошибки. Список совпадает с api/openapi.yaml (info.description → «Ошибки»).
@@ -36,10 +37,11 @@ type FieldError struct {
 
 // Error — доменная ошибка. Message уходит клиенту как есть, Err — только в лог.
 type Error struct {
-	Code    Code
-	Message string
-	Details []FieldError
-	Err     error
+	Code       Code
+	Message    string
+	Details    []FieldError
+	RetryAfter time.Duration
+	Err        error
 }
 
 func (e *Error) Error() string {
@@ -96,6 +98,9 @@ func KYCNotVerified() *Error {
 func NotFound(msg string) *Error { return New(CodeNotFound, msg) }
 func Conflict(msg string) *Error { return New(CodeConflict, msg) }
 func RateLimited() *Error        { return New(CodeRateLimited, "Слишком много запросов") }
+func RateLimitedAfter(retryAfter time.Duration) *Error {
+	return &Error{Code: CodeRateLimited, Message: "Слишком много запросов", RetryAfter: retryAfter}
+}
 func NotImplemented(op string) *Error {
 	return New(CodeNotImplemented, "Операция ещё не реализована: "+op)
 }

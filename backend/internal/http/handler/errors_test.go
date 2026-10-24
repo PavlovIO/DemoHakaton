@@ -3,9 +3,11 @@ package handler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
@@ -50,6 +52,34 @@ func TestErrorMapping(t *testing.T) {
 	}
 }
 
+func TestWriteErrorRetryAfter(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		wantStatus     int
+		wantRetryAfter string
+	}{
+		{name: "90 seconds", err: apperr.RateLimitedAfter(90 * time.Second), wantStatus: http.StatusTooManyRequests, wantRetryAfter: "90"},
+		{name: "round up milliseconds", err: apperr.RateLimitedAfter(1500 * time.Millisecond), wantStatus: http.StatusTooManyRequests, wantRetryAfter: "2"},
+		{name: "minimum one second", err: apperr.RateLimitedAfter(100 * time.Millisecond), wantStatus: http.StatusTooManyRequests, wantRetryAfter: "1"},
+		{name: "wrapped rate limit", err: fmt.Errorf("x: %w", apperr.RateLimitedAfter(30*time.Second)), wantStatus: http.StatusTooManyRequests, wantRetryAfter: "30"},
+		{name: "rate limit without retry duration", err: apperr.RateLimited(), wantStatus: http.StatusTooManyRequests},
+		{name: "not found", err: apperr.NotFound("nope"), wantStatus: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.WriteError(rec, httptest.NewRequest(http.MethodGet, "/x", nil), tt.err)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if got := rec.Header().Get("Retry-After"); got != tt.wantRetryAfter {
+				t.Fatalf("Retry-After = %q, want %q", got, tt.wantRetryAfter)
+			}
+		})
+	}
+}
+
 func TestErrorMappingDetails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.WriteError(rec, httptest.NewRequest(http.MethodGet, "/x", nil),
@@ -78,7 +108,7 @@ func TestEveryCodeHasStatus(t *testing.T) {
 
 // Ошибки, которые возникают до вызова хендлера, тоже приходят в формате Error.
 func TestRouterErrors(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, DB: okDB{}})
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, DB: okDB{}, Auth: testAuthService()})
 
 	tests := []struct {
 		name       string
@@ -94,7 +124,7 @@ func TestRouterErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, body := get(t, srv, tt.path)
+			resp, body := get(t, srv, tt.path, true)
 			if resp.StatusCode != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body: %s", resp.StatusCode, tt.wantStatus, body)
 			}

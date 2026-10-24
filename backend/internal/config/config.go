@@ -27,6 +27,10 @@ type Config struct {
 	LogFormat string
 	// ShutdownTimeout — сколько ждать завершения активных запросов при остановке.
 	ShutdownTimeout time.Duration
+	// SessionTTL — срок жизни сессии.
+	SessionTTL time.Duration
+	// CookieSecure включает флаг Secure у cookie.
+	CookieSecure bool
 }
 
 // Load читает конфиг из окружения. Возвращает все ошибки разом, а не первую.
@@ -60,6 +64,18 @@ func load(getenv func(string) string) (Config, error) {
 	if cfg.LogFormat != "text" && cfg.LogFormat != "json" {
 		errs = append(errs, fmt.Errorf("LOG_FORMAT: want text or json, got %q", cfg.LogFormat))
 	}
+
+	sessionTTL, err := time.ParseDuration(get("SESSION_TTL", "24h"))
+	if err != nil || sessionTTL <= 0 {
+		errs = append(errs, fmt.Errorf("SESSION_TTL: want positive duration like 24h, got %q", get("SESSION_TTL", "")))
+	}
+	cfg.SessionTTL = sessionTTL
+
+	cookieSecure, err := strconv.ParseBool(get("COOKIE_SECURE", "true"))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("COOKIE_SECURE: want boolean, got %q", get("COOKIE_SECURE", "")))
+	}
+	cfg.CookieSecure = cookieSecure
 
 	timeout, err := time.ParseDuration(get("SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {

@@ -39,14 +39,24 @@ func (f fakeDicts) TransferMethods(context.Context) ([]repository.TransferMethod
 // newTestServer — общий хелпер: роутер с фейковыми зависимостями.
 func newTestServer(t *testing.T, deps handler.Deps) *httptest.Server {
 	t.Helper()
+	if deps.Auth == nil { // без Auth NewRouter паникует
+		deps.Auth = testAuthService()
+	}
 	srv := httptest.NewServer(handler.NewRouter(handler.New(deps)))
 	t.Cleanup(srv.Close)
 	return srv
 }
 
-func get(t *testing.T, srv *httptest.Server, path string) (*http.Response, []byte) {
+func get(t *testing.T, srv *httptest.Server, path string, authenticated ...bool) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := http.Get(srv.URL + path)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if len(authenticated) > 0 && authenticated[0] {
+		addValidTestSession(req)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
