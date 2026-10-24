@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +35,9 @@ type Config struct {
 	// DocumentStorageDir — каталог файлов KYC-документов вне веб-корня; должен переживать
 	// перезапуски (в контейнере — volume).
 	DocumentStorageDir string
+	// CORSAllowedOrigins — origin'ы фронта на другом хосте (scheme://host[:port]).
+	// Пусто — CORS выключен: основной путь — фронт и API на одном origin.
+	CORSAllowedOrigins []string
 }
 
 // Load читает конфиг из окружения. Возвращает все ошибки разом, а не первую.
@@ -94,8 +98,34 @@ func load(getenv func(string) string) (Config, error) {
 	}
 	cfg.DBMaxConns = int32(maxConns)
 
+	origins, err := parseOrigins(get("CORS_ALLOWED_ORIGINS", ""))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("CORS_ALLOWED_ORIGINS: %w", err))
+	}
+	cfg.CORSAllowedOrigins = origins
+
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("config: %w", errors.Join(errs...))
 	}
 	return cfg, nil
+}
+
+// parseOrigins разбирает список origin'ов через запятую. Браузер шлёт Origin ровно как
+// scheme://host[:port], сравнение — точное, поэтому путь, query или «*» — ошибка конфига:
+// такое значение никогда не совпадёт или (для «*») открыло бы API любому сайту.
+func parseOrigins(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var origins []string
+	for _, item := range strings.Split(raw, ",") {
+		origin := strings.TrimSpace(item)
+		u, err := url.Parse(origin)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return nil, fmt.Errorf("want scheme://host[:port], got %q", origin)
+		}
+		origins = append(origins, origin)
+	}
+	return origins, nil
 }

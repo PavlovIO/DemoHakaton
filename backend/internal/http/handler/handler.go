@@ -163,6 +163,8 @@ type Deps struct {
 	Notifications NotificationService
 	Admin         AdminService
 	CookieSecure  bool
+	// CORSAllowedOrigins — origin фронта на другом хосте; пусто — CORS выключен.
+	CORSAllowedOrigins []string
 }
 
 // Handler логирует через slog.Default() — его настраивает cmd/server.
@@ -179,6 +181,7 @@ type Handler struct {
 	notifications NotificationService
 	admin         AdminService
 	cookieSecure  bool
+	corsOrigins   []string
 }
 
 // Компилятор проверяет, что Handler реализует все операции спеки: по интерфейсу на тег.
@@ -196,5 +199,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, admin: d.Admin, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, admin: d.Admin, cookieSecure: d.CookieSecure, corsOrigins: d.CORSAllowedOrigins}
 }

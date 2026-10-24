@@ -89,12 +89,13 @@ func run(ctx context.Context) error {
 			Store: queries, Tx: txManager,
 			Screener: screener,
 		}),
-		Offers:        lending.NewOffers(lending.OffersDeps{Store: queries, Tx: txManager}),
-		Deals:         lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),
-		Chat:          lending.NewChat(lending.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
-		Notifications: notifications.NewNotifications(queries, txManager),
-		Admin:         admin.New(admin.Deps{Tx: txManager}),
-		CookieSecure:  cfg.CookieSecure,
+		Offers:             lending.NewOffers(lending.OffersDeps{Store: queries, Tx: txManager}),
+		Deals:              lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),
+		Chat:               lending.NewChat(lending.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
+		Notifications:      notifications.NewNotifications(queries, txManager),
+		Admin:              admin.New(admin.Deps{Tx: txManager}),
+		CookieSecure:       cfg.CookieSecure,
+		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 	})
 
 	srv := &http.Server{

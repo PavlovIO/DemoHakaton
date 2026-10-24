@@ -80,3 +80,43 @@ func TestLoadCollectsAllErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadCORSAllowedOrigins(t *testing.T) {
+	cfg, err := load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.CORSAllowedOrigins) != 0 {
+		t.Fatalf("CORS enabled by default: %v", cfg.CORSAllowedOrigins)
+	}
+
+	cfg, err = load(env(map[string]string{
+		"DATABASE_URL":         "postgres://x",
+		"CORS_ALLOWED_ORIGINS": "http://localhost:5173, https://app.example.com",
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []string{"http://localhost:5173", "https://app.example.com"}
+	if strings.Join(cfg.CORSAllowedOrigins, "|") != strings.Join(want, "|") {
+		t.Fatalf("CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
+	}
+}
+
+// Origin в браузере — только scheme://host[:port]; значение с путём или без схемы
+// никогда не совпадёт, и CORS молча не заработает — лучше не стартовать.
+func TestLoadRejectsInvalidCORSOrigins(t *testing.T) {
+	for _, origins := range []string{
+		"localhost:5173",
+		"http://localhost:5173/",
+		"http://localhost:5173/app",
+		"https://app.example.com?x=1",
+		"*",
+		"ftp://files.example.com",
+	} {
+		_, err := load(env(map[string]string{"DATABASE_URL": "postgres://x", "CORS_ALLOWED_ORIGINS": origins}))
+		if err == nil || !strings.Contains(err.Error(), "CORS_ALLOWED_ORIGINS") {
+			t.Errorf("load(CORS_ALLOWED_ORIGINS=%q) error = %v, want CORS_ALLOWED_ORIGINS error", origins, err)
+		}
+	}
+}
