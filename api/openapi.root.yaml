@@ -52,7 +52,8 @@ info:
     Единый формат `Error`. Коды: `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `CSRF_INVALID`,
     `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `FILE_TOO_LARGE` (413),
     `RATE_LIMITED`, `INTERNAL`, `NOT_IMPLEMENTED` (501, операция ещё не реализована),
-    `UNAVAILABLE` (503, например нет соединения с БД).
+    `UNAVAILABLE` (503, например нет соединения с БД),
+    `UPSTREAM_UNAVAILABLE` (502, внешний реестр не ответил — `registryLookup`).
 
     ## Пагинация
     `page` (с 1) + `page_size` (по умолчанию 20, максимум 100). Ответ: `{items, total, page, page_size}`.

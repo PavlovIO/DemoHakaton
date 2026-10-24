@@ -112,7 +112,10 @@ components:
       properties:
         source:
           type: string
-          enum: [egrul_dadata, gleif]
+          enum: [egrul_dadata, gleif, mock]
+          description: >-
+            Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний
+            (в MVP реестр только мок).
         found: { type: boolean }
         name: { type: string, nullable: true }
         registration_number: { type: string, nullable: true }

@@ -28,6 +28,8 @@ const (
 	CodeNotImplemented    Code = "NOT_IMPLEMENTED"
 	CodeUnavailable       Code = "UNAVAILABLE"
 	CodeFileTooLarge      Code = "FILE_TOO_LARGE"
+	// CodeUpstreamUnavailable — внешняя система (реестр компаний) не ответила.
+	CodeUpstreamUnavailable Code = "UPSTREAM_UNAVAILABLE"
 )
 
 // FieldError — ошибка конкретного поля запроса (попадает в error.details).
@@ -110,6 +112,12 @@ func NotImplemented(op string) *Error {
 	return New(CodeNotImplemented, "Операция ещё не реализована: "+op)
 }
 func Unavailable(msg string, err error) *Error { return Wrap(CodeUnavailable, msg, err) }
+
+// UpstreamUnavailable — не ответила внешняя система (реестр): 502, а не 503 — сам
+// сервис работает, клиент может продолжить вручную.
+func UpstreamUnavailable(msg string, err error) *Error {
+	return Wrap(CodeUpstreamUnavailable, msg, err)
+}
 
 // InvalidTransition — запрещённый переход статусной машины (например, заявка published → draft).
 func InvalidTransition(from, to string) *Error {
