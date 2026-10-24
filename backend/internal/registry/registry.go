@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// Типы и интерфейс по плану BE-06 («Решения»). Адаптеры DaData, GLEIF и мок добавляет
-// BE-06; до этого сверка с реестром в submitKyc не подключена (verifier == nil).
+// Источники egrul_dadata и gleif остаются в Source, потому что повторяют enum БД; в MVP
+// используется только Mock.
 
 // Source — источник ответа; значения совпадают с enum registry_source в БД.
 type Source string
