@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
@@ -150,6 +152,84 @@ func TestKycIntegration(t *testing.T) {
 		}
 		if got.Org.LEI != nil {
 			t.Fatalf(`lei после "" = %q, want NULL`, *got.Org.LEI)
+		}
+	})
+}
+
+// count — скаляр COUNT(*) внутри транзакции теста.
+func (f *kycFixture) count(t *testing.T, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := f.tx.QueryRow(context.Background(), query, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return n
+}
+
+func TestSubmitKycIntegration(t *testing.T) {
+	// Одна находка — чтобы на реальной БД прошли HasSimilarAmlFlag и CreateAmlFlag.
+	screener := &fakeScreener{findings: []aml.Finding{{
+		Rule: repository.AmlRuleHighRiskJurisdiction, Severity: repository.AmlSeverityMedium, Details: "integration",
+	}}}
+	f := newKycFixture(t, service.KycDeps{Files: newFakeFiles(), Screener: screener})
+	ctx := context.Background()
+
+	insertTestUser(ctx, t, f.tx, repository.UserRoleAdmin, nil) // хотя бы один активный админ
+	for _, dt := range requiredDocs {
+		_, err := f.tx.Exec(ctx, `INSERT INTO kyc_documents (organization_id, doc_type, storage_key, file_name,
+			mime_type, size_bytes, sha256, uploaded_by_user_id)
+			VALUES ($1, $2, $3, 'doc.pdf', 'application/pdf', 10, sha256('x'), $4)`,
+			f.orgID, dt, uuid.NewString(), f.userID)
+		if err != nil {
+			t.Fatalf("document %s: %v", dt, err)
+		}
+	}
+	if _, err := f.tx.Exec(ctx, `INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent)
+		VALUES ($1, 'Иванов И.И.', 'RU', 100)`, f.orgID); err != nil {
+		t.Fatalf("beneficiary: %v", err)
+	}
+	admins := f.count(t, `SELECT count(*) FROM users WHERE role = 'admin' AND status = 'active'`)
+	notes := func(typ repository.NotificationType) int {
+		return f.count(t, `SELECT count(*) FROM notifications WHERE type = $1 AND entity_id = $2`, typ, f.orgID.String())
+	}
+	flags := func() int { return f.count(t, `SELECT count(*) FROM aml_flags WHERE organization_id = $1`, f.orgID) }
+
+	got, err := f.kyc.SubmitKyc(ctx, f.p, service.ClientMeta{UserAgent: "it"})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if got.Org.KycStatus != "under_review" {
+		t.Fatalf("status = %s, want under_review", got.Org.KycStatus)
+	}
+	if n := f.count(t, `SELECT count(*) FROM status_history WHERE entity_type = 'organization' AND entity_id = $1
+		AND from_status = 'draft' AND to_status = 'under_review' AND actor_user_id = $2`, f.orgID, f.userID); n != 1 {
+		t.Fatalf("status_history = %d строк, want 1", n)
+	}
+	if n := notes(repository.NotificationTypeKycSubmitted); n != admins {
+		t.Fatalf("kyc_submitted = %d, want по одному на %d активных админов", n, admins)
+	}
+	if n := notes(repository.NotificationTypeAmlFlagCreated); n != admins {
+		t.Fatalf("aml_flag_created = %d, want %d", n, admins)
+	}
+	if n := flags(); n != 1 {
+		t.Fatalf("aml_flags = %d, want 1", n)
+	}
+
+	t.Run("повторный submit из under_review — 409", func(t *testing.T) {
+		_, err := f.kyc.SubmitKyc(ctx, f.p, service.ClientMeta{})
+		wantCode(t, err, apperr.CodeInvalidTransition)
+	})
+
+	t.Run("после rejected — тот же флаг не дублируется", func(t *testing.T) {
+		if _, err := f.tx.Exec(ctx, `UPDATE organizations SET kyc_status = 'rejected', kyc_reject_reason = 'нет устава'
+			WHERE id = $1`, f.orgID); err != nil {
+			t.Fatalf("reject: %v", err)
+		}
+		if _, err := f.kyc.SubmitKyc(ctx, f.p, service.ClientMeta{}); err != nil {
+			t.Fatalf("resubmit: %v", err)
+		}
+		if n := flags(); n != 1 {
+			t.Fatalf("aml_flags = %d, want 1 (дедупликация)", n)
 		}
 	})
 }
