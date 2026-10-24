@@ -58,10 +58,37 @@ func InsertUser(ctx context.Context, t *testing.T, tx RowQuerier, role repositor
 
 func NewPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	return newPool(t, os.Getenv("DATABASE_URL"))
+}
+
+// NewOwnerPool — пул владельца схемы (lp_migrator из MIGRATE_DATABASE_URL; без него —
+// DATABASE_URL). Только для фикстур и очистки, которые lp_app запрещены: запись в
+// sanctions_entries, правка audit_log, DELETE закоммиченных данных, TEMP VIEW сида.
+func NewOwnerPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := os.Getenv("MIGRATE_DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	return newPool(t, dsn)
+}
+
+// BeginOwnerTx — BeginTx на пуле владельца схемы (NewOwnerPool).
+func BeginOwnerTx(t *testing.T) pgx.Tx {
+	t.Helper()
+	tx, err := NewOwnerPool(t).Begin(context.Background())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	return tx
+}
+
+func newPool(t *testing.T, dsn string) *pgxpool.Pool {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("integration test skipped in -short mode")
 	}
-	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL is not set")
 	}

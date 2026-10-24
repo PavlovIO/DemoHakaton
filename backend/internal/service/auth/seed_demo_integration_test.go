@@ -35,7 +35,8 @@ var seedTables = []string{
 // принят) меняют статусы, которые тест сверяет, — тогда пропуск.
 func TestSeedDemoVariantB(t *testing.T) {
 	ctx := context.Background()
-	tx := servicetest.BeginTx(t)
+	// Сид применяет суперпользователь (make seed-demo); lp_app не может TEMP VIEW из сида.
+	tx := servicetest.BeginOwnerTx(t)
 	if demoSeeded(ctx, t, tx) {
 		var pristine bool
 		err := tx.QueryRow(ctx, `SELECT
@@ -134,7 +135,7 @@ func TestSeedDemoVariantB(t *testing.T) {
 // на БД, где сид уже применён (make db), тест пропускается.
 func TestSeedDemoVariantA(t *testing.T) {
 	ctx := context.Background()
-	tx := servicetest.BeginTx(t)
+	tx := servicetest.BeginOwnerTx(t)
 	if demoSeeded(ctx, t, tx) {
 		t.Skip("demo seed is already applied: variant A needs a database without it (make db-reset SEED=a)")
 	}

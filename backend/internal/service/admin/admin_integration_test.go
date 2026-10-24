@@ -182,7 +182,8 @@ func TestApproveKycConcurrent(t *testing.T) {
 		t.Fatalf("admin: %v", err)
 	}
 	adm := service.Principal{UserID: adminID, Role: "admin"}
-	t.Cleanup(func() { deleteCommitted(t, pool, *company.OrgID, adm.UserID) })
+	owner := servicetest.NewOwnerPool(t)
+	t.Cleanup(func() { deleteCommitted(t, owner, *company.OrgID, adm.UserID) })
 
 	svc := newIntegrationAdmin(pool)
 	errs := make([]error, 2)
@@ -215,8 +216,8 @@ func TestApproveKycConcurrent(t *testing.T) {
 	}
 }
 
-// deleteCommitted — закоммиченные данные компании и админа. Тест ходит владельцем схемы
-// (lp из DATABASE_URL), как TestAcceptOfferConcurrent.
+// deleteCommitted — закоммиченные данные компании и админа. pool — владельца схемы
+// (servicetest.NewOwnerPool): у lp_app нет DELETE, как и в TestAcceptOfferConcurrent.
 func deleteCommitted(t *testing.T, pool *pgxpool.Pool, orgID, adminID uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
