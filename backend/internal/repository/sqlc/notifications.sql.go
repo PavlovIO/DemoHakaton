@@ -13,34 +13,23 @@ import (
 )
 
 const countNotifications = `-- name: CountNotifications :one
-SELECT count(*) FROM notifications
+SELECT count(*) AS total, count(*) FILTER (WHERE NOT is_read) AS unread
+FROM notifications
 WHERE user_id = $1
-  AND ($2::boolean IS NOT TRUE OR is_read = false)
 `
 
-type CountNotificationsParams struct {
-	UserID     uuid.UUID   `json:"user_id"`
-	UnreadOnly pgtype.Bool `json:"unread_only"`
+type CountNotificationsRow struct {
+	Total  int64 `json:"total"`
+	Unread int64 `json:"unread"`
 }
 
-// Тот же WHERE, что у ListNotifications: total страницы.
-func (q *Queries) CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countNotifications, arg.UserID, arg.UnreadOnly)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countUnreadNotifications = `-- name: CountUnreadNotifications :one
-SELECT count(*) FROM notifications
-WHERE user_id = $1 AND is_read = false
-`
-
-func (q *Queries) CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countUnreadNotifications, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
+// сервис берёт из total или unread в зависимости от unread_only.
+func (q *Queries) CountNotifications(ctx context.Context, userID uuid.UUID) (CountNotificationsRow, error) {
+	row := q.db.QueryRow(ctx, countNotifications, userID)
+	var i CountNotificationsRow
+	err := row.Scan(&i.Total, &i.Unread)
+	return i, err
 }
 
 const createNotification = `-- name: CreateNotification :one

@@ -14,16 +14,15 @@ import (
 
 // fakeNotificationStore отдаёт заданные ответы и запоминает аргументы вызовов.
 type fakeNotificationStore struct {
-	items       []repository.Notification
-	total       int64
-	unreadTotal int64
-	markedRows  int64
+	repository.Querier
+	items      []repository.Notification
+	counts     repository.CountNotificationsRow
+	markedRows int64
 
-	gotList   repository.ListNotificationsParams
-	gotCount  repository.CountNotificationsParams
-	gotUnread uuid.UUID
-	gotMark   repository.MarkNotificationReadParams
-	gotAll    uuid.UUID
+	gotList  repository.ListNotificationsParams
+	gotCount uuid.UUID
+	gotMark  repository.MarkNotificationReadParams
+	gotAll   uuid.UUID
 }
 
 func (s *fakeNotificationStore) ListNotifications(_ context.Context, arg repository.ListNotificationsParams) ([]repository.Notification, error) {
@@ -31,14 +30,9 @@ func (s *fakeNotificationStore) ListNotifications(_ context.Context, arg reposit
 	return s.items, nil
 }
 
-func (s *fakeNotificationStore) CountNotifications(_ context.Context, arg repository.CountNotificationsParams) (int64, error) {
-	s.gotCount = arg
-	return s.total, nil
-}
-
-func (s *fakeNotificationStore) CountUnreadNotifications(_ context.Context, userID uuid.UUID) (int64, error) {
-	s.gotUnread = userID
-	return s.unreadTotal, nil
+func (s *fakeNotificationStore) CountNotifications(_ context.Context, userID uuid.UUID) (repository.CountNotificationsRow, error) {
+	s.gotCount = userID
+	return s.counts, nil
 }
 
 func (s *fakeNotificationStore) MarkNotificationRead(_ context.Context, arg repository.MarkNotificationReadParams) (int64, error) {
@@ -51,40 +45,72 @@ func (s *fakeNotificationStore) MarkAllNotificationsRead(_ context.Context, user
 	return nil
 }
 
+// fakeNotificationSnapshot — снимок поверх той же памяти; считает вызовы.
+type fakeNotificationSnapshot struct {
+	store *fakeNotificationStore
+	calls int
+}
+
+func (f *fakeNotificationSnapshot) ReadSnapshot(_ context.Context, fn func(q repository.Querier) error) error {
+	f.calls++
+	return fn(f.store)
+}
+
+func newNotifications(store *fakeNotificationStore) (*service.Notifications, *fakeNotificationSnapshot) {
+	snapshot := &fakeNotificationSnapshot{store: store}
+	return service.NewNotifications(store, snapshot), snapshot
+}
+
 func TestNotificationsList(t *testing.T) {
-	store := &fakeNotificationStore{
-		items: []repository.Notification{{ID: 7, Type: repository.NotificationTypeOfferReceived}},
-		total: 3, unreadTotal: 5,
+	tests := []struct {
+		name       string
+		unreadOnly bool
+		wantTotal  int64
+		wantFilter pgtype.Bool
+	}{
+		// total — с тем же фильтром, что и items; unread_total от фильтра не зависит.
+		{name: "вся лента", wantTotal: 8},
+		{name: "unread_only", unreadOnly: true, wantTotal: 5, wantFilter: pgtype.Bool{Bool: true, Valid: true}},
 	}
-	p := service.Principal{UserID: uuid.New(), Role: "borrower"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeNotificationStore{
+				items:  []repository.Notification{{ID: 7, Type: repository.NotificationTypeOfferReceived}},
+				counts: repository.CountNotificationsRow{Total: 8, Unread: 5},
+			}
+			svc, snapshot := newNotifications(store)
+			p := service.Principal{UserID: uuid.New(), Role: "borrower"}
 
-	page, err := service.NewNotifications(store).List(context.Background(), p,
-		service.NotificationFilter{UnreadOnly: true, Page: 2, PageSize: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
+			page, err := svc.List(context.Background(), p,
+				service.NotificationFilter{UnreadOnly: tt.unreadOnly, Page: 2, PageSize: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	if page.Total != 3 || page.UnreadTotal != 5 || page.Page != 2 || page.PageSize != 2 ||
-		len(page.Items) != 1 || page.Items[0].ID != 7 {
-		t.Fatalf("page = %+v", page)
-	}
-	wantList := repository.ListNotificationsParams{
-		UserID: p.UserID, Limit: 2, Offset: 2, UnreadOnly: pgtype.Bool{Bool: true, Valid: true},
-	}
-	if store.gotList != wantList {
-		t.Fatalf("ListNotifications(%+v), want %+v", store.gotList, wantList)
-	}
-	wantCount := repository.CountNotificationsParams{UserID: p.UserID, UnreadOnly: wantList.UnreadOnly}
-	if store.gotCount != wantCount || store.gotUnread != p.UserID {
-		t.Fatalf("CountNotifications(%+v), CountUnreadNotifications(%s)", store.gotCount, store.gotUnread)
+			if page.Total != tt.wantTotal || page.UnreadTotal != 5 || page.Page != 2 || page.PageSize != 2 ||
+				len(page.Items) != 1 || page.Items[0].ID != 7 {
+				t.Fatalf("page = %+v", page)
+			}
+			wantList := repository.ListNotificationsParams{UserID: p.UserID, Limit: 2, Offset: 2, UnreadOnly: tt.wantFilter}
+			if store.gotList != wantList {
+				t.Fatalf("ListNotifications(%+v), want %+v", store.gotList, wantList)
+			}
+			if store.gotCount != p.UserID {
+				t.Fatalf("CountNotifications(%s), want %s", store.gotCount, p.UserID)
+			}
+			if snapshot.calls != 1 {
+				t.Fatalf("ReadSnapshot calls = %d, want 1: элементы и счётчики — в одном снимке", snapshot.calls)
+			}
+		})
 	}
 }
 
 func TestNotificationsListDefaults(t *testing.T) {
 	store := &fakeNotificationStore{}
+	svc, _ := newNotifications(store)
 	p := service.Principal{UserID: uuid.New(), Role: "admin"}
 
-	page, err := service.NewNotifications(store).List(context.Background(), p, service.NotificationFilter{})
+	page, err := svc.List(context.Background(), p, service.NotificationFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +136,8 @@ func TestNotificationsMarkRead(t *testing.T) {
 			store := &fakeNotificationStore{markedRows: tt.rows}
 			p := service.Principal{UserID: uuid.New(), Role: "lender"}
 
-			err := service.NewNotifications(store).MarkRead(context.Background(), p, 42)
+			svc, _ := newNotifications(store)
+			err := svc.MarkRead(context.Background(), p, 42)
 
 			if tt.wantCode == "" && err != nil {
 				t.Fatalf("err = %v, want nil", err)
@@ -131,7 +158,8 @@ func TestNotificationsMarkAllRead(t *testing.T) {
 	store := &fakeNotificationStore{}
 	p := service.Principal{UserID: uuid.New(), Role: "borrower"}
 
-	if err := service.NewNotifications(store).MarkAllRead(context.Background(), p); err != nil {
+	svc, _ := newNotifications(store)
+	if err := svc.MarkAllRead(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
 

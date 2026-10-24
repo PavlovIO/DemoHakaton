@@ -28,15 +28,12 @@ WHERE user_id = $1
 ORDER BY created_at DESC, id DESC
 LIMIT $2 OFFSET $3;
 
--- name: CountUnreadNotifications :one
-SELECT count(*) FROM notifications
-WHERE user_id = $1 AND is_read = false;
-
 -- name: CountNotifications :one
--- Тот же WHERE, что у ListNotifications: total страницы.
-SELECT count(*) FROM notifications
-WHERE user_id = $1
-  AND (sqlc.narg('unread_only')::boolean IS NOT TRUE OR is_read = false);
+-- Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
+-- сервис берёт из total или unread в зависимости от unread_only.
+SELECT count(*) AS total, count(*) FILTER (WHERE NOT is_read) AS unread
+FROM notifications
+WHERE user_id = $1;
 
 -- name: MarkNotificationRead :execrows
 -- 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).

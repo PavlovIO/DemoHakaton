@@ -23,10 +23,32 @@ func NewTxManager(b TxBeginner) *TxManager {
 	return &TxManager{beginner: b}
 }
 
+// snapshotBeginner — пул: открывает транзакцию с уровнем изоляции. pgx.Tx (интеграционные
+// тесты) так не умеет: его Begin — savepoint с уровнем изоляции внешней транзакции.
+type snapshotBeginner interface {
+	BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error)
+}
+
 // InTx выполняет переданную функцию fn внутри транзакции.
 // Если fn возвращает ошибку или вызывает панику, транзакция автоматически откатывается.
 func (m *TxManager) InTx(ctx context.Context, fn func(q repository.Querier) error) error {
-	tx, err := m.beginner.Begin(ctx)
+	return m.run(ctx, m.beginner.Begin, fn)
+}
+
+// ReadSnapshot выполняет чтения fn в одном снимке БД (REPEATABLE READ, READ ONLY): несколько
+// запросов одной страницы (элементы и счётчики) видят одно и то же состояние таблиц.
+func (m *TxManager) ReadSnapshot(ctx context.Context, fn func(q repository.Querier) error) error {
+	begin := m.beginner.Begin
+	if b, ok := m.beginner.(snapshotBeginner); ok {
+		begin = func(ctx context.Context) (pgx.Tx, error) {
+			return b.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+		}
+	}
+	return m.run(ctx, begin, fn)
+}
+
+func (m *TxManager) run(ctx context.Context, begin func(context.Context) (pgx.Tx, error), fn func(q repository.Querier) error) error {
+	tx, err := begin(ctx)
 	if err != nil {
 		return err
 	}

@@ -82,7 +82,7 @@ func run(ctx context.Context) error {
 		Offers:        service.NewOffers(service.OffersDeps{Store: queries, Tx: txManager}),
 		Deals:         service.NewDeals(service.DealsDeps{Store: queries, Tx: txManager}),
 		Chat:          service.NewChat(service.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
-		Notifications: service.NewNotifications(queries),
+		Notifications: service.NewNotifications(queries, txManager),
 		CookieSecure:  cfg.CookieSecure,
 	})
 

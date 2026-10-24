@@ -18,7 +18,7 @@ func TestNotificationsIntegration(t *testing.T) {
 	ctx := context.Background()
 	tx := beginTestTx(t)
 	q := repository.New(tx)
-	notifications := service.NewNotifications(q)
+	notifications := service.NewNotifications(q, service.NewTxManager(tx))
 
 	owner := insertDealsOrg(ctx, t, tx, repository.UserRoleBorrower, "Notif Owner")
 	stranger := insertDealsOrg(ctx, t, tx, repository.UserRoleLender, "Notif Stranger")
