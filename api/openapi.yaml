@@ -19,6 +19,7 @@ info:
       - `csrf_token` — НЕ HttpOnly, фронт читает её и кладёт в заголовок.
     - Все запросы, кроме GET/HEAD/OPTIONS, обязаны слать заголовок `X-CSRF-Token`,
       равный значению cookie `csrf_token` (double-submit). Иначе 403 `CSRF_INVALID`.
+      Исключение: операции с `security: []` (`register`, `login`) CSRF не проверяют — до входа cookie `csrf_token` нет; от login-CSRF защищает обязательный `Content-Type: application/json`.
     - Фронт ходит с `credentials: "include"`.
 
     ## Авторизация

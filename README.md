@@ -27,6 +27,8 @@ make run               # API на http://localhost:8080/api/v1
 curl localhost:8080/api/v1/healthz
 ```
 
+Переменные окружения — в `.env.example`. Для входа важны две: `SESSION_TTL` — срок жизни сессии (по умолчанию `24h`, не продлевается) и `COOKIE_SECURE` — флаг `Secure` у cookie (по умолчанию `true`; в `.env.example` — `false`, иначе браузер не сохранит cookie на `http://localhost`).
+
 | Команда | Что делает |
 |---|---|
 | `make gen` | Пересобрать бандл `api/openapi.yaml` (и его копию для `go:embed`) из источников и перегенерировать код (oapi-codegen) и `backend/queries` (sqlc). Правятся `api/openapi.root.yaml`, `api/paths/*.yaml`, `api/components.yaml`, `api/schemas/*.yaml` — не бандл; CI (`gen-check`) проверяет, что всё пересобрано |
