@@ -44,7 +44,7 @@ const validApplicationBody = `{"amount":"1000000.00","currency":"USD","target_co
 func TestAccessOrder(t *testing.T) {
 	fixture, deps := authFixture()
 	deps.Auth = &cookieAuth{fakeAuth: *fixture}
-	deps.Dicts, deps.DB = fakeDicts{}, okDB{}
+	deps.Dicts, deps.DB, deps.Applications = fakeDicts{}, okDB{}, &fakeApplications{app: testApplication()}
 	srv := newTestServer(t, deps)
 
 	session := func(v string) *http.Cookie { return &http.Cookie{Name: middleware.SessionCookieName, Value: v} }
@@ -65,7 +65,7 @@ func TestAccessOrder(t *testing.T) {
 		{name: "протухшая cookie не мешает login", method: "POST", path: "/api/v1/auth/login", body: loginBody, cookies: []*http.Cookie{session("expired")}, wantStatus: 200},
 		{name: "KYC раньше CSRF", method: "POST", path: "/api/v1/applications", body: validApplicationBody, cookies: []*http.Cookie{session("borrower-draft")}, wantStatus: 403, wantCode: "KYC_NOT_VERIFIED"},
 		{name: "валидатор после доступа", method: "POST", path: "/api/v1/applications", body: `{}`, cookies: []*http.Cookie{session("borrower-verified"), csrf}, withCSRF: true, wantStatus: 400, wantCode: "VALIDATION_ERROR"},
-		{name: "всё прошло — заглушка", method: "POST", path: "/api/v1/applications", body: validApplicationBody, cookies: []*http.Cookie{session("borrower-verified"), csrf}, withCSRF: true, wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
+		{name: "всё прошло — хендлер", method: "POST", path: "/api/v1/applications", body: validApplicationBody, cookies: []*http.Cookie{session("borrower-verified"), csrf}, withCSRF: true, wantStatus: 201},
 		{name: "нет пути, с cookie", method: "GET", path: "/api/v1/nope", cookies: []*http.Cookie{session("admin")}, wantStatus: 404, wantCode: "NOT_FOUND"},
 		{name: "нет пути, без cookie", method: "GET", path: "/api/v1/nope", wantStatus: 404, wantCode: "NOT_FOUND"},
 		{name: "HEAD healthz", method: "HEAD", path: "/api/v1/healthz", wantStatus: 200},
