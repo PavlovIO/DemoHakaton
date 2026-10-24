@@ -214,6 +214,9 @@ paths:
       tags: [admin]
       operationId: adminUnblockUser
       x-roles: [admin]
+      description: >-
+        403 `FORBIDDEN` — статус администратора не меняется: администратора нельзя
+        заблокировать, поэтому и разблокировать нечего. Повторная разблокировка идемпотентна.
       parameters:
         - $ref: '../components.yaml#/components/parameters/UserId'
       responses:

@@ -146,9 +146,10 @@ func (a *Admin) setUserStatus(ctx context.Context, p service.Principal, meta ser
 		if err != nil {
 			return pgerr.Map(err, userNotFound)
 		}
-		// Админа (и себя) не блокируем: иначе платформа может остаться без администратора.
+		// Статус админа (и свой) не меняем: блокировка оставила бы платформу без
+		// администратора, а разблокировать нечего — заблокированным админ не бывает.
 		if u.Role == repository.UserRoleAdmin {
-			return apperr.Forbidden("Нельзя заблокировать администратора")
+			return apperr.Forbidden("Нельзя менять статус администратора")
 		}
 		if u.Status == c.to {
 			out = userFromRepository(u)

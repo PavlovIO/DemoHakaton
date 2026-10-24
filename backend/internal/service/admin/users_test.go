@@ -111,6 +111,16 @@ func TestUnblockUser(t *testing.T) {
 		}
 	})
 
+	t.Run("админ — 403 без записей", func(t *testing.T) {
+		db := newFakeDB()
+		u := db.withUser(repository.UserRoleAdmin, repository.UserStatusActive)
+		_, err := newAdmin(db).UnblockUser(context.Background(), adminPrincipal(), u.ID, service.ClientMeta{})
+		servicetest.WantCode(t, err, apperr.CodeForbidden)
+		if db.unblocked || len(db.history) > 0 || len(db.audit) > 0 {
+			t.Fatalf("unblocked = %v, history = %v, audit = %v", db.unblocked, db.history, db.audit)
+		}
+	})
+
 	t.Run("нет пользователя — 404", func(t *testing.T) {
 		_, err := newAdmin(newFakeDB()).UnblockUser(context.Background(), adminPrincipal(), uuid.New(), service.ClientMeta{})
 		servicetest.WantCode(t, err, apperr.CodeNotFound)
