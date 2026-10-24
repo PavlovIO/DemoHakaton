@@ -52,7 +52,7 @@ const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
 WHERE ($1::user_role IS NULL OR role = $1::user_role)
   AND ($2::user_status IS NULL OR status = $2::user_status)
-  AND ($3::text IS NULL OR email ILIKE '%' || $3::text || '%')
+  AND ($3::text IS NULL OR email ILIKE '%' || $3::text || '%' ESCAPE '\')
 `
 
 type CountUsersParams struct {
@@ -164,7 +164,7 @@ SELECT id, email, role, status, organization_id, created_at
 FROM users
 WHERE ($3::user_role IS NULL OR role = $3::user_role)
   AND ($4::user_status IS NULL OR status = $4::user_status)
-  AND ($5::text IS NULL OR email ILIKE '%' || $5::text || '%')
+  AND ($5::text IS NULL OR email ILIKE '%' || $5::text || '%' ESCAPE '\')
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -201,6 +201,50 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	items := []ListUsersRow{}
 	for rows.Next() {
 		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Role,
+			&i.Status,
+			&i.OrganizationID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsersByOrganization = `-- name: ListUsersByOrganization :many
+SELECT id, email, role, status, organization_id, created_at
+FROM users
+WHERE organization_id = $1
+ORDER BY created_at, id
+`
+
+type ListUsersByOrganizationRow struct {
+	ID             uuid.UUID          `json:"id"`
+	Email          string             `json:"email"`
+	Role           UserRole           `json:"role"`
+	Status         UserStatus         `json:"status"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// Пользователи компании для карточки админа (BE-12): колонки ListUsers, без password_hash.
+func (q *Queries) ListUsersByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]ListUsersByOrganizationRow, error) {
+	rows, err := q.db.Query(ctx, listUsersByOrganization, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersByOrganizationRow{}
+	for rows.Next() {
+		var i ListUsersByOrganizationRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Email,

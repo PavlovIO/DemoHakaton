@@ -73,3 +73,17 @@ JOIN organizations org ON org.id = o.lender_organization_id
 GROUP BY org.country_code
 ORDER BY count DESC
 LIMIT $1;
+
+-- name: ListAmlFlagsByOrganization :many
+-- Флаги компании в карточке админа (BE-12): без пагинации, открытые сверху. Название и
+-- страна — для AmlFlag.organization (OrganizationShort), aml_flags их не хранит.
+SELECT sqlc.embed(f), o.name AS organization_name, o.country_code AS organization_country_code
+FROM aml_flags f
+JOIN organizations o ON o.id = f.organization_id
+WHERE f.organization_id = $1
+ORDER BY (f.status = 'open') DESC, f.created_at DESC, f.id DESC;
+
+-- name: CountOpenHighAmlFlags :one
+-- Открытые high-флаги блокируют approve KYC (409 CONFLICT, BE-12).
+SELECT count(*) FROM aml_flags
+WHERE organization_id = $1 AND status = 'open' AND severity = 'high';

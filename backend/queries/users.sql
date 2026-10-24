@@ -33,7 +33,7 @@ SELECT id, email, role, status, organization_id, created_at
 FROM users
 WHERE (sqlc.narg('role')::user_role IS NULL OR role = sqlc.narg('role')::user_role)
   AND (sqlc.narg('status')::user_status IS NULL OR status = sqlc.narg('status')::user_status)
-  AND (sqlc.narg('q')::text IS NULL OR email ILIKE '%' || sqlc.narg('q')::text || '%')
+  AND (sqlc.narg('q')::text IS NULL OR email ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\')
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -41,4 +41,11 @@ LIMIT $1 OFFSET $2;
 SELECT count(*) FROM users
 WHERE (sqlc.narg('role')::user_role IS NULL OR role = sqlc.narg('role')::user_role)
   AND (sqlc.narg('status')::user_status IS NULL OR status = sqlc.narg('status')::user_status)
-  AND (sqlc.narg('q')::text IS NULL OR email ILIKE '%' || sqlc.narg('q')::text || '%');
+  AND (sqlc.narg('q')::text IS NULL OR email ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\');
+
+-- name: ListUsersByOrganization :many
+-- Пользователи компании для карточки админа (BE-12): колонки ListUsers, без password_hash.
+SELECT id, email, role, status, organization_id, created_at
+FROM users
+WHERE organization_id = $1
+ORDER BY created_at, id;
