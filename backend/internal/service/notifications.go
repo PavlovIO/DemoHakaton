@@ -11,24 +11,27 @@ import (
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
-// NotificationStore — запросы ленты уведомлений пользователя.
+// NotificationStore — отметки прочитанного; чтение ленты идёт через SnapshotReader.
 type NotificationStore interface {
-	ListNotifications(ctx context.Context, arg repository.ListNotificationsParams) ([]repository.Notification, error)
-	CountNotifications(ctx context.Context, arg repository.CountNotificationsParams) (int64, error)
-	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
 	MarkNotificationRead(ctx context.Context, arg repository.MarkNotificationReadParams) (int64, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
+}
+
+// SnapshotReader — чтения в одном снимке БД (TxManager.ReadSnapshot).
+type SnapshotReader interface {
+	ReadSnapshot(ctx context.Context, fn func(q repository.Querier) error) error
 }
 
 // Notifications — лента уведомлений текущего пользователя. Владение — в SQL:
 // каждый запрос фильтрует по p.UserID, user_id из запроса не принимается.
 type Notifications struct {
-	store NotificationStore
+	store    NotificationStore
+	snapshot SnapshotReader
 }
 
 // NewNotifications создаёт сервис ленты уведомлений.
-func NewNotifications(store NotificationStore) *Notifications {
-	return &Notifications{store: store}
+func NewNotifications(store NotificationStore, snapshot SnapshotReader) *Notifications {
+	return &Notifications{store: store, snapshot: snapshot}
 }
 
 // NotificationFilter — параметры ленты. Page и PageSize: 0 — по умолчанию (1 и 20).
@@ -55,21 +58,31 @@ func (s *Notifications) List(ctx context.Context, p Principal, f NotificationFil
 	if f.UnreadOnly {
 		unreadOnly = pgtype.Bool{Bool: true, Valid: true}
 	}
-	items, err := s.store.ListNotifications(ctx, repository.ListNotificationsParams{
-		UserID: p.UserID, UnreadOnly: unreadOnly, Limit: limit, Offset: offset,
+	// Элементы и счётчики — в одном снимке: иначе уведомление, пришедшее между запросами,
+	// попадёт в total/unread_total, но не в items, и бейдж в шапке разойдётся с лентой.
+	var items []repository.Notification
+	var counts repository.CountNotificationsRow
+	err := s.snapshot.ReadSnapshot(ctx, func(q repository.Querier) error {
+		var err error
+		items, err = q.ListNotifications(ctx, repository.ListNotificationsParams{
+			UserID: p.UserID, UnreadOnly: unreadOnly, Limit: limit, Offset: offset,
+		})
+		if err != nil {
+			return fmt.Errorf("list notifications: %w", err)
+		}
+		if counts, err = q.CountNotifications(ctx, p.UserID); err != nil {
+			return fmt.Errorf("count notifications: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return NotificationPage{}, fmt.Errorf("list notifications: %w", err)
+		return NotificationPage{}, err
 	}
-	total, err := s.store.CountNotifications(ctx, repository.CountNotificationsParams{UserID: p.UserID, UnreadOnly: unreadOnly})
-	if err != nil {
-		return NotificationPage{}, fmt.Errorf("count notifications: %w", err)
+	total := counts.Total
+	if f.UnreadOnly {
+		total = counts.Unread
 	}
-	unreadTotal, err := s.store.CountUnreadNotifications(ctx, p.UserID)
-	if err != nil {
-		return NotificationPage{}, fmt.Errorf("count unread notifications: %w", err)
-	}
-	return NotificationPage{Items: items, Total: total, UnreadTotal: unreadTotal, Page: page, PageSize: pageSize}, nil
+	return NotificationPage{Items: items, Total: total, UnreadTotal: counts.Unread, Page: page, PageSize: pageSize}, nil
 }
 
 // MarkRead отмечает своё уведомление прочитанным. Идемпотентно: повторная отметка

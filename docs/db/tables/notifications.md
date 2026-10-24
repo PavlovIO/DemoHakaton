@@ -21,7 +21,7 @@
 
 ## Ограничения и индексы
 
-- `notifications_user_idx (user_id, created_at DESC)` — лента.
+- `notifications_feed_idx (user_id, created_at DESC, id DESC)` — лента: порядок с тай-брейком по `id` берётся из индекса без досортировки (миграция `00003`).
 - `notifications_unread_idx (user_id) WHERE NOT is_read` — счётчик непрочитанных.
 
 ## Связи
@@ -39,7 +39,9 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateNotification` | `:one` | Создать уведомление |
-| `ListNotifications` | `:many` | Лента пользователя, опционально `unread_only`, пагинация |
-| `CountUnreadNotifications` | `:one` | Счётчик непрочитанных |
-| `MarkNotificationRead` | `:exec` | Отметить одно; фильтр по `id` **и** `user_id` — защита от IDOR |
+| `CreateNotificationsForAdmins` | `:execrows` | Уведомление всем активным админам |
+| `CreateNotificationsForOrganization` | `:execrows` | Уведомление всем активным пользователям компании |
+| `ListNotifications` | `:many` | Лента пользователя, опционально `unread_only`, пагинация; `created_at DESC, id DESC` |
+| `CountNotifications` | `:one` | `total` и `unread` одним запросом; сервис читает его в одном снимке с `ListNotifications` |
+| `MarkNotificationRead` | `:execrows` | Отметить одно; фильтр по `id` **и** `user_id` — защита от IDOR |
 | `MarkAllNotificationsRead` | `:exec` | Отметить все уведомления пользователя |

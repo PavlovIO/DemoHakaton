@@ -6,6 +6,7 @@ PostgreSQL 16. Миграции лежат в `backend/migrations` в форма
 |---|---|
 | `00001_init.sql` | Расширения, enum-типы, все таблицы, индексы, триггеры `updated_at` |
 | `00002_seed_dictionaries.sql` | Справочники: страны (с FATF и «недружественностью»), валюты, способы перевода |
+| `00003_notifications_feed_idx.sql` | Индекс ленты уведомлений с тай-брейком по `id` вместо `notifications_user_idx` |
 | `testdata/invariants_test.sql` | Smoke-тест ограничений: 19 проверок, в том числе транзакция принятия оффера |
 
 ## Как запустить
@@ -324,7 +325,7 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListApplicationOffersVisible`, `ListOffersVisible`, `CountOffersVisible`, `LockApplicationForLender`, `LockOfferForAccept`, `AcceptOffer`, `RejectOffer`, `WithdrawOffer`, `RejectSentOffersByApplication` |
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessagesVisible`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
-| `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
+| `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
 | `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
 
 ### Чего не хватает и где запросы расходятся с этим документом
@@ -346,4 +347,4 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - **Партиционирование `audit_log` и `messages`.** Объёмы демо этого не требуют.
 - **Row-Level Security.** IDOR закрываем в репозитории. RLS — хороший следующий шаг, если останется время.
 - **Конвертация валют.** Суммы и аналитика считаются по каждой валюте отдельно.
-- **Чистка старых уведомлений.** Строки `notifications` не удаляются: объёмы демо малы, ленту покрывает индекс `notifications_user_idx` (DECISIONS п. 39).
+- **Чистка старых уведомлений.** Строки `notifications` не удаляются: объёмы демо малы, ленту, включая сортировку `created_at DESC, id DESC`, покрывает индекс `notifications_feed_idx` (DECISIONS п. 39).

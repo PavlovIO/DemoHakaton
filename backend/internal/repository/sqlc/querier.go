@@ -22,11 +22,11 @@ type Querier interface {
 	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
-	// Тот же WHERE, что у ListNotifications: total страницы.
-	CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error)
+	// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
+	// сервис берёт из total или unread в зависимости от unread_only.
+	CountNotifications(ctx context.Context, userID uuid.UUID) (CountNotificationsRow, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
-	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)

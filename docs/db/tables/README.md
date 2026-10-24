@@ -2,7 +2,7 @@
 
 По файлу на таблицу: поля с типами и Go-типами sqlc, ограничения, связи (mermaid) и sqlc-запросы из `backend/queries`. Общая схема, ER-диаграмма и инварианты — в [schema.md](../schema.md).
 
-Источники: `backend/migrations/00001_init.sql`, `backend/queries/*.sql`, сгенерированный код `backend/internal/repository/sqlc` (пакет `repository`).
+Источники: `backend/migrations/*.sql`, `backend/queries/*.sql`, сгенерированный код `backend/internal/repository/sqlc` (пакет `repository`).
 
 | Таблица | Группа | PK | sqlc-модель | Файл запросов | Запросов |
 |---|---|---|---|---|---|
