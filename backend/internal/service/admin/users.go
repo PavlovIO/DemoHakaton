@@ -63,21 +63,28 @@ func (a *Admin) ListUsers(ctx context.Context, p service.Principal, f UserFilter
 	if f.Status != nil {
 		count.Status = repository.NullUserStatus{UserStatus: repository.UserStatus(*f.Status), Valid: true}
 	}
-	rows, err := a.store.ListUsers(ctx, repository.ListUsersParams{
-		Limit: limit, Offset: offset, Role: count.Role, Status: count.Status, Q: count.Q,
+	out := UserPage{Page: page, PageSize: size}
+	// Страница и total — в одном снимке, как в ListOrganizations.
+	err := a.tx.ReadSnapshot(ctx, func(q repository.Querier) error {
+		rows, err := q.ListUsers(ctx, repository.ListUsersParams{
+			Limit: limit, Offset: offset, Role: count.Role, Status: count.Status, Q: count.Q,
+		})
+		if err != nil {
+			return fmt.Errorf("list users: %w", err)
+		}
+		if out.Total, err = q.CountUsers(ctx, count); err != nil {
+			return fmt.Errorf("count users: %w", err)
+		}
+		out.Items = make([]User, len(rows))
+		for i, r := range rows {
+			out.Items[i] = userFromListRow(r)
+		}
+		return nil
 	})
 	if err != nil {
-		return UserPage{}, fmt.Errorf("list users: %w", err)
+		return UserPage{}, err
 	}
-	total, err := a.store.CountUsers(ctx, count)
-	if err != nil {
-		return UserPage{}, fmt.Errorf("count users: %w", err)
-	}
-	items := make([]User, len(rows))
-	for i, r := range rows {
-		items[i] = userFromListRow(r)
-	}
-	return UserPage{Items: items, Total: total, Page: page, PageSize: size}, nil
+	return out, nil
 }
 
 // BlockUser блокирует пользователя и удаляет все его сессии.

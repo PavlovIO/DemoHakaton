@@ -89,7 +89,7 @@ func run(ctx context.Context) error {
 		Deals:         lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),
 		Chat:          lending.NewChat(lending.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
 		Notifications: notifications.NewNotifications(queries, txManager),
-		Admin:         admin.New(admin.Deps{Store: queries, Tx: txManager}),
+		Admin:         admin.New(admin.Deps{Tx: txManager}),
 		CookieSecure:  cfg.CookieSecure,
 	})
 
