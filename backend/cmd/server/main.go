@@ -22,6 +22,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/admin"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/dictionaries"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
@@ -88,6 +89,7 @@ func run(ctx context.Context) error {
 		Deals:         lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),
 		Chat:          lending.NewChat(lending.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
 		Notifications: notifications.NewNotifications(queries, txManager),
+		Admin:         admin.New(admin.Deps{Store: queries, Tx: txManager}),
 		CookieSecure:  cfg.CookieSecure,
 	})
 
