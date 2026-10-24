@@ -34,7 +34,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | ✅ | `GET /registry/lookup` — поиск компании в мок-реестре для автозаполнения |
 | ✅ | `GET`/`POST /applications`, `GET`/`PATCH /applications/{applicationId}`, `POST …/submit`, `POST …/cancel`, `POST …/reject-offers`, `GET …/history` — заявки: витрина с фильтрами, статусы, история, уведомления |
 | ✅ | `GET /offers`, `GET /offers/{offerId}`, `GET`/`POST /applications/{applicationId}/offers`, `POST /offers/{offerId}/reject`, `POST /offers/{offerId}/withdraw` — офферы: видимость по сторонам, `unread_messages`, история, уведомления |
-| ⏳ 501 | остальные 21 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `POST /offers/{offerId}/accept`, `GET /deals`, `GET /deals/{dealId}` — принятие оффера в одной транзакции, сделка-снапшот с комиссией, видимость сделок сторонам и admin |
+| ⏳ 501 | остальные 18 — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -62,7 +63,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 - **Роль** пользователя — `borrower` (заёмщик, РФ), `lender` (кредитор, не РФ) или `admin` — определяет, какие операции ему доступны. Роли операции записаны в спеке расширением `x-roles`, требование KYC — `x-kyc-required: true`; их проверяет `middleware.Authorize`, а сервис повторяет проверку роли ([ADR-0004](../docs/adr/0004-authorization.md)).
 - **Владение** проверяется на каждой сущности в SQL: заявки, офферы и сделки читаются только запросами `*Visible` с обязательными `viewer_role`/`viewer_org`. Чужая сущность отвечает **`404`**, а не `403`: так нельзя перебором узнать, что объект существует (защита от IDOR).
 - **Списки** `GET /applications`, `GET /offers`, `GET /deals` зависят от роли: один и тот же эндпоинт отдаёт заёмщику его заявки, кредитору — витрину опубликованных и т.д.
-- Пока компания не прошла KYC (`kyc_status != verified`), она не может создавать заявки и офферы — `403 KYC_NOT_VERIFIED`.
+- Пока компания не прошла KYC (`kyc_status != verified`), она не может создавать заявки и офферы и принимать офферы — `403 KYC_NOT_VERIFIED`.
 
 Порядок проверок на каждый запрос:
 
@@ -107,7 +108,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | `UNAUTHORIZED` | 401 | нет сессии или она истекла |
 | `FORBIDDEN` | 403 | роль не позволяет операцию |
 | `CSRF_INVALID` | 403 | нет `X-CSRF-Token` или он не совпадает с cookie |
-| `KYC_NOT_VERIFIED` | 403 | компания не верифицирована (заявки, офферы) |
+| `KYC_NOT_VERIFIED` | 403 | компания не верифицирована (создание заявок и офферов, принятие оффера) |
 | `NOT_FOUND` | 404 | нет такой сущности **или она чужая**; неизвестный путь |
 | `CONFLICT` | 409 | конфликт данных (например, email уже занят; реквизиты компании изменились во время `kyc/submit`) |
 | `INVALID_STATUS_TRANSITION` | 409 | переход статуса не разрешён (см. «Статусы») |
@@ -190,18 +191,18 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | GET | `/applications/{applicationId}/offers` | Офферы по заявке: владельцу и admin — все, кредитору — только свой (суммы конкурентов скрыты); фильтр `status` | авториз. |
 | POST | `/applications/{applicationId}/offers` | Сделать оффер (KYC verified, заявка `published`, сумма ≤ суммы заявки, валюта — всегда валюта заявки) → `201`; заёмщику — `offer_received` | L |
 | GET | `/offers/{offerId}` | Карточка оффера (автор-кредитор, заёмщик-владелец заявки, admin) | авториз. |
-| POST | `/offers/{offerId}/accept` | **Принять оффер → создаётся сделка** (`200`, тело — `Deal`); остальные офферы заявки отклоняются; повторный вызов → `409` | B |
+| POST | `/offers/{offerId}/accept` | **Принять оффер → создаётся сделка** (`200`, тело — `Deal`); остальные `sent`-офферы заявки отклоняются (`another_offer_accepted`); кредитору — `offer_accepted`, отклонённым — `offer_rejected`; повторный вызов → `409` | B |
 | POST | `/offers/{offerId}/reject` | Отклонить оффер (только из `sent`; тело `{"comment"}` необязательно) → `rejected_by_borrower`; кредитору — `offer_rejected` | B |
 | POST | `/offers/{offerId}/withdraw` | Отозвать свой оффер (только из `sent`); заёмщику — `offer_withdrawn` | L |
 
-Ошибки офферов: сумма больше суммы заявки или `valid_until` в прошлом → `400 VALIDATION_ERROR` (поле в `details`); невидимые оффер или заявка → `404 NOT_FOUND`; заявка не в `published` → `409 CONFLICT` («Заявка не принимает офферы»); второй `sent`-оффер компании по той же заявке → `409 CONFLICT` (после `withdrawn`/`rejected` можно сделать новый); `reject`/`withdraw` не из `sent` → `409 INVALID_STATUS_TRANSITION`. `403 FORBIDDEN` на `reject` получают admin и кредитор (видят оффер, но решает заёмщик), на `withdraw` — admin и заёмщик. `unread_messages` — чужие непрочитанные сообщения чата текущего пользователя; admin его не получает.
+Ошибки офферов: сумма больше суммы заявки или `valid_until` в прошлом → `400 VALIDATION_ERROR` (поле в `details`); невидимые оффер или заявка → `404 NOT_FOUND`; заявка не в `published` → `409 CONFLICT` («Заявка не принимает офферы»); второй `sent`-оффер компании по той же заявке → `409 CONFLICT` (после `withdrawn`/`rejected` можно сделать новый); `reject`/`withdraw`/`accept` не из `sent` → `409 INVALID_STATUS_TRANSITION`. `accept`: чужой оффер → `404`; заявка не `published` (уже `agreed`, `cancelled`…) или `valid_until` в прошлом («Срок действия оффера истёк», статус оффера не меняется) → `409 INVALID_STATUS_TRANSITION`; admin и кредитор → `403`, заёмщик без `verified` KYC → `403 KYC_NOT_VERIFIED`. `403 FORBIDDEN` на `reject` получают admin и кредитор (видят оффер, но решает заёмщик), на `withdraw` — admin и заёмщик. `unread_messages` — чужие непрочитанные сообщения чата текущего пользователя; admin его не получает.
 
 ### deals — сделки
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
 | GET | `/deals` | Сделки: стороны сделки или admin. Период `created_from`/`created_to` — по `agreed_at`; admin — `borrower_organization_id`, `lender_organization_id`; пагинация | авториз. |
-| GET | `/deals/{dealId}` | Карточка сделки | стороны, A |
+| GET | `/deals/{dealId}` | Карточка сделки; чужая → `404` | стороны, A |
 
 ### chat — переписка по офферу
 
@@ -259,7 +260,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
                          ─withdraw→ withdrawn
 ```
 
-Принятие оффера — одна транзакция БД с блокировкой строки заявки: оффер → `accepted`, остальные `sent`-офферы заявки → `rejected` (`another_offer_accepted`), заявка → `agreed`, создаётся сделка со снапшотом условий. Повторный или параллельный `accept` по той же заявке отвечает `409`, вторая сделка не появится.
+Принятие оффера — одна транзакция БД с блокировкой строки заявки: оффер → `accepted`, остальные `sent`-офферы заявки → `rejected` (`another_offer_accepted`), заявка → `agreed`, создаётся сделка со снапшотом условий. Сумма сделки — сумма **оффера** (может быть меньше суммы заявки); `fee_amount = amount × fee_percent / 100`, округляется до копеек половиной от нуля (`500000.00 × 1 % = 5000.00`), без `fee_percent` — `null`. Повторный или параллельный `accept` по той же заявке отвечает `409 INVALID_STATUS_TRANSITION`, вторая сделка не появится.
 
 ## Сквозной сценарий: от регистрации до сделки
 
