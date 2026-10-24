@@ -1386,6 +1386,7 @@ paths:
       summary: Принять оффер (borrower-владелец заявки)
       tags:
         - offers
+      x-kyc-required: true
       x-roles:
         - borrower
   /offers/{offerId}/reject:

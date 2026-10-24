@@ -65,6 +65,7 @@ paths:
       tags: [offers]
       operationId: acceptOffer
       x-roles: [borrower]
+      x-kyc-required: true
       summary: Принять оффер (borrower-владелец заявки)
       description: |
         Одна транзакция БД с `SELECT ... FOR UPDATE` на заявку:

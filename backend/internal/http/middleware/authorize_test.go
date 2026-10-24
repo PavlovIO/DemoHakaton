@@ -54,6 +54,7 @@ func TestAccessRulesFromEmbeddedSpec(t *testing.T) {
 	}{
 		{"createApplication", AccessRule{Roles: []string{"borrower"}, KYCRequired: true}},
 		{"createOffer", AccessRule{Roles: []string{"lender"}, KYCRequired: true}},
+		{"acceptOffer", AccessRule{Roles: []string{"borrower"}, KYCRequired: true}},
 		{"adminBlockUser", AccessRule{Roles: []string{"admin"}}},
 		{"getMe", AccessRule{Roles: all}},
 		{"healthz", AccessRule{Public: true}},
