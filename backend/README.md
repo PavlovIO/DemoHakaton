@@ -340,7 +340,7 @@ queries/                      SQL для sqlc
 
 1. Изменить контракт (если нужно) в `api/paths/<tag>.yaml` / `api/schemas/*.yaml` → `make gen`. У новой операции указать `x-roles` (и `x-kyc-required`, если нужен KYC) и ответ `403` — без них не пройдут тесты.
 2. SQL — в `queries/<домен>.sql` → `make gen`.
-3. Логика — в `internal/service`, с табличными тестами. Principal — через `currentPrincipal(ctx)`; сущность читать через `*Visible` с `p.ViewerRole()`, `p.ViewerOrg()`.
+3. Логика — в `internal/service`, с табличными тестами. Principal — через `currentPrincipal(ctx)`; роль и KYC повторить в сервисе (`p.RequireRole(...)`, `p.RequireKYCVerified()`); сущность читать через `*Visible` с `p.ViewerRole()`, `p.ViewerOrg()`.
 4. В `handler/<tag>.go` заменить тело заглушки: вызвать сервис, перевести типы. Ошибки — `return nil, apperr.X(...)`, статус выберет `errors.go`.
 
 ### Тесты
