@@ -96,6 +96,16 @@ type ApplicationService interface {
 	History(ctx context.Context, p service.Principal, id uuid.UUID) ([]service.StatusHistoryEntry, error)
 }
 
+// OfferService — офферы: создание, просмотр, отклонение, отзыв (service.Offers).
+type OfferService interface {
+	Create(ctx context.Context, p service.Principal, meta service.ClientMeta, applicationID uuid.UUID, in service.CreateOfferInput) (service.Offer, error)
+	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Offer, error)
+	List(ctx context.Context, p service.Principal, f service.OfferFilter) (service.OfferPage, error)
+	ListByApplication(ctx context.Context, p service.Principal, applicationID uuid.UUID, statuses []service.OfferStatus) ([]service.Offer, error)
+	Reject(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID, comment *string) (service.Offer, error)
+	Withdraw(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Offer, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
 	DB           Pinger
@@ -104,6 +114,7 @@ type Deps struct {
 	Kyc          KycService
 	Registry     RegistryService
 	Applications ApplicationService
+	Offers       OfferService
 	CookieSecure bool
 }
 
@@ -115,6 +126,7 @@ type Handler struct {
 	kyc          KycService
 	registry     RegistryService
 	applications ApplicationService
+	offers       OfferService
 	cookieSecure bool
 }
 
@@ -133,5 +145,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, cookieSecure: d.CookieSecure}
 }
