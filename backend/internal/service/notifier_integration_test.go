@@ -14,6 +14,7 @@ import (
 
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/servicetest"
 )
 
 // failingOrgWriter — настоящий querier, у которого падает CreateNotificationsForOrganization.
@@ -28,7 +29,7 @@ func (w failingOrgWriter) CreateNotificationsForOrganization(context.Context, re
 
 func TestNotifierIntegration(t *testing.T) {
 	ctx := context.Background()
-	tx := beginTestTx(t)
+	tx := servicetest.BeginTx(t)
 	q := repository.New(tx)
 	notifier := service.Notifier{}
 
@@ -49,9 +50,9 @@ func TestNotifierIntegration(t *testing.T) {
 	}
 
 	t.Run("NotifyAdmins — каждому активному админу, заблокированному нет", func(t *testing.T) {
-		active1 := insertTestUser(ctx, t, tx, repository.UserRoleAdmin, nil)
-		active2 := insertTestUser(ctx, t, tx, repository.UserRoleAdmin, nil)
-		blocked := insertTestUser(ctx, t, tx, repository.UserRoleAdmin, nil)
+		active1 := servicetest.InsertUser(ctx, t, tx, repository.UserRoleAdmin, nil)
+		active2 := servicetest.InsertUser(ctx, t, tx, repository.UserRoleAdmin, nil)
+		blocked := servicetest.InsertUser(ctx, t, tx, repository.UserRoleAdmin, nil)
 		if _, err := q.BlockUser(ctx, repository.BlockUserParams{ID: blocked, BlockedReason: pgtype.Text{String: "тест", Valid: true}}); err != nil {
 			t.Fatal(err)
 		}
@@ -67,12 +68,12 @@ func TestNotifierIntegration(t *testing.T) {
 	})
 
 	t.Run("NotifyOrganization — активному пользователю компании; заблокированному и другой компании нет", func(t *testing.T) {
-		org := insertDealsOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Org")
-		blocked := insertDealsOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Blocked")
+		org := servicetest.InsertVerifiedOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Org")
+		blocked := servicetest.InsertVerifiedOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Blocked")
 		if _, err := q.BlockUser(ctx, repository.BlockUserParams{ID: blocked.UserID, BlockedReason: pgtype.Text{String: "тест", Valid: true}}); err != nil {
 			t.Fatal(err)
 		}
-		other := insertDealsOrg(ctx, t, tx, repository.UserRoleLender, "Notifier Other")
+		other := servicetest.InsertVerifiedOrg(ctx, t, tx, repository.UserRoleLender, "Notifier Other")
 		n := notification()
 
 		for _, p := range []service.Principal{org, blocked} {
@@ -88,8 +89,8 @@ func TestNotifierIntegration(t *testing.T) {
 	})
 
 	t.Run("ошибка уведомления в InTx откатывает событие и прежние уведомления", func(t *testing.T) {
-		admin := insertTestUser(ctx, t, tx, repository.UserRoleAdmin, nil)
-		org := insertDealsOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Rollback")
+		admin := servicetest.InsertUser(ctx, t, tx, repository.UserRoleAdmin, nil)
+		org := servicetest.InsertVerifiedOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Rollback")
 		n := notification()
 		dbErr := errors.New("insert failed")
 

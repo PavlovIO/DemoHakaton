@@ -7,6 +7,7 @@ import (
 
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/servicetest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -213,7 +214,7 @@ func TestTxManagerRollbackWithCanceledContext(t *testing.T) {
 }
 
 func TestTxManagerIntegrationRollback(t *testing.T) {
-	pool := newPool(t)
+	pool := servicetest.NewPool(t)
 	ctx := context.Background()
 	action := "tx-manager-integration-rollback-" + uuid.NewString()
 	wantErr := errors.New("force rollback")

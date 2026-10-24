@@ -16,57 +16,58 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 // fakeOffers запоминает, с чем его вызвали, и отдаёт заданный оффер или ошибку.
 type fakeOffers struct {
-	offer         service.Offer
+	offer         lending.Offer
 	err           error
 	gotID         uuid.UUID
-	gotCreate     *service.CreateOfferInput
+	gotCreate     *lending.CreateOfferInput
 	gotComment    *string
-	gotFilter     *service.OfferFilter
-	gotStatuses   []service.OfferStatus
+	gotFilter     *lending.OfferFilter
+	gotStatuses   []lending.OfferStatus
 	rejectCalled  bool
 	withdrawnByID uuid.UUID
 }
 
-func (f *fakeOffers) Create(_ context.Context, _ service.Principal, _ service.ClientMeta, applicationID uuid.UUID, in service.CreateOfferInput) (service.Offer, error) {
+func (f *fakeOffers) Create(_ context.Context, _ service.Principal, _ service.ClientMeta, applicationID uuid.UUID, in lending.CreateOfferInput) (lending.Offer, error) {
 	f.gotID, f.gotCreate = applicationID, &in
 	return f.offer, f.err
 }
 
-func (f *fakeOffers) Get(_ context.Context, _ service.Principal, id uuid.UUID) (service.Offer, error) {
+func (f *fakeOffers) Get(_ context.Context, _ service.Principal, id uuid.UUID) (lending.Offer, error) {
 	f.gotID = id
 	return f.offer, f.err
 }
 
-func (f *fakeOffers) List(_ context.Context, _ service.Principal, filter service.OfferFilter) (service.OfferPage, error) {
+func (f *fakeOffers) List(_ context.Context, _ service.Principal, filter lending.OfferFilter) (lending.OfferPage, error) {
 	f.gotFilter = &filter
-	return service.OfferPage{Items: []service.Offer{f.offer}, Total: 1, Page: 1, PageSize: 20}, f.err
+	return lending.OfferPage{Items: []lending.Offer{f.offer}, Total: 1, Page: 1, PageSize: 20}, f.err
 }
 
-func (f *fakeOffers) ListByApplication(_ context.Context, _ service.Principal, applicationID uuid.UUID, statuses []service.OfferStatus) ([]service.Offer, error) {
+func (f *fakeOffers) ListByApplication(_ context.Context, _ service.Principal, applicationID uuid.UUID, statuses []lending.OfferStatus) ([]lending.Offer, error) {
 	f.gotID, f.gotStatuses = applicationID, statuses
-	return []service.Offer{f.offer}, f.err
+	return []lending.Offer{f.offer}, f.err
 }
 
-func (f *fakeOffers) Reject(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID, comment *string) (service.Offer, error) {
+func (f *fakeOffers) Reject(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID, comment *string) (lending.Offer, error) {
 	f.gotID, f.gotComment, f.rejectCalled = id, comment, true
 	return f.offer, f.err
 }
 
-func (f *fakeOffers) Withdraw(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID) (service.Offer, error) {
+func (f *fakeOffers) Withdraw(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID) (lending.Offer, error) {
 	f.gotID, f.withdrawnByID = id, id
 	return f.offer, f.err
 }
 
-func testOffer() service.Offer {
+func testOffer() lending.Offer {
 	unread := int64(3)
-	return service.Offer{
+	return lending.Offer{
 		ID: uuid.New(), ApplicationID: uuid.New(), ApplicationNumber: 123,
-		Lender: service.OrgShort{ID: uuid.New(), Name: "Bank Beta", CountryCode: "AE"},
-		Status: service.OfferStatusSent, Amount: decimal.RequireFromString("100.00"), Currency: "EUR",
+		Lender: lending.OrgShort{ID: uuid.New(), Name: "Bank Beta", CountryCode: "AE"},
+		Status: lending.OfferStatusSent, Amount: decimal.RequireFromString("100.00"), Currency: "EUR",
 		InterestRateAnnual: decimal.RequireFromString("8.00"), RepaymentSchedule: "annuity",
 		UnreadMessages: &unread, CreatedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 	}
@@ -160,7 +161,7 @@ func TestListOffers(t *testing.T) {
 		t.Fatalf("status = %d; body %s", resp.StatusCode, body)
 	}
 	f := offers.gotFilter
-	if len(f.Statuses) != 2 || f.Statuses[0] != service.OfferStatusSent || f.Statuses[1] != service.OfferStatusAccepted ||
+	if len(f.Statuses) != 2 || f.Statuses[0] != lending.OfferStatusSent || f.Statuses[1] != lending.OfferStatusAccepted ||
 		f.ApplicationID == nil || *f.ApplicationID != appID || f.Page != 2 || f.PageSize != 10 {
 		t.Fatalf("filter = %+v", f)
 	}
@@ -181,7 +182,7 @@ func TestListApplicationOffers(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d; body %s", resp.StatusCode, body)
 	}
-	if offers.gotID != appID || len(offers.gotStatuses) != 1 || offers.gotStatuses[0] != service.OfferStatusSent {
+	if offers.gotID != appID || len(offers.gotStatuses) != 1 || offers.gotStatuses[0] != lending.OfferStatusSent {
 		t.Fatalf("id = %s, statuses = %v", offers.gotID, offers.gotStatuses)
 	}
 	var got []api.Offer

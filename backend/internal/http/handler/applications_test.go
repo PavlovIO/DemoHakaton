@@ -15,46 +15,47 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 // fakeApplications запоминает, с чем его вызвали, и отдаёт заданную заявку или ошибку.
 type fakeApplications struct {
-	app       service.Application
+	app       lending.Application
 	err       error
 	rejected  int
-	history   []service.StatusHistoryEntry
-	gotFilter *service.ApplicationFilter
-	gotCreate *service.CreateApplicationInput
-	gotUpdate *service.UpdateApplicationInput
+	history   []lending.StatusHistoryEntry
+	gotFilter *lending.ApplicationFilter
+	gotCreate *lending.CreateApplicationInput
+	gotUpdate *lending.UpdateApplicationInput
 	gotID     uuid.UUID
 }
 
-func (f *fakeApplications) List(_ context.Context, _ service.Principal, filter service.ApplicationFilter) (service.ApplicationPage, error) {
+func (f *fakeApplications) List(_ context.Context, _ service.Principal, filter lending.ApplicationFilter) (lending.ApplicationPage, error) {
 	f.gotFilter = &filter
-	return service.ApplicationPage{Items: []service.Application{f.app}, Total: 1, Page: 1, PageSize: 20}, f.err
+	return lending.ApplicationPage{Items: []lending.Application{f.app}, Total: 1, Page: 1, PageSize: 20}, f.err
 }
 
-func (f *fakeApplications) Get(_ context.Context, _ service.Principal, id uuid.UUID) (service.Application, error) {
+func (f *fakeApplications) Get(_ context.Context, _ service.Principal, id uuid.UUID) (lending.Application, error) {
 	f.gotID = id
 	return f.app, f.err
 }
 
-func (f *fakeApplications) Create(_ context.Context, _ service.Principal, _ service.ClientMeta, in service.CreateApplicationInput) (service.Application, error) {
+func (f *fakeApplications) Create(_ context.Context, _ service.Principal, _ service.ClientMeta, in lending.CreateApplicationInput) (lending.Application, error) {
 	f.gotCreate = &in
 	return f.app, f.err
 }
 
-func (f *fakeApplications) Update(_ context.Context, _ service.Principal, id uuid.UUID, in service.UpdateApplicationInput) (service.Application, error) {
+func (f *fakeApplications) Update(_ context.Context, _ service.Principal, id uuid.UUID, in lending.UpdateApplicationInput) (lending.Application, error) {
 	f.gotID, f.gotUpdate = id, &in
 	return f.app, f.err
 }
 
-func (f *fakeApplications) Submit(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID) (service.Application, error) {
+func (f *fakeApplications) Submit(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID) (lending.Application, error) {
 	f.gotID = id
 	return f.app, f.err
 }
 
-func (f *fakeApplications) Cancel(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID) (service.Application, error) {
+func (f *fakeApplications) Cancel(_ context.Context, _ service.Principal, _ service.ClientMeta, id uuid.UUID) (lending.Application, error) {
 	f.gotID = id
 	return f.app, f.err
 }
@@ -64,19 +65,19 @@ func (f *fakeApplications) RejectAllOffers(_ context.Context, _ service.Principa
 	return f.rejected, f.err
 }
 
-func (f *fakeApplications) History(_ context.Context, _ service.Principal, id uuid.UUID) ([]service.StatusHistoryEntry, error) {
+func (f *fakeApplications) History(_ context.Context, _ service.Principal, id uuid.UUID) ([]lending.StatusHistoryEntry, error) {
 	f.gotID = id
 	return f.history, f.err
 }
 
-func testApplication() service.Application {
+func testApplication() lending.Application {
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	// Сумма с масштабом, как её отдаёт pgx: в JSON — "500000.00".
 	amount, _ := decimal.NewFromString("500000.00")
-	return service.Application{
+	return lending.Application{
 		ID: uuid.New(), Number: 123,
-		Borrower: service.OrgShort{ID: uuid.New(), Name: "ООО Альфа", CountryCode: "RU"},
-		Status:   service.AppStatusPublished, Amount: amount, Currency: "EUR", TargetCountryCode: "DE",
+		Borrower: lending.OrgShort{ID: uuid.New(), Name: "ООО Альфа", CountryCode: "RU"},
+		Status:   lending.AppStatusPublished, Amount: amount, Currency: "EUR", TargetCountryCode: "DE",
 		Purpose: "Закупка оборудования", TermMonths: 12, TransferMethod: "sepa",
 		CreatedAt: created, UpdatedAt: created,
 	}
@@ -101,7 +102,7 @@ func TestListApplications(t *testing.T) {
 		t.Fatalf("status = %d; body %s", resp.StatusCode, body)
 	}
 	f := apps.gotFilter
-	if strings.Join(f.TargetCountries, ",") != "DE,AE" || len(f.Statuses) != 1 || f.Statuses[0] != service.AppStatusPublished ||
+	if strings.Join(f.TargetCountries, ",") != "DE,AE" || len(f.Statuses) != 1 || f.Statuses[0] != lending.AppStatusPublished ||
 		f.Sort != "published_at_desc" || strings.Join(f.TransferMethods, ",") != "sepa" ||
 		f.HasMyOffer == nil || !*f.HasMyOffer || *f.Currency != "EUR" || f.AmountMin.String() != "100.50" ||
 		f.Page != 2 || f.PageSize != 10 {
@@ -190,7 +191,7 @@ func TestApplicationTransitions(t *testing.T) {
 	for _, action := range []string{"submit", "cancel"} {
 		t.Run(action, func(t *testing.T) {
 			app := testApplication()
-			app.Status = service.AppStatusCancelled
+			app.Status = lending.AppStatusCancelled
 			apps := &fakeApplications{app: app}
 			srv := newApplicationsServer(t, apps)
 			id := uuid.New()
@@ -210,7 +211,7 @@ func TestApplicationHistory(t *testing.T) {
 	from, role := "draft", "borrower"
 	actor := uuid.New()
 	id := uuid.New()
-	apps := &fakeApplications{history: []service.StatusHistoryEntry{{
+	apps := &fakeApplications{history: []lending.StatusHistoryEntry{{
 		ID: 7, EntityType: "application", EntityID: id, FromStatus: &from, ToStatus: "moderation",
 		ActorUserID: &actor, ActorRole: &role, CreatedAt: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
 	}}}

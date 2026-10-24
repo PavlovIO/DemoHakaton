@@ -1,14 +1,14 @@
 package handler
 
 // Операции тега chat (chatapi.StrictServerInterface): перевод api ⇄ service.
-// Доступ (стороны оффера и admin), статус оффера и лимит отправки проверяет service.Chat.
+// Доступ (стороны оффера и admin), статус оффера и лимит отправки проверяет lending.Chat.
 
 import (
 	"context"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/chatapi"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 // defaultMessagesLimit — default параметра limit у listMessages (api/paths/chat.yaml):
@@ -51,7 +51,7 @@ func (h *Handler) SendMessage(ctx context.Context, req chatapi.SendMessageReques
 	return chatapi.SendMessage201JSONResponse(toAPIMessage(m)), nil
 }
 
-func toAPIMessage(m service.Message) api.Message {
+func toAPIMessage(m lending.Message) api.Message {
 	isMine := m.IsMine
 	return api.Message{
 		ID:                 m.ID,

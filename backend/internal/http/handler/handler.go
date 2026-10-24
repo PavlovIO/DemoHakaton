@@ -10,7 +10,8 @@
 //     Вход и выход — типы пакета тега (offersapi.AcceptOfferRequestObject), модели — пакет api.
 //  2. Новый тег в спеке = новый пакет <tag>api (скопировать gen.go и register.go соседнего),
 //     строки в generatedTags (routes_test.go), в routes() (router.go) и в проверках ниже.
-//  3. Бизнес-логику держать в internal/service; хендлер только переводит api-типы ⇄ доменные.
+//  3. Бизнес-логику держать в internal/service/<домен> (ADR-0005); хендлер только переводит
+//     api-типы ⇄ доменные.
 //     У операции в спеке — x-roles (и x-kyc-required): их проверяет middleware.Authorize,
 //     а сервис повторяет через p.RequireRole(...) и p.RequireKYCVerified().
 //     Principal брать через currentPrincipal(ctx); сущность читать запросами *Visible
@@ -44,6 +45,10 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/notifications"
 )
 
 // Pinger — проверка соединения с БД для /healthz (*pgxpool.Pool подходит).
@@ -51,7 +56,7 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// DictionaryService — то, что хендлерам нужно от service.Dictionaries.
+// DictionaryService — то, что хендлерам нужно от dictionaries.Dictionaries.
 type DictionaryService interface {
 	Countries(ctx context.Context) ([]repository.ListCountriesRow, error)
 	Currencies(ctx context.Context) ([]repository.ListCurrenciesRow, error)
@@ -60,68 +65,68 @@ type DictionaryService interface {
 
 // AuthService — используемые HTTP-слоем операции аутентификации.
 type AuthService interface {
-	Register(ctx context.Context, in service.RegisterInput, meta service.ClientMeta) (*service.Session, error)
-	Login(ctx context.Context, email, password string, meta service.ClientMeta) (*service.Session, error)
+	Register(ctx context.Context, in auth.RegisterInput, meta service.ClientMeta) (*auth.Session, error)
+	Login(ctx context.Context, email, password string, meta service.ClientMeta) (*auth.Session, error)
 	Logout(ctx context.Context, token string) error
-	Me(ctx context.Context, principal service.Principal) (*service.Me, error)
+	Me(ctx context.Context, principal service.Principal) (*auth.Me, error)
 	// Authenticate — проверка сессии для middleware.Authenticate.
 	Authenticate(ctx context.Context, token string) (*service.Principal, error)
 }
 
-// RegistryService — публичный поиск компании в реестре (service.Registry).
+// RegistryService — публичный поиск компании в реестре (kyc.Registry).
 type RegistryService interface {
 	Lookup(ctx context.Context, meta service.ClientMeta, countryCode, number string) (registry.Result, error)
 }
 
-// KycService — профиль компании, бенефициары, KYC-документы (service.Kyc).
+// KycService — профиль компании, бенефициары, KYC-документы (kyc.Kyc).
 type KycService interface {
-	MyOrganization(ctx context.Context, p service.Principal) (service.OrganizationProfile, error)
-	UpdateMyOrganization(ctx context.Context, p service.Principal, in service.OrganizationUpdateInput) (service.OrganizationProfile, error)
+	MyOrganization(ctx context.Context, p service.Principal) (kyc.OrganizationProfile, error)
+	UpdateMyOrganization(ctx context.Context, p service.Principal, in kyc.OrganizationUpdateInput) (kyc.OrganizationProfile, error)
 	ListDocuments(ctx context.Context, p service.Principal) ([]repository.KycDocument, error)
 	UploadDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, docType repository.KycDocumentType, fileName string, content io.Reader) (repository.KycDocument, error)
 	DeleteDocument(ctx context.Context, p service.Principal, id uuid.UUID) error
-	OpenDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.DocumentFile, error)
-	SubmitKyc(ctx context.Context, p service.Principal, meta service.ClientMeta) (service.OrganizationProfile, error)
+	OpenDocument(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (kyc.DocumentFile, error)
+	SubmitKyc(ctx context.Context, p service.Principal, meta service.ClientMeta) (kyc.OrganizationProfile, error)
 }
 
-// ApplicationService — заявки: CRUD, витрина, статусы, история (service.Applications).
+// ApplicationService — заявки: CRUD, витрина, статусы, история (lending.Applications).
 type ApplicationService interface {
-	List(ctx context.Context, p service.Principal, f service.ApplicationFilter) (service.ApplicationPage, error)
-	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Application, error)
-	Create(ctx context.Context, p service.Principal, meta service.ClientMeta, in service.CreateApplicationInput) (service.Application, error)
-	Update(ctx context.Context, p service.Principal, id uuid.UUID, in service.UpdateApplicationInput) (service.Application, error)
-	Submit(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Application, error)
-	Cancel(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Application, error)
+	List(ctx context.Context, p service.Principal, f lending.ApplicationFilter) (lending.ApplicationPage, error)
+	Get(ctx context.Context, p service.Principal, id uuid.UUID) (lending.Application, error)
+	Create(ctx context.Context, p service.Principal, meta service.ClientMeta, in lending.CreateApplicationInput) (lending.Application, error)
+	Update(ctx context.Context, p service.Principal, id uuid.UUID, in lending.UpdateApplicationInput) (lending.Application, error)
+	Submit(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (lending.Application, error)
+	Cancel(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (lending.Application, error)
 	RejectAllOffers(ctx context.Context, p service.Principal, id uuid.UUID) (int, error)
-	History(ctx context.Context, p service.Principal, id uuid.UUID) ([]service.StatusHistoryEntry, error)
+	History(ctx context.Context, p service.Principal, id uuid.UUID) ([]lending.StatusHistoryEntry, error)
 }
 
-// OfferService — офферы: создание, просмотр, отклонение, отзыв (service.Offers).
+// OfferService — офферы: создание, просмотр, отклонение, отзыв (lending.Offers).
 type OfferService interface {
-	Create(ctx context.Context, p service.Principal, meta service.ClientMeta, applicationID uuid.UUID, in service.CreateOfferInput) (service.Offer, error)
-	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Offer, error)
-	List(ctx context.Context, p service.Principal, f service.OfferFilter) (service.OfferPage, error)
-	ListByApplication(ctx context.Context, p service.Principal, applicationID uuid.UUID, statuses []service.OfferStatus) ([]service.Offer, error)
-	Reject(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID, comment *string) (service.Offer, error)
-	Withdraw(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Offer, error)
+	Create(ctx context.Context, p service.Principal, meta service.ClientMeta, applicationID uuid.UUID, in lending.CreateOfferInput) (lending.Offer, error)
+	Get(ctx context.Context, p service.Principal, id uuid.UUID) (lending.Offer, error)
+	List(ctx context.Context, p service.Principal, f lending.OfferFilter) (lending.OfferPage, error)
+	ListByApplication(ctx context.Context, p service.Principal, applicationID uuid.UUID, statuses []lending.OfferStatus) ([]lending.Offer, error)
+	Reject(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID, comment *string) (lending.Offer, error)
+	Withdraw(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (lending.Offer, error)
 }
 
-// DealService — сделки: принятие оффера, список, карточка (service.Deals).
+// DealService — сделки: принятие оффера, список, карточка (lending.Deals).
 type DealService interface {
-	AcceptOffer(ctx context.Context, p service.Principal, meta service.ClientMeta, offerID uuid.UUID) (service.Deal, error)
-	List(ctx context.Context, p service.Principal, f service.DealFilter) (service.DealPage, error)
-	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Deal, error)
+	AcceptOffer(ctx context.Context, p service.Principal, meta service.ClientMeta, offerID uuid.UUID) (lending.Deal, error)
+	List(ctx context.Context, p service.Principal, f lending.DealFilter) (lending.DealPage, error)
+	Get(ctx context.Context, p service.Principal, id uuid.UUID) (lending.Deal, error)
 }
 
-// ChatService — чат по офферу: polling и отправка (service.Chat).
+// ChatService — чат по офферу: polling и отправка (lending.Chat).
 type ChatService interface {
-	List(ctx context.Context, p service.Principal, offerID uuid.UUID, afterID int64, limit int32) ([]service.Message, error)
-	Send(ctx context.Context, p service.Principal, offerID uuid.UUID, text string) (service.Message, error)
+	List(ctx context.Context, p service.Principal, offerID uuid.UUID, afterID int64, limit int32) ([]lending.Message, error)
+	Send(ctx context.Context, p service.Principal, offerID uuid.UUID, text string) (lending.Message, error)
 }
 
-// NotificationService — лента уведомлений текущего пользователя (service.Notifications).
+// NotificationService — лента уведомлений текущего пользователя (notifications.Notifications).
 type NotificationService interface {
-	List(ctx context.Context, p service.Principal, f service.NotificationFilter) (service.NotificationPage, error)
+	List(ctx context.Context, p service.Principal, f notifications.NotificationFilter) (notifications.NotificationPage, error)
 	MarkRead(ctx context.Context, p service.Principal, id int64) error
 	MarkAllRead(ctx context.Context, p service.Principal) error
 }

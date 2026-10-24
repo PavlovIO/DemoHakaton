@@ -18,6 +18,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
 )
 
 // Поля формы загрузки документа.
@@ -73,7 +74,7 @@ func (h *Handler) UpdateMyOrganization(ctx context.Context, req organizationsapi
 		return nil, err
 	}
 	body := req.Body
-	in := service.OrganizationUpdateInput{
+	in := kyc.OrganizationUpdateInput{
 		Name:               body.Name,
 		RegistrationNumber: body.RegistrationNumber,
 		LegalAddress:       body.LegalAddress,
@@ -82,9 +83,9 @@ func (h *Handler) UpdateMyOrganization(ctx context.Context, req organizationsapi
 	// Срез без указателя (prefer-skip-optional-pointer): encoding/json оставляет его nil,
 	// если поля нет или оно null, а для [] даёт пустой не-nil. nil — список не трогать.
 	if body.Beneficiaries != nil {
-		list := make([]service.BeneficiaryInput, len(body.Beneficiaries))
+		list := make([]kyc.BeneficiaryInput, len(body.Beneficiaries))
 		for i, b := range body.Beneficiaries {
-			list[i] = service.BeneficiaryInput{
+			list[i] = kyc.BeneficiaryInput{
 				FullName:               b.FullName,
 				CitizenshipCountryCode: b.CitizenshipCountryCode,
 				OwnershipPercent:       b.OwnershipPercent,
@@ -99,12 +100,12 @@ func (h *Handler) UpdateMyOrganization(ctx context.Context, req organizationsapi
 	return organizationsapi.UpdateMyOrganization200JSONResponse(profileToAPI(profile)), nil
 }
 
-func profileToAPI(p service.OrganizationProfile) api.Organization {
+func profileToAPI(p kyc.OrganizationProfile) api.Organization {
 	return organizationToAPI(p.Org, p.Beneficiaries)
 }
 
 // organizationToAPI — организация в ответе; beneficiaries всегда массив, не null.
-func organizationToAPI(o *service.Org, beneficiaries []service.Beneficiary) api.Organization {
+func organizationToAPI(o *service.Org, beneficiaries []kyc.Beneficiary) api.Organization {
 	out := api.Organization{
 		ID:                 o.ID,
 		Type:               api.OrganizationType(o.Type),
@@ -254,7 +255,7 @@ func (h *Handler) SubmitKYC(ctx context.Context, _ organizationsapi.SubmitKYCReq
 }
 
 // RegistryLookup ищет компанию в реестре для автозаполнения формы регистрации.
-// Маршрут публичный (security: []); лимиты частоты — в service.Registry.
+// Маршрут публичный (security: []); лимиты частоты — в kyc.Registry.
 func (h *Handler) RegistryLookup(ctx context.Context, req organizationsapi.RegistryLookupRequestObject) (organizationsapi.RegistryLookupResponseObject, error) {
 	result, err := h.registry.Lookup(ctx, middleware.ClientMetaFromContext(ctx), req.Params.CountryCode, req.Params.Number)
 	if err != nil {

@@ -3,7 +3,7 @@
 Go-сервер (net/http, PostgreSQL), который реализует контракт [`api/openapi.yaml`](../api/openapi.yaml). Контракт — источник правды: по нему генерируются Go-сервер (oapi-codegen) и TS-клиент фронта (openapi-typescript), а каждый входящий запрос валидируется по нему в рантайме. В этом файле — что за API, как им пользоваться и как устроен код. Поля и схемы целиком — в самой спеке.
 
 - Запуск локально, команды `make` — [корневой README](../README.md#запуск-бэкенда).
-- Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег), [ADR-0004](../docs/adr/0004-authorization.md) (авторизация).
+- Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег), [ADR-0004](../docs/adr/0004-authorization.md) (авторизация), [ADR-0005](../docs/adr/0005-service-packages-by-domain.md) (сервисный слой: ядро и пакеты доменов).
 - Схема БД — [`docs/db/schema.md`](../docs/db/schema.md).
 - Пишете код бэкенда — начните с [«Как устроен код»](#как-устроен-код): где пишем руками, а что генерируется.
 
@@ -270,7 +270,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 ## Статусы
 
-Переходы реализуются в `internal/service` таблицей разрешённых переходов; недопустимый переход — `409 INVALID_STATUS_TRANSITION`.
+Переходы реализуются в пакете домена (`internal/service/lending`, `internal/service/kyc`) таблицей разрешённых переходов; недопустимый переход — `409 INVALID_STATUS_TRANSITION`.
 
 ```
 Организация (KYC):  draft ─submit→ under_review ─approve→ verified
@@ -376,11 +376,11 @@ queries/                      SQL для sqlc
 
 ### Как добавить операцию
 
-Пошаговая инструкция — в комментарии пакета [`internal/http/handler/handler.go`](internal/http/handler/handler.go). Образец — справочники: [`handler/dictionaries.go`](internal/http/handler/dictionaries.go) + [`dictionaries_test.go`](internal/http/handler/dictionaries_test.go) + [`service/dictionaries.go`](internal/service/dictionaries.go). Коротко:
+Пошаговая инструкция — в комментарии пакета [`internal/http/handler/handler.go`](internal/http/handler/handler.go). Образец — справочники: [`handler/dictionaries.go`](internal/http/handler/dictionaries.go) + [`dictionaries_test.go`](internal/http/handler/dictionaries_test.go) + [`service/dictionaries/dictionaries.go`](internal/service/dictionaries/dictionaries.go). Коротко:
 
 1. Изменить контракт (если нужно) в `api/paths/<tag>.yaml` / `api/schemas/*.yaml` → `make gen`. У новой операции указать `x-roles` (и `x-kyc-required`, если нужен KYC) и ответ `403` — без них не пройдут тесты.
 2. SQL — в `queries/<домен>.sql` → `make gen`.
-3. Логика — в `internal/service`, с табличными тестами. Principal — через `currentPrincipal(ctx)`; роль и KYC повторить в сервисе (`p.RequireRole(...)`, `p.RequireKYCVerified()`); сущность читать через `*Visible` с `p.ViewerRole()`, `p.ViewerOrg()`.
+3. Логика — в пакете домена `internal/service/<домен>` (ADR-0005: домены не импортируют друг друга, общее — в ядро `internal/service`), с табличными тестами. Principal — через `currentPrincipal(ctx)`; роль и KYC повторить в сервисе (`p.RequireRole(...)`, `p.RequireKYCVerified()`); сущность читать через `*Visible` с `p.ViewerRole()`, `p.ViewerOrg()`.
 4. В `handler/<tag>.go` заменить тело заглушки: вызвать сервис, перевести типы. Ошибки — `return nil, apperr.X(...)`, статус выберет `errors.go`.
 
 ### Тесты

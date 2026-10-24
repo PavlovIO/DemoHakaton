@@ -20,26 +20,27 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
 )
 
 // fakeKyc запоминает, с чем его вызвали, и отдаёт заданный профиль или ошибку.
 type fakeKyc struct {
-	profile   service.OrganizationProfile
+	profile   kyc.OrganizationProfile
 	err       error
-	gotUpdate *service.OrganizationUpdateInput
+	gotUpdate *kyc.OrganizationUpdateInput
 
 	gotDocType  repository.KycDocumentType
 	gotFileName string
 	gotSize     int64
-	file        service.DocumentFile
+	file        kyc.DocumentFile
 	deletedID   uuid.UUID
 }
 
-func (f *fakeKyc) MyOrganization(context.Context, service.Principal) (service.OrganizationProfile, error) {
+func (f *fakeKyc) MyOrganization(context.Context, service.Principal) (kyc.OrganizationProfile, error) {
 	return f.profile, f.err
 }
 
-func (f *fakeKyc) UpdateMyOrganization(_ context.Context, _ service.Principal, in service.OrganizationUpdateInput) (service.OrganizationProfile, error) {
+func (f *fakeKyc) UpdateMyOrganization(_ context.Context, _ service.Principal, in kyc.OrganizationUpdateInput) (kyc.OrganizationProfile, error) {
 	f.gotUpdate = &in
 	return f.profile, f.err
 }
@@ -71,30 +72,30 @@ func (f *fakeKyc) DeleteDocument(_ context.Context, _ service.Principal, id uuid
 	return f.err
 }
 
-func (f *fakeKyc) SubmitKyc(context.Context, service.Principal, service.ClientMeta) (service.OrganizationProfile, error) {
+func (f *fakeKyc) SubmitKyc(context.Context, service.Principal, service.ClientMeta) (kyc.OrganizationProfile, error) {
 	return f.profile, f.err
 }
 
-func (f *fakeKyc) OpenDocument(context.Context, service.Principal, service.ClientMeta, uuid.UUID) (service.DocumentFile, error) {
+func (f *fakeKyc) OpenDocument(context.Context, service.Principal, service.ClientMeta, uuid.UUID) (kyc.DocumentFile, error) {
 	return f.file, f.err
 }
 
-func testProfile() service.OrganizationProfile {
-	return service.OrganizationProfile{
+func testProfile() kyc.OrganizationProfile {
+	return kyc.OrganizationProfile{
 		Org: &service.Org{
 			ID: uuid.New(), Type: "borrower", Name: "ООО Альфа", CountryCode: "RU",
 			RegistrationNumber: "7707083893", LegalAddress: "Москва", KycStatus: "draft",
 			CreatedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		},
-		Beneficiaries: []service.Beneficiary{},
+		Beneficiaries: []kyc.Beneficiary{},
 	}
 }
 
-func newKycServer(t *testing.T, kyc *fakeKyc) *httptest.Server {
+func newKycServer(t *testing.T, fake *fakeKyc) *httptest.Server {
 	t.Helper()
 	fixture, deps := authFixture()
 	deps.Auth = &cookieAuth{fakeAuth: *fixture}
-	deps.Dicts, deps.DB, deps.Kyc = fakeDicts{}, okDB{}, kyc
+	deps.Dicts, deps.DB, deps.Kyc = fakeDicts{}, okDB{}, fake
 	return newTestServer(t, deps)
 }
 
@@ -185,13 +186,13 @@ func TestUpdateMyOrganizationHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			kyc := &fakeKyc{profile: testProfile()}
-			srv := newKycServer(t, kyc)
+			fake := &fakeKyc{profile: testProfile()}
+			srv := newKycServer(t, fake)
 			resp, body := borrowerRequest(t, srv, http.MethodPatch, "/api/v1/organizations/me", tt.body)
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d; body %s", resp.StatusCode, body)
 			}
-			in := kyc.gotUpdate
+			in := fake.gotUpdate
 			if in == nil {
 				t.Fatal("сервис не вызван")
 			}
@@ -241,14 +242,14 @@ func TestUploadMyDocumentHandler(t *testing.T) {
 	file := formPart{name: "file", file: pdf}
 
 	t.Run("успех — 201", func(t *testing.T) {
-		kyc := &fakeKyc{}
+		fake := &fakeKyc{}
 		ctype, body := multipartBody(t, docType, file)
-		resp, raw := sessionRequest(t, newKycServer(t, kyc), "borrower-draft", http.MethodPost, uploadPath, ctype, body)
+		resp, raw := sessionRequest(t, newKycServer(t, fake), "borrower-draft", http.MethodPost, uploadPath, ctype, body)
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatalf("status = %d; body %s", resp.StatusCode, raw)
 		}
-		if kyc.gotDocType != repository.KycDocumentTypeCharter || kyc.gotFileName != "устав.pdf" || kyc.gotSize != int64(len(pdf)) {
-			t.Fatalf("сервис получил %s, %q, %d байт", kyc.gotDocType, kyc.gotFileName, kyc.gotSize)
+		if fake.gotDocType != repository.KycDocumentTypeCharter || fake.gotFileName != "устав.pdf" || fake.gotSize != int64(len(pdf)) {
+			t.Fatalf("сервис получил %s, %q, %d байт", fake.gotDocType, fake.gotFileName, fake.gotSize)
 		}
 	})
 
@@ -271,12 +272,12 @@ func TestUploadMyDocumentHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			kyc := &fakeKyc{err: tt.svcErr}
+			fake := &fakeKyc{err: tt.svcErr}
 			ctype, body := multipartBody(t, tt.parts...)
 			if tt.ctype != "" {
 				ctype, body = tt.ctype, bytes.NewBufferString(`{"doc_type":"charter"}`)
 			}
-			resp, raw := sessionRequest(t, newKycServer(t, kyc), "borrower-draft", http.MethodPost, uploadPath, ctype, body)
+			resp, raw := sessionRequest(t, newKycServer(t, fake), "borrower-draft", http.MethodPost, uploadPath, ctype, body)
 			wantError(t, resp, raw, tt.status, tt.code, tt.field)
 		})
 	}
@@ -286,11 +287,11 @@ func TestDownloadDocumentHandler(t *testing.T) {
 	path := "/api/v1/documents/" + uuid.NewString() + "/file"
 
 	t.Run("200 — файл и заголовки", func(t *testing.T) {
-		kyc := &fakeKyc{file: service.DocumentFile{
+		fake := &fakeKyc{file: kyc.DocumentFile{
 			Body: io.NopCloser(strings.NewReader("%PDF-1.4")), Size: 8,
 			FileName: `устав "ООО".pdf`, MimeType: "application/pdf",
 		}}
-		resp, raw := sessionRequest(t, newKycServer(t, kyc), "admin", http.MethodGet, path, "", nil)
+		resp, raw := sessionRequest(t, newKycServer(t, fake), "admin", http.MethodGet, path, "", nil)
 		if resp.StatusCode != http.StatusOK || string(raw) != "%PDF-1.4" {
 			t.Fatalf("status = %d; body %q", resp.StatusCode, raw)
 		}
@@ -304,8 +305,8 @@ func TestDownloadDocumentHandler(t *testing.T) {
 	})
 
 	t.Run("чужой — 404", func(t *testing.T) {
-		kyc := &fakeKyc{err: apperr.NotFound("Документ не найден")}
-		resp, raw := sessionRequest(t, newKycServer(t, kyc), "borrower-draft", http.MethodGet, path, "", nil)
+		fake := &fakeKyc{err: apperr.NotFound("Документ не найден")}
+		resp, raw := sessionRequest(t, newKycServer(t, fake), "borrower-draft", http.MethodGet, path, "", nil)
 		wantError(t, resp, raw, 404, "NOT_FOUND", "")
 	})
 }
@@ -319,11 +320,11 @@ func TestMyDocumentsHandlers(t *testing.T) {
 	})
 
 	t.Run("удаление — 204", func(t *testing.T) {
-		kyc := &fakeKyc{}
+		fake := &fakeKyc{}
 		id := uuid.New()
-		resp, raw := borrowerRequest(t, newKycServer(t, kyc), http.MethodDelete, "/api/v1/organizations/me/documents/"+id.String(), "")
-		if resp.StatusCode != http.StatusNoContent || kyc.deletedID != id {
-			t.Fatalf("status = %d, deleted %s; body %s", resp.StatusCode, kyc.deletedID, raw)
+		resp, raw := borrowerRequest(t, newKycServer(t, fake), http.MethodDelete, "/api/v1/organizations/me/documents/"+id.String(), "")
+		if resp.StatusCode != http.StatusNoContent || fake.deletedID != id {
+			t.Fatalf("status = %d, deleted %s; body %s", resp.StatusCode, fake.deletedID, raw)
 		}
 	})
 }
@@ -339,8 +340,8 @@ func TestSubmitKYCHandler(t *testing.T) {
 	})
 
 	t.Run("нет документов — 400 с details", func(t *testing.T) {
-		kyc := &fakeKyc{err: apperr.Validation("нет", apperr.FieldError{Field: "documents", Message: "нет документа: charter"})}
-		resp, raw := borrowerRequest(t, newKycServer(t, kyc), http.MethodPost, "/api/v1/organizations/me/kyc/submit", "")
+		fake := &fakeKyc{err: apperr.Validation("нет", apperr.FieldError{Field: "documents", Message: "нет документа: charter"})}
+		resp, raw := borrowerRequest(t, newKycServer(t, fake), http.MethodPost, "/api/v1/organizations/me/kyc/submit", "")
 		wantError(t, resp, raw, 400, "VALIDATION_ERROR", "documents")
 	})
 }

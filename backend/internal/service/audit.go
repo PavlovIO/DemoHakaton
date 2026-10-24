@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,14 +13,21 @@ import (
 )
 
 // Минимальная версия хелпера аудита из BE-14, шаг 1 (README планов, «Общие куски кода»):
-// BE-14 переносит сюда ClientMeta и переводит Auth.audit на writeAudit.
+// BE-14 переводит Auth.audit на WriteAudit. Константы действий живут в доменных пакетах.
 
-// Действия audit_log, которые пишет BE-05. Формат — <сущность>.<глагол>.
-const (
-	AuditDocumentUpload   = "document.upload"
-	AuditDocumentDownload = "document.download" // только скачивание админом (DECISIONS п. 16)
-	AuditKycSubmit        = "kyc.submit"
-)
+// ClientMeta содержит сетевую информацию клиента для сессии и аудита.
+type ClientMeta struct {
+	IP        *netip.Addr
+	UserAgent string
+}
+
+// IPKey — IP клиента как ключ лимитов; без IP все такие запросы делят один ключ.
+func (m ClientMeta) IPKey() string {
+	if m.IP == nil {
+		return "unknown"
+	}
+	return m.IP.String()
+}
 
 // AuditEvent — одно действие для audit_log.
 type AuditEvent struct {
@@ -35,9 +43,9 @@ type AuditWriter interface {
 	CreateAuditLog(ctx context.Context, arg repository.CreateAuditLogParams) (repository.AuditLog, error)
 }
 
-// writeAudit пишет действие с IP и User-Agent клиента. Внутри транзакции действия
+// WriteAudit пишет действие с IP и User-Agent клиента. Внутри транзакции действия
 // ошибка откатывает действие: действие без следа в журнале хуже отказа (BE-14).
-func writeAudit(ctx context.Context, w AuditWriter, meta ClientMeta, e AuditEvent) error {
+func WriteAudit(ctx context.Context, w AuditWriter, meta ClientMeta, e AuditEvent) error {
 	fields := e.Meta
 	if fields == nil {
 		fields = map[string]any{} // колонка NOT NULL DEFAULT '{}', а json.Marshal(nil) даёт null

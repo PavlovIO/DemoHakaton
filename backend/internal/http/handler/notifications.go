@@ -9,7 +9,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/notificationsapi"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/notifications"
 )
 
 func (h *Handler) ListNotifications(ctx context.Context, req notificationsapi.ListNotificationsRequestObject) (notificationsapi.ListNotificationsResponseObject, error) {
@@ -52,8 +52,8 @@ func (h *Handler) MarkNotificationRead(ctx context.Context, req notificationsapi
 	return notificationsapi.MarkNotificationRead204Response{}, nil
 }
 
-func notificationFilter(q api.ListNotificationsParams) service.NotificationFilter {
-	var f service.NotificationFilter
+func notificationFilter(q api.ListNotificationsParams) notifications.NotificationFilter {
+	var f notifications.NotificationFilter
 	if q.UnreadOnly != nil {
 		f.UnreadOnly = *q.UnreadOnly
 	}

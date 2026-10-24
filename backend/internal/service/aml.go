@@ -11,11 +11,11 @@ import (
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
-// saveAmlFindings сохраняет находки скрининга флагами (BE-13, шаг 6) в транзакции
+// SaveAmlFindings сохраняет находки скрининга флагами (BE-13, шаг 6) в транзакции
 // перехода статуса: флаги атомарны с переходом. Находка, похожая на уже открытый или
 // ложный флаг, пропускается (HasSimilarAmlFlag). Возвращает только созданные флаги;
 // уведомление шлёт вызывающий.
-func saveAmlFindings(ctx context.Context, q repository.Querier, orgID uuid.UUID, appID *uuid.UUID, findings []aml.Finding) ([]repository.AmlFlag, error) {
+func SaveAmlFindings(ctx context.Context, q repository.Querier, orgID uuid.UUID, appID *uuid.UUID, findings []aml.Finding) ([]repository.AmlFlag, error) {
 	var application pgtype.UUID
 	if appID != nil {
 		application = pgtype.UUID{Bytes: *appID, Valid: true}

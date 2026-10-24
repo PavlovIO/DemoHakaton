@@ -1,7 +1,7 @@
 package handler
 
 // Операции тега applications (applicationsapi.StrictServerInterface): перевод api ⇄ service.
-// Роль, KYC, видимость и статусы проверяет service.Applications.
+// Роль, KYC, видимость и статусы проверяет lending.Applications.
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/applicationsapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 func (h *Handler) ListApplications(ctx context.Context, req applicationsapi.ListApplicationsRequestObject) (applicationsapi.ListApplicationsResponseObject, error) {
@@ -38,7 +38,7 @@ func (h *Handler) CreateApplication(ctx context.Context, req applicationsapi.Cre
 		return nil, err
 	}
 	b := req.Body
-	a, err := h.applications.Create(ctx, p, middleware.ClientMetaFromContext(ctx), service.CreateApplicationInput{
+	a, err := h.applications.Create(ctx, p, middleware.ClientMetaFromContext(ctx), lending.CreateApplicationInput{
 		Amount:                b.Amount,
 		Currency:              b.Currency,
 		TargetCountryCode:     b.TargetCountryCode,
@@ -71,7 +71,7 @@ func (h *Handler) UpdateApplication(ctx context.Context, req applicationsapi.Upd
 		return nil, err
 	}
 	b := req.Body
-	in := service.UpdateApplicationInput{
+	in := lending.UpdateApplicationInput{
 		Amount:                b.Amount,
 		Currency:              b.Currency,
 		TargetCountryCode:     b.TargetCountryCode,
@@ -157,8 +157,8 @@ func (h *Handler) GetApplicationHistory(ctx context.Context, req applicationsapi
 
 // applicationFilter — query-параметры списка в фильтр сервиса. Формат сумм уже проверен
 // валидатором по паттерну Money, поэтому ошибка разбора здесь невозможна.
-func applicationFilter(q api.ListApplicationsParams) service.ApplicationFilter {
-	f := service.ApplicationFilter{
+func applicationFilter(q api.ListApplicationsParams) lending.ApplicationFilter {
+	f := lending.ApplicationFilter{
 		TargetCountries: q.TargetCountry,
 		Currency:        q.Currency,
 		AmountMin:       parseMoney(q.AmountMin),
@@ -171,7 +171,7 @@ func applicationFilter(q api.ListApplicationsParams) service.ApplicationFilter {
 		HasMyOffer:      q.HasMyOffer,
 	}
 	for _, s := range q.Status {
-		f.Statuses = append(f.Statuses, service.ApplicationStatus(s))
+		f.Statuses = append(f.Statuses, lending.ApplicationStatus(s))
 	}
 	for _, m := range q.TransferMethod {
 		f.TransferMethods = append(f.TransferMethods, string(m))
@@ -194,10 +194,10 @@ func parseMoney(s *string) *decimal.Decimal {
 	return &d
 }
 
-func toAPIApplication(a service.Application) api.Application {
+func toAPIApplication(a lending.Application) api.Application {
 	out := api.Application{
 		ID:                    a.ID,
-		Number:                service.ApplicationNumber(a.Number),
+		Number:                lending.ApplicationNumber(a.Number),
 		Borrower:              api.OrganizationShort{ID: a.Borrower.ID, Name: a.Borrower.Name, CountryCode: a.Borrower.CountryCode},
 		Status:                api.ApplicationStatus(a.Status),
 		Amount:                a.Amount,

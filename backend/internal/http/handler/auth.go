@@ -11,7 +11,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/authapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -20,11 +20,11 @@ func (h *Handler) Register(ctx context.Context, request authapi.RegisterRequestO
 	if request.Body == nil {
 		return nil, apperr.Validation("Некорректное тело запроса")
 	}
-	input := service.RegisterInput{
+	input := auth.RegisterInput{
 		Email:    string(request.Body.Email),
 		Password: request.Body.Password,
 		Role:     string(request.Body.Role),
-		Org: service.RegisterOrganizationInput{
+		Org: auth.RegisterOrganizationInput{
 			Name:               request.Body.Organization.Name,
 			CountryCode:        request.Body.Organization.CountryCode,
 			RegistrationNumber: request.Body.Organization.RegistrationNumber,
@@ -160,7 +160,7 @@ func writeAuthJSON(w http.ResponseWriter, status int, body api.Me, cookies []*ht
 	return err
 }
 
-func meToAPI(me *service.Me) api.Me {
+func meToAPI(me *auth.Me) api.Me {
 	user := api.User{
 		ID:        me.User.ID,
 		Email:     openapi_types.Email(me.User.Email),
