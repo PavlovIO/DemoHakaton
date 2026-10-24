@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
@@ -48,7 +51,11 @@ func adminTestProfile() kyc.OrganizationProfile {
 
 func (f *fakeAdmin) ListOrganizations(_ context.Context, _ service.Principal, filter admin.OrganizationFilter) (admin.OrganizationPage, error) {
 	f.gotOrgs = &filter
-	return admin.OrganizationPage{Items: []kyc.OrganizationProfile{adminTestProfile()}, Total: 1, Page: 1, PageSize: 20}, f.err
+	item := adminTestProfile()
+	if f.details.Profile.Org != nil { // тот же профиль, что в карточке: сверка маппингов
+		item = f.details.Profile
+	}
+	return admin.OrganizationPage{Items: []kyc.OrganizationProfile{item}, Total: 1, Page: 1, PageSize: 20}, f.err
 }
 
 func (f *fakeAdmin) GetOrganization(_ context.Context, _ service.Principal, id uuid.UUID) (admin.OrganizationDetails, error) {
@@ -209,6 +216,39 @@ func TestAdminGetOrganization(t *testing.T) {
 		}
 		if rc, _ := raw["registry_check"].(map[string]any); rc["source"] != "mock" || rc["found"] != true {
 			t.Fatalf("registry_check = %v", raw["registry_check"])
+		}
+	})
+
+	// organizationDetailsToAPI копирует поля Organization вручную: кодоген разворачивает allOf
+	// в плоскую структуру. Новое поле Organization, забытое в копии, компилятор не поймает —
+	// ловит этот тест: карточка отдаёт каждое поле Organization так же, как список.
+	t.Run("поля Organization — как в списке", func(t *testing.T) {
+		lei, reason := "253400JT3MQWNDKMJE44", "нет устава"
+		verifiedAt := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+		org := *adminTestOrg
+		org.LEI, org.KycRejectReason, org.VerifiedAt = &lei, &reason, &verifiedAt
+		fake := &fakeAdmin{details: admin.OrganizationDetails{
+			Profile: kyc.OrganizationProfile{Org: &org, Beneficiaries: []kyc.Beneficiary{{
+				ID: uuid.New(), FullName: "Иванов И.И.", CitizenshipCountryCode: "RU", OwnershipPercent: decimal.NewFromInt(60),
+			}}},
+			Documents: []repository.KycDocument{}, AmlFlags: []admin.AmlFlag{}, Users: []admin.User{},
+		}}
+		srv := newAdminServer(t, fake)
+
+		_, listBody := sessionRequest(t, srv, "admin", "GET", "/api/v1/admin/organizations", "", nil)
+		_, cardBody := sessionRequest(t, srv, "admin", "GET", "/api/v1/admin/organizations/"+org.ID.String(), "", nil)
+
+		item := decodeObject(t, listBody)["items"].([]any)[0].(map[string]any)
+		card := decodeObject(t, cardBody)
+		fields := reflect.TypeOf(api.Organization{})
+		for i := range fields.NumField() {
+			key, _, _ := strings.Cut(fields.Field(i).Tag.Get("json"), ",")
+			if _, ok := item[key]; !ok {
+				t.Fatalf("в фикстуре не заполнено поле Organization %q: дополни профиль теста", key)
+			}
+			if !reflect.DeepEqual(card[key], item[key]) {
+				t.Errorf("%s: карточка %v, список %v — organizationDetailsToAPI не копирует поле", key, card[key], item[key])
+			}
 		}
 	})
 
