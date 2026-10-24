@@ -6,8 +6,8 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml/sanctionslist"
 )
 
-// demoCompanies — названия 8 демо-компаний (BE-16, шаг 1). Бенефициаров сида проверит
-// TestSeedSanctionsMatch из BE-16.
+// demoCompanies — названия 8 демо-компаний (BE-16, шаг 1). Бенефициаров сида проверяет
+// TestSeedFlagDetails.
 var demoCompanies = []string{
 	"ООО «Альфа»", "Beta Corp Ltd", "Gamma GmbH", "АО «Вектор»",
 	"Delta Trading", "Epsilon Capital Pte", "ООО «Омега»", "ООО «Сигма»",
