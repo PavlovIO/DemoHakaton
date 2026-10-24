@@ -265,27 +265,6 @@ func (q *Queries) CreateApplication(ctx context.Context, arg CreateApplicationPa
 	return i, err
 }
 
-const getApplicationForUpdate = `-- name: GetApplicationForUpdate :one
-SELECT a.id, a.borrower_organization_id, a.status 
-FROM applications a
-WHERE a.id = (SELECT o.application_id FROM offers o WHERE o.id = $1) 
-FOR UPDATE OF a
-`
-
-type GetApplicationForUpdateRow struct {
-	ID                     uuid.UUID         `json:"id"`
-	BorrowerOrganizationID uuid.UUID         `json:"borrower_organization_id"`
-	Status                 ApplicationStatus `json:"status"`
-}
-
-// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
-func (q *Queries) GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getApplicationForUpdate, id)
-	var i GetApplicationForUpdateRow
-	err := row.Scan(&i.ID, &i.BorrowerOrganizationID, &i.Status)
-	return i, err
-}
-
 const getApplicationVisible = `-- name: GetApplicationVisible :one
 SELECT a.id, a.number, a.borrower_organization_id, a.created_by_user_id, a.status, a.amount, a.currency, a.target_country_code, a.purpose, a.term_months, a.transfer_method, a.transfer_method_comment, a.moderation_comment, a.accepted_offer_id, a.submitted_at, a.published_at, a.created_at, a.updated_at,
        org.name AS borrower_name,
@@ -504,6 +483,46 @@ func (q *Queries) ListApplicationsVisible(ctx context.Context, arg ListApplicati
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockApplicationByOfferForBorrower = `-- name: LockApplicationByOfferForBorrower :one
+SELECT a.id, a.number, a.borrower_organization_id, a.created_by_user_id, a.status, a.amount, a.currency, a.target_country_code, a.purpose, a.term_months, a.transfer_method, a.transfer_method_comment, a.moderation_comment, a.accepted_offer_id, a.submitted_at, a.published_at, a.created_at, a.updated_at FROM applications a
+  JOIN offers o ON o.application_id = a.id
+ WHERE o.id = $1 AND a.borrower_organization_id = $2::uuid
+   FOR UPDATE OF a
+`
+
+type LockApplicationByOfferForBorrowerParams struct {
+	OfferID     uuid.UUID `json:"offer_id"`
+	BorrowerOrg uuid.UUID `json:"borrower_org"`
+}
+
+// Первый шаг acceptOffer: блокирует заявку оффера, если она принадлежит заёмщику.
+// Статус намеренно не фильтруется: сервис отличает 404 (чужая) от 409 (уже agreed/cancelled).
+func (q *Queries) LockApplicationByOfferForBorrower(ctx context.Context, arg LockApplicationByOfferForBorrowerParams) (Application, error) {
+	row := q.db.QueryRow(ctx, lockApplicationByOfferForBorrower, arg.OfferID, arg.BorrowerOrg)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.Number,
+		&i.BorrowerOrganizationID,
+		&i.CreatedByUserID,
+		&i.Status,
+		&i.Amount,
+		&i.Currency,
+		&i.TargetCountryCode,
+		&i.Purpose,
+		&i.TermMonths,
+		&i.TransferMethod,
+		&i.TransferMethodComment,
+		&i.ModerationComment,
+		&i.AcceptedOfferID,
+		&i.SubmittedAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const lockApplicationForBorrower = `-- name: LockApplicationForBorrower :one

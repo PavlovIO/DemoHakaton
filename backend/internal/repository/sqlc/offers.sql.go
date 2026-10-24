@@ -17,13 +17,19 @@ const acceptOffer = `-- name: AcceptOffer :one
 UPDATE offers SET
     status = 'accepted',
     decided_at = now()
-WHERE id = $1 AND status = 'sent'
+WHERE id = $1 AND status = 'sent' AND application_id = $2
 RETURNING id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at
 `
 
-// Вызывать внутри транзакции после GetApplicationForUpdate
-func (q *Queries) AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error) {
-	row := q.db.QueryRow(ctx, acceptOffer, id)
+type AcceptOfferParams struct {
+	ID            uuid.UUID `json:"id"`
+	ApplicationID uuid.UUID `json:"application_id"`
+}
+
+// Вызывать внутри транзакции после LockApplicationByOfferForBorrower. 0 строк — оффер
+// уже не sent (гонка) или не из заблокированной заявки → 409.
+func (q *Queries) AcceptOffer(ctx context.Context, arg AcceptOfferParams) (Offer, error) {
+	row := q.db.QueryRow(ctx, acceptOffer, arg.ID, arg.ApplicationID)
 	var i Offer
 	err := row.Scan(
 		&i.ID,
@@ -494,6 +500,45 @@ func (q *Queries) LockApplicationForLender(ctx context.Context, arg LockApplicat
 	return i, err
 }
 
+const lockOfferForAccept = `-- name: LockOfferForAccept :one
+SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers
+WHERE id = $1 AND application_id = $2
+FOR UPDATE
+`
+
+type LockOfferForAcceptParams struct {
+	ID            uuid.UUID `json:"id"`
+	ApplicationID uuid.UUID `json:"application_id"`
+}
+
+// Второй шаг acceptOffer, после LockApplicationByOfferForBorrower: блокирует принимаемый
+// оффер, чтобы его статус, valid_until и условия не поменялись до UPDATE и снапшота сделки.
+// Видимость не нужна: владельца уже проверила блокировка заявки, application_id — та же заявка.
+func (q *Queries) LockOfferForAccept(ctx context.Context, arg LockOfferForAcceptParams) (Offer, error) {
+	row := q.db.QueryRow(ctx, lockOfferForAccept, arg.ID, arg.ApplicationID)
+	var i Offer
+	err := row.Scan(
+		&i.ID,
+		&i.ApplicationID,
+		&i.LenderOrganizationID,
+		&i.CreatedByUserID,
+		&i.Status,
+		&i.RejectReason,
+		&i.RejectComment,
+		&i.Amount,
+		&i.Currency,
+		&i.InterestRateAnnual,
+		&i.FeePercent,
+		&i.RepaymentSchedule,
+		&i.Collateral,
+		&i.AdditionalTerms,
+		&i.ValidUntil,
+		&i.CreatedAt,
+		&i.DecidedAt,
+	)
+	return i, err
+}
+
 const rejectOffer = `-- name: RejectOffer :one
 UPDATE offers SET
     status = 'rejected',
@@ -558,7 +603,8 @@ type RejectSentOffersByApplicationRow struct {
 }
 
 // Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
-// Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
+// Вызывать после LockApplicationForBorrower (cancel, reject-offers) или LockApplicationByOfferForBorrower
+// (accept) в той же транзакции: сначала заявка, потом офферы.
 // RETURNING — для истории офферов и уведомлений их кредиторам.
 func (q *Queries) RejectSentOffersByApplication(ctx context.Context, arg RejectSentOffersByApplicationParams) ([]RejectSentOffersByApplicationRow, error) {
 	rows, err := q.db.Query(ctx, rejectSentOffersByApplication, arg.Reason, arg.ApplicationID)

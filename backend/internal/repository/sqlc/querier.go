@@ -12,8 +12,9 @@ import (
 )
 
 type Querier interface {
-	// Вызывать внутри транзакции после GetApplicationForUpdate
-	AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error)
+	// Вызывать внутри транзакции после LockApplicationByOfferForBorrower. 0 строк — оффер
+	// уже не sent (гонка) или не из заблокированной заявки → 409.
+	AcceptOffer(ctx context.Context, arg AcceptOfferParams) (Offer, error)
 	AgreeApplication(ctx context.Context, arg AgreeApplicationParams) (Application, error)
 	ApproveApplication(ctx context.Context, arg ApproveApplicationParams) (Application, error)
 	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
@@ -31,6 +32,8 @@ type Querier interface {
 	// clock_timestamp(), а не DEFAULT now(): список вставляется одной транзакцией, now() у всех
 	// строк одинаковый, и ORDER BY created_at в ListBeneficiariesByOrg потерял бы порядок из PATCH.
 	CreateBeneficiary(ctx context.Context, arg CreateBeneficiaryParams) (Beneficiary, error)
+	// Снапшот условий принятого оффера. fee_amount считает сервис (dealFee): правило
+	// округления — в одном месте, в Go; NULL ⇔ fee_percent NULL (deals_fee_chk).
 	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
 	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
@@ -54,15 +57,13 @@ type Querier interface {
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
 	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
-	// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
-	GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error)
 	// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
 	// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
 	// Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
 	GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (GetApplicationVisibleRow, error)
 	// Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
 	// несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
-	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error)
+	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (GetDealVisibleRow, error)
 	// Документ, если пользователь его видит: admin — любой, остальные — своей организации.
 	// Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR). Admin передаёт uuid.Nil.
 	GetKycDocumentVisible(ctx context.Context, arg GetKycDocumentVisibleParams) (KycDocument, error)
@@ -103,7 +104,9 @@ type Querier interface {
 	// fatf_high_risk: страна в чёрном или сером списке FATF.
 	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
 	ListCurrencies(ctx context.Context) ([]ListCurrenciesRow, error)
-	ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]Deal, error)
+	// Видимость — на обязательных arg (как в GetDealVisible); бизнес-фильтры — narg:
+	// они только сужают выборку и не могут её открыть.
+	ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]ListDealsVisibleRow, error)
 	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error)
 	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
 	ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error)
@@ -113,6 +116,9 @@ type Querier interface {
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	// Первый шаг acceptOffer: блокирует заявку оффера, если она принадлежит заёмщику.
+	// Статус намеренно не фильтруется: сервис отличает 404 (чужая) от 409 (уже agreed/cancelled).
+	LockApplicationByOfferForBorrower(ctx context.Context, arg LockApplicationByOfferForBorrowerParams) (Application, error)
 	// Блокировка заявки заёмщиком-владельцем для мутаций (PATCH, submit, cancel, reject-offers).
 	// Чужая и несуществующая — 0 строк → 404. Порядок блокировок: сначала заявка, потом её
 	// офферы — так же в acceptOffer (BE-09), иначе cancel и accept ловят deadlock.
@@ -122,6 +128,10 @@ type Querier interface {
 	// принимают. Условие совпадает с видимостью заявки для lender в GetApplicationVisible:
 	// невидимая — 0 строк → 404. Порядок блокировок общий: сначала заявка, потом офферы.
 	LockApplicationForLender(ctx context.Context, arg LockApplicationForLenderParams) (LockApplicationForLenderRow, error)
+	// Второй шаг acceptOffer, после LockApplicationByOfferForBorrower: блокирует принимаемый
+	// оффер, чтобы его статус, valid_until и условия не поменялись до UPDATE и снапшота сделки.
+	// Видимость не нужна: владельца уже проверила блокировка заявки, application_id — та же заявка.
+	LockOfferForAccept(ctx context.Context, arg LockOfferForAcceptParams) (Offer, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
@@ -131,7 +141,8 @@ type Querier interface {
 	// 0 строк после проверки статуса в сервисе — гонка с другим решением → 409.
 	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
 	// Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
-	// Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
+	// Вызывать после LockApplicationForBorrower (cancel, reject-offers) или LockApplicationByOfferForBorrower
+	// (accept) в той же транзакции: сначала заявка, потом офферы.
 	// RETURNING — для истории офферов и уведомлений их кредиторам.
 	RejectSentOffersByApplication(ctx context.Context, arg RejectSentOffersByApplicationParams) ([]RejectSentOffersByApplicationRow, error)
 	ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) (AmlFlag, error)

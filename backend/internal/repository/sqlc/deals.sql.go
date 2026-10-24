@@ -14,25 +14,44 @@ import (
 )
 
 const countDealsVisible = `-- name: CountDealsVisible :one
-SELECT count(*) FROM deals
-WHERE
+SELECT count(*)
+FROM deals d
+WHERE true
   -- Блок видимости — символ в символ как в GetDealVisible (sqlc не умеет общие фрагменты).
+  AND
   (
        $1::user_role = 'admin'
     OR ($1::user_role = 'borrower'
-        AND borrower_organization_id = $2::uuid)
+        AND d.borrower_organization_id = $2::uuid)
     OR ($1::user_role = 'lender'
-        AND lender_organization_id = $2::uuid)
+        AND d.lender_organization_id = $2::uuid)
   )
+  -- Сервис передаёт только для admin.
+  AND ($3::uuid IS NULL OR d.borrower_organization_id = $3::uuid)
+  AND ($4::uuid IS NULL OR d.lender_organization_id = $4::uuid)
+  -- Период сделки — по agreed_at (контракт listDeals).
+  AND ($5::timestamptz IS NULL OR d.agreed_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR d.agreed_at < $6::timestamptz)
 `
 
 type CountDealsVisibleParams struct {
-	ViewerRole UserRole  `json:"viewer_role"`
-	ViewerOrg  uuid.UUID `json:"viewer_org"`
+	ViewerRole        UserRole           `json:"viewer_role"`
+	ViewerOrg         uuid.UUID          `json:"viewer_org"`
+	BorrowerOrgFilter pgtype.UUID        `json:"borrower_org_filter"`
+	LenderOrgFilter   pgtype.UUID        `json:"lender_org_filter"`
+	CreatedFrom       pgtype.Timestamptz `json:"created_from"`
+	CreatedTo         pgtype.Timestamptz `json:"created_to"`
 }
 
 func (q *Queries) CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countDealsVisible, arg.ViewerRole, arg.ViewerOrg)
+	row := q.db.QueryRow(ctx, countDealsVisible,
+		arg.ViewerRole,
+		arg.ViewerOrg,
+		arg.BorrowerOrgFilter,
+		arg.LenderOrgFilter,
+		arg.CreatedFrom,
+		arg.CreatedTo,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -45,12 +64,12 @@ INSERT INTO deals (
     term_months, target_country_code, transfer_method, repayment_schedule,
     collateral, additional_terms
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    CASE WHEN $8::numeric IS NOT NULL 
-         THEN round($5::numeric * $8::numeric / 100, 2) 
-         ELSE NULL 
-    END,
-    $9, $10, $11, $12, $13, $14
+    $1, $2,
+    $3, $4,
+    $5, $6, $7,
+    $8::numeric, $9::numeric,
+    $10, $11, $12,
+    $13, $14, $15
 ) RETURNING id, number, application_id, offer_id, borrower_organization_id, lender_organization_id, amount, currency, interest_rate_annual, fee_percent, fee_amount, term_months, target_country_code, transfer_method, repayment_schedule, collateral, additional_terms, agreed_at
 `
 
@@ -63,6 +82,7 @@ type CreateDealParams struct {
 	Currency               string              `json:"currency"`
 	InterestRateAnnual     decimal.Decimal     `json:"interest_rate_annual"`
 	FeePercent             decimal.NullDecimal `json:"fee_percent"`
+	FeeAmount              decimal.NullDecimal `json:"fee_amount"`
 	TermMonths             int32               `json:"term_months"`
 	TargetCountryCode      string              `json:"target_country_code"`
 	TransferMethod         string              `json:"transfer_method"`
@@ -71,6 +91,8 @@ type CreateDealParams struct {
 	AdditionalTerms        pgtype.Text         `json:"additional_terms"`
 }
 
+// Снапшот условий принятого оффера. fee_amount считает сервис (dealFee): правило
+// округления — в одном месте, в Go; NULL ⇔ fee_percent NULL (deals_fee_chk).
 func (q *Queries) CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error) {
 	row := q.db.QueryRow(ctx, createDeal,
 		arg.ApplicationID,
@@ -81,6 +103,7 @@ func (q *Queries) CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, e
 		arg.Currency,
 		arg.InterestRateAnnual,
 		arg.FeePercent,
+		arg.FeeAmount,
 		arg.TermMonths,
 		arg.TargetCountryCode,
 		arg.TransferMethod,
@@ -113,14 +136,20 @@ func (q *Queries) CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, e
 }
 
 const getDealVisible = `-- name: GetDealVisible :one
-SELECT id, number, application_id, offer_id, borrower_organization_id, lender_organization_id, amount, currency, interest_rate_annual, fee_percent, fee_amount, term_months, target_country_code, transfer_method, repayment_schedule, collateral, additional_terms, agreed_at FROM deals
-WHERE id = $1
-  AND (
+SELECT d.id, d.number, d.application_id, d.offer_id, d.borrower_organization_id, d.lender_organization_id, d.amount, d.currency, d.interest_rate_annual, d.fee_percent, d.fee_amount, d.term_months, d.target_country_code, d.transfer_method, d.repayment_schedule, d.collateral, d.additional_terms, d.agreed_at,
+       bo.name AS borrower_name, bo.country_code AS borrower_country_code,
+       lo.name AS lender_name,   lo.country_code AS lender_country_code
+FROM deals d
+JOIN organizations bo ON bo.id = d.borrower_organization_id
+JOIN organizations lo ON lo.id = d.lender_organization_id
+WHERE d.id = $1
+  AND
+  (
        $2::user_role = 'admin'
     OR ($2::user_role = 'borrower'
-        AND borrower_organization_id = $3::uuid)
+        AND d.borrower_organization_id = $3::uuid)
     OR ($2::user_role = 'lender'
-        AND lender_organization_id = $3::uuid)
+        AND d.lender_organization_id = $3::uuid)
   )
 `
 
@@ -130,89 +159,135 @@ type GetDealVisibleParams struct {
 	ViewerOrg  uuid.UUID `json:"viewer_org"`
 }
 
+type GetDealVisibleRow struct {
+	Deal                Deal   `json:"deal"`
+	BorrowerName        string `json:"borrower_name"`
+	BorrowerCountryCode string `json:"borrower_country_code"`
+	LenderName          string `json:"lender_name"`
+	LenderCountryCode   string `json:"lender_country_code"`
+}
+
 // Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
 // несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
-func (q *Queries) GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error) {
+func (q *Queries) GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (GetDealVisibleRow, error) {
 	row := q.db.QueryRow(ctx, getDealVisible, arg.ID, arg.ViewerRole, arg.ViewerOrg)
-	var i Deal
+	var i GetDealVisibleRow
 	err := row.Scan(
-		&i.ID,
-		&i.Number,
-		&i.ApplicationID,
-		&i.OfferID,
-		&i.BorrowerOrganizationID,
-		&i.LenderOrganizationID,
-		&i.Amount,
-		&i.Currency,
-		&i.InterestRateAnnual,
-		&i.FeePercent,
-		&i.FeeAmount,
-		&i.TermMonths,
-		&i.TargetCountryCode,
-		&i.TransferMethod,
-		&i.RepaymentSchedule,
-		&i.Collateral,
-		&i.AdditionalTerms,
-		&i.AgreedAt,
+		&i.Deal.ID,
+		&i.Deal.Number,
+		&i.Deal.ApplicationID,
+		&i.Deal.OfferID,
+		&i.Deal.BorrowerOrganizationID,
+		&i.Deal.LenderOrganizationID,
+		&i.Deal.Amount,
+		&i.Deal.Currency,
+		&i.Deal.InterestRateAnnual,
+		&i.Deal.FeePercent,
+		&i.Deal.FeeAmount,
+		&i.Deal.TermMonths,
+		&i.Deal.TargetCountryCode,
+		&i.Deal.TransferMethod,
+		&i.Deal.RepaymentSchedule,
+		&i.Deal.Collateral,
+		&i.Deal.AdditionalTerms,
+		&i.Deal.AgreedAt,
+		&i.BorrowerName,
+		&i.BorrowerCountryCode,
+		&i.LenderName,
+		&i.LenderCountryCode,
 	)
 	return i, err
 }
 
 const listDealsVisible = `-- name: ListDealsVisible :many
-SELECT id, number, application_id, offer_id, borrower_organization_id, lender_organization_id, amount, currency, interest_rate_annual, fee_percent, fee_amount, term_months, target_country_code, transfer_method, repayment_schedule, collateral, additional_terms, agreed_at FROM deals
-WHERE
+SELECT d.id, d.number, d.application_id, d.offer_id, d.borrower_organization_id, d.lender_organization_id, d.amount, d.currency, d.interest_rate_annual, d.fee_percent, d.fee_amount, d.term_months, d.target_country_code, d.transfer_method, d.repayment_schedule, d.collateral, d.additional_terms, d.agreed_at,
+       bo.name AS borrower_name, bo.country_code AS borrower_country_code,
+       lo.name AS lender_name,   lo.country_code AS lender_country_code
+FROM deals d
+JOIN organizations bo ON bo.id = d.borrower_organization_id
+JOIN organizations lo ON lo.id = d.lender_organization_id
+WHERE true
   -- Блок видимости — символ в символ как в GetDealVisible (sqlc не умеет общие фрагменты).
+  AND
   (
-       $3::user_role = 'admin'
-    OR ($3::user_role = 'borrower'
-        AND borrower_organization_id = $4::uuid)
-    OR ($3::user_role = 'lender'
-        AND lender_organization_id = $4::uuid)
+       $1::user_role = 'admin'
+    OR ($1::user_role = 'borrower'
+        AND d.borrower_organization_id = $2::uuid)
+    OR ($1::user_role = 'lender'
+        AND d.lender_organization_id = $2::uuid)
   )
-ORDER BY agreed_at DESC
-LIMIT $1 OFFSET $2
+  -- Сервис передаёт только для admin.
+  AND ($3::uuid IS NULL OR d.borrower_organization_id = $3::uuid)
+  AND ($4::uuid IS NULL OR d.lender_organization_id = $4::uuid)
+  -- Период сделки — по agreed_at (контракт listDeals).
+  AND ($5::timestamptz IS NULL OR d.agreed_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR d.agreed_at < $6::timestamptz)
+ORDER BY d.agreed_at DESC, d.id DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListDealsVisibleParams struct {
-	Limit      int32     `json:"limit"`
-	Offset     int32     `json:"offset"`
-	ViewerRole UserRole  `json:"viewer_role"`
-	ViewerOrg  uuid.UUID `json:"viewer_org"`
+	ViewerRole        UserRole           `json:"viewer_role"`
+	ViewerOrg         uuid.UUID          `json:"viewer_org"`
+	BorrowerOrgFilter pgtype.UUID        `json:"borrower_org_filter"`
+	LenderOrgFilter   pgtype.UUID        `json:"lender_org_filter"`
+	CreatedFrom       pgtype.Timestamptz `json:"created_from"`
+	CreatedTo         pgtype.Timestamptz `json:"created_to"`
+	PageOffset        int32              `json:"page_offset"`
+	PageLimit         int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]Deal, error) {
+type ListDealsVisibleRow struct {
+	Deal                Deal   `json:"deal"`
+	BorrowerName        string `json:"borrower_name"`
+	BorrowerCountryCode string `json:"borrower_country_code"`
+	LenderName          string `json:"lender_name"`
+	LenderCountryCode   string `json:"lender_country_code"`
+}
+
+// Видимость — на обязательных arg (как в GetDealVisible); бизнес-фильтры — narg:
+// они только сужают выборку и не могут её открыть.
+func (q *Queries) ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]ListDealsVisibleRow, error) {
 	rows, err := q.db.Query(ctx, listDealsVisible,
-		arg.Limit,
-		arg.Offset,
 		arg.ViewerRole,
 		arg.ViewerOrg,
+		arg.BorrowerOrgFilter,
+		arg.LenderOrgFilter,
+		arg.CreatedFrom,
+		arg.CreatedTo,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Deal{}
+	items := []ListDealsVisibleRow{}
 	for rows.Next() {
-		var i Deal
+		var i ListDealsVisibleRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Number,
-			&i.ApplicationID,
-			&i.OfferID,
-			&i.BorrowerOrganizationID,
-			&i.LenderOrganizationID,
-			&i.Amount,
-			&i.Currency,
-			&i.InterestRateAnnual,
-			&i.FeePercent,
-			&i.FeeAmount,
-			&i.TermMonths,
-			&i.TargetCountryCode,
-			&i.TransferMethod,
-			&i.RepaymentSchedule,
-			&i.Collateral,
-			&i.AdditionalTerms,
-			&i.AgreedAt,
+			&i.Deal.ID,
+			&i.Deal.Number,
+			&i.Deal.ApplicationID,
+			&i.Deal.OfferID,
+			&i.Deal.BorrowerOrganizationID,
+			&i.Deal.LenderOrganizationID,
+			&i.Deal.Amount,
+			&i.Deal.Currency,
+			&i.Deal.InterestRateAnnual,
+			&i.Deal.FeePercent,
+			&i.Deal.FeeAmount,
+			&i.Deal.TermMonths,
+			&i.Deal.TargetCountryCode,
+			&i.Deal.TransferMethod,
+			&i.Deal.RepaymentSchedule,
+			&i.Deal.Collateral,
+			&i.Deal.AdditionalTerms,
+			&i.Deal.AgreedAt,
+			&i.BorrowerName,
+			&i.BorrowerCountryCode,
+			&i.LenderName,
+			&i.LenderCountryCode,
 		); err != nil {
 			return nil, err
 		}

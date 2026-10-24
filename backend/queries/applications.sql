@@ -34,12 +34,13 @@ WHERE a.id = sqlc.arg('id')
                            AND o.lender_organization_id = sqlc.arg('viewer_org')::uuid)))
   );
 
--- name: GetApplicationForUpdate :one
--- Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
-SELECT a.id, a.borrower_organization_id, a.status 
-FROM applications a
-WHERE a.id = (SELECT o.application_id FROM offers o WHERE o.id = $1) 
-FOR UPDATE OF a;
+-- name: LockApplicationByOfferForBorrower :one
+-- Первый шаг acceptOffer: блокирует заявку оффера, если она принадлежит заёмщику.
+-- Статус намеренно не фильтруется: сервис отличает 404 (чужая) от 409 (уже agreed/cancelled).
+SELECT a.* FROM applications a
+  JOIN offers o ON o.application_id = a.id
+ WHERE o.id = sqlc.arg('offer_id') AND a.borrower_organization_id = sqlc.arg('borrower_org')::uuid
+   FOR UPDATE OF a;
 
 -- name: UpdateApplication :one
 UPDATE applications SET
