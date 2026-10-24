@@ -57,12 +57,7 @@ func notificationFilter(q api.ListNotificationsParams) service.NotificationFilte
 	if q.UnreadOnly != nil {
 		f.UnreadOnly = *q.UnreadOnly
 	}
-	if q.Page != nil {
-		f.Page = *q.Page
-	}
-	if q.PageSize != nil {
-		f.PageSize = *q.PageSize
-	}
+	f.Page, f.PageSize = pageParams(q.Page, q.PageSize)
 	return f
 }
 
