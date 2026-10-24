@@ -26,10 +26,11 @@ VACUUM_NO_UPDATE_CHECK := true
 MSYS_NO_PATHCONV := 1
 PSQL          := docker exec -i $(PG_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -v ON_ERROR_STOP=1
 
-.PHONY: db db-reset up down logs ps migrate-up migrate-down migrate-reset migrate-status migrate-create seed-demo test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
+.PHONY: db db-reset up down logs ps migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed-demo test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
 
-# Полный цикл: postgres + миграции + проверка инвариантов + демо-данные.
-db: up migrate-up test-invariants seed-demo
+# Полный цикл: postgres + миграции + санкционный мок-список + проверка инвариантов + демо-данные.
+# load-sanctions — раньше seed-demo: сид ссылается на запись мок-списка (BE-16).
+db: up migrate-up load-sanctions test-invariants seed-demo
 
 # То же самое с чистой базы (удаляет volume).
 db-reset:
@@ -48,6 +49,14 @@ logs:
 
 ps:
 	docker compose ps
+
+# Санкционный список (BE-13): по умолчанию — встроенный мок; UK Sanctions List —
+# make load-sanctions SANCTIONS_SOURCE=uk_fcdo SANCTIONS_FILE=<скачанный CSV>.
+# abspath обязателен: go -C backend меняет рабочий каталог.
+SANCTIONS_SOURCE ?= mock
+SANCTIONS_FILE   ?=
+load-sanctions:
+	go -C backend run ./cmd/loadsanctions -source=$(SANCTIONS_SOURCE) $(if $(SANCTIONS_FILE),-file=$(abspath $(SANCTIONS_FILE)))
 
 migrate-up:
 	$(GOOSE) -dir $(MIGRATIONS) postgres "$(DATABASE_URL)" up

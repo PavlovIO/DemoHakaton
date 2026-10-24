@@ -159,6 +159,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: migrate
         run: make migrate-up
+      - name: load sanctions
+        run: make load-sanctions
       # Без -short: интеграционные тесты идут против Postgres из services.
       - name: go test
         run: go -C backend test -race -count=1 ./...
