@@ -23,7 +23,7 @@
 4. **`Authenticate` — «мягкий»:** валидная сессия → principal (с `KycStatus` из той же строки сессии, `LEFT JOIN organizations`); нет сессии → дальше без principal; сбой БД → `500`. Протухшая cookie не мешает `login`.
 5. **CSRF — после `Authorize`**, по правилу найденной операции: не проверяется у публичных (`register`, `login` — DECISIONS п. 1), у безопасных методов и у путей не из спеки.
 6. **Видимость — в SQL.** Чтение заявки, оффера, сделки и их списки идут только через `Get*Visible` / `List*Visible` / `Count*Visible` с обязательными `viewer_role` и `viewer_org` (`Principal.ViewerRole()`, `ViewerOrg()`). Правило — `OR`-ветки по ролям в `WHERE`; неизвестная роль и `uuid.Nil` видят ничего. Чужое и несуществующее одинаково дают `pgx.ErrNoRows` → `404`.
-7. **Сервис повторяет проверку роли** — одна строка, защита в глубину от ошибки в `x-roles`.
+7. **Сервис повторяет проверку роли и KYC** — одна строка, защита в глубину от ошибки в `x-roles`: `p.RequireRole(repository.UserRoleBorrower, …)` → `403 FORBIDDEN`, `p.RequireKYCVerified()` → `403 KYC_NOT_VERIFIED` (`internal/service/principal.go`).
 
 ## Rejected
 
