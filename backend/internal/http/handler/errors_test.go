@@ -123,7 +123,6 @@ func TestRouterErrors(t *testing.T) {
 		{"invalid uuid in path", "/api/v1/applications/not-a-uuid", 400, "VALIDATION_ERROR", "applicationId"},
 		{"invalid query param", "/api/v1/applications?page=abc", 400, "VALIDATION_ERROR", "page"},
 		{"unknown route", "/api/v1/nope", 404, "NOT_FOUND", ""},
-		{"not implemented yet", "/api/v1/notifications", 501, "NOT_IMPLEMENTED", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -142,6 +141,18 @@ func TestRouterErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Ещё не реализованная операция (BE-12) отвечает 501 в формате Error; все такие — только для admin.
+func TestNotImplemented(t *testing.T) {
+	fixture, deps := authFixture()
+	deps.Auth = &cookieAuth{fakeAuth: *fixture}
+	deps.Dicts, deps.DB = fakeDicts{}, okDB{}
+	srv := newTestServer(t, deps)
+
+	resp, body := sessionRequest(t, srv, "admin", "GET", "/api/v1/admin/aml/flags", "", nil)
+
+	wantError(t, resp, body, http.StatusNotImplemented, "NOT_IMPLEMENTED", "")
 }
 
 func TestHealthz(t *testing.T) {
