@@ -258,6 +258,20 @@ func TestSubmitKyc(t *testing.T) {
 		}
 	})
 
+	t.Run("иная ошибка реестра — тоже мягкая деградация, не 500", func(t *testing.T) {
+		store, screener, _, err := run(t, setup{status: repository.KycStatusDraft, docs: requiredDocs,
+			verifier: fakeVerifier{err: errors.New("decode registry response: unexpected EOF")}})
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if screener.subject.Registry == nil || screener.subject.Registry.Outcome != aml.RegistryUnavailable {
+			t.Fatalf("Registry = %+v", screener.subject.Registry)
+		}
+		if !store.submitted || len(store.registryRows) != 0 {
+			t.Fatalf("submitted = %v, registry_checks = %+v", store.submitted, store.registryRows)
+		}
+	})
+
 	t.Run("реестр ответил — снапшот в registry_checks", func(t *testing.T) {
 		store, screener, _, err := run(t, setup{status: repository.KycStatusDraft, docs: requiredDocs,
 			verifier: fakeVerifier{result: registry.Result{Source: registry.SourceMock, Query: "7707083893", Found: true, Name: "ООО Альфа", Status: "active"}}})
