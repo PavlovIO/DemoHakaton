@@ -22,7 +22,7 @@
 
 ```sh
 cp .env.example .env   # один раз
-make db                # Postgres + миграции + мок-санкционный список + демо-данные
+make db                # Postgres + миграции + мок-санкционный список + демо-данные (см. «Демо-данные»)
 make run               # API на http://localhost:8080/api/v1
 curl localhost:8080/api/v1/healthz
 ```
@@ -45,6 +45,48 @@ curl localhost:8080/api/v1/healthz
 Официальный UK Sanctions List: скачайте CSV со страницы [The UK Sanctions List](https://www.gov.uk/government/publications/the-uk-sanctions-list) (ссылка «CSV», без регистрации) и выполните `make load-sanctions SANCTIONS_SOURCE=uk_fcdo SANCTIONS_FILE=path/to/UK-Sanctions-List.csv`. Файл в репозиторий не коммитится. Загрузчик подключается через `MIGRATE_DATABASE_URL`, а без неё — через `DATABASE_URL`.
 
 Загруженные KYC-документы сервер хранит в каталоге `DOCUMENT_STORAGE_DIR` (по умолчанию `storage/documents` в корне репо, в `.gitignore`; права `0700`, файлы `0600` под случайными именами). Каталог должен переживать перезапуски: когда появится контейнер бэкенда — named volume на этот путь. Сервер не стартует, если в каталог нельзя писать.
+
+### Демо-данные
+
+`make db` заливает демо-сид (`backend/migrations/testdata/seed_demo_*.sql`) и кладёт PDF документов в `DOCUMENT_STORAGE_DIR`. Вариантов два, на одной БД они несовместимы — переключение только с чистой базы:
+
+| Команда | Вариант |
+|---|---|
+| `make db-reset` | **B** (по умолчанию): «Альфа» и Beta Corp верифицированы, у заявки «Альфы» 500 000 EUR → DE офферы Beta (8 % + комиссия 1 %) и Epsilon (9.5 %), есть чат; история за ~3 месяца для аналитики |
+| `make db-reset SEED=a` | **A**: KYC с нуля — «Альфа» в `draft` без документов, Beta ждёт проверки |
+
+`make seed` (`make seed-demo`) повторно применяет сид к текущей БД; сид идемпотентен.
+
+#### Демо-аккаунты
+
+⚠️ Только для локального демо. Пароль у всех — **`Demo-Pass-2026`**. Компании вымышленные; ИНН и LEI — с корректными контрольными суммами, префикс LEI `DEMO` не выдан ни одному LOU.
+
+| Компания | Тип / страна | Рег. номер | LEI | Email | Вариант A | Вариант B |
+|---|---|---|---|---|---|---|
+| admin | admin | — | — | `admin@liquidity.local` | active | active |
+| ООО «Альфа» | заёмщик / RU | `7700000009` | — | `alpha@liquidity.local` | `draft`, профиль заполнен, документов нет | `verified` |
+| Beta Corp Ltd | кредитор / CY | `CY-123456` | `DEMO00BETACORP000162` | `beta@liquidity.local` | `under_review`, документы загружены | `verified` |
+| Gamma GmbH | кредитор / DE | `HRB-555555` | `DEMO00GAMMAGMBH00148` | `gamma@liquidity.local` | `under_review` + открытый AML-флаг `high` (санкции) | то же |
+| АО «Вектор» | заёмщик / RU | `7700000016` | — | `vector@liquidity.local` | `verified`, владелец заявок на витрине | то же |
+| Delta Trading | кредитор / KW | `KW-777777` | `DEMO00DELTATRADE0174` | `delta@liquidity.local` | `under_review` + открытый флаг FATF `medium` | то же |
+| Epsilon Capital Pte | кредитор / SG | `201988888E` | `DEMO00EPSILONCAP0155` | `epsilon@liquidity.local` | `verified` | `verified`, оффер к заявке «Альфы» |
+| ООО «Омега» | заёмщик / RU | `7700000023` | — | `omega@liquidity.local` | `rejected` (ликвидирована по реестру) | то же |
+| ООО «Сигма» | заёмщик / RU | `7700000030` | — | `sigma@liquidity.local` | `verified`, пользователь заблокирован | то же |
+
+#### Сценарий US-14 по шагам
+
+Вариант **B** (`make db-reset`):
+1. Регистрация — **новой** компанией (не «Альфой»: она уже в сиде, повторная регистрация даст 409).
+2. Вход `alpha@liquidity.local` → заявка 500 000 EUR / 6 мес. / DE уже опубликована, у неё офферы Beta и Epsilon.
+3. Вход `beta@liquidity.local` → витрина, фильтр «Германия»: две заявки, нужная — 500 000 EUR на 6 мес.
+4. Чат по офферу Beta, затем «Альфа» принимает оффер Beta → заявка «Согласовано», сделка с комиссией 5 000.00 EUR; оффер Epsilon автоматически отклонён.
+5. Admin: аналитика за ~3 месяца; журнал аудита — блокировка «Сигмы»; вход `sigma@` → «Аккаунт заблокирован».
+
+Вариант **A** (`make db-reset SEED=a`):
+1. Регистрация новой компании.
+2. Вход `alpha@liquidity.local` → загрузка документов, отправка KYC.
+3. Admin одобряет KYC «Альфы» и Beta; одобрение Gamma → 409 (открытый `high`-флаг), у Delta виден флаг FATF.
+4. «Альфа» создаёт заявку 500 000 EUR / 6 мес. / DE → admin публикует → Beta находит её фильтром «Германия» → оффер 8 % + 1 % → чат → «Альфа» принимает.
 
 Как добавить реализацию операции API — см. комментарий в [`backend/internal/http/handler/handler.go`](backend/internal/http/handler/handler.go); образец — справочники (`dictionaries.go` + `dictionaries_test.go`). Сервер сгенерирован по пакету на тег (`backend/internal/http/api/<tag>api`), модели — общий пакет `api`, реализации — `backend/internal/http/handler/<tag>.go` ([ADR-0003](docs/adr/0003-server-package-per-tag.md)). Бизнес-логика — ядро `backend/internal/service` и пакеты доменов `auth`, `kyc`, `lending`, `notifications`, `dictionaries` ([ADR-0005](docs/adr/0005-service-packages-by-domain.md)).
 
