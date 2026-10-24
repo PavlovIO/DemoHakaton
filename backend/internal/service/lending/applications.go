@@ -247,7 +247,7 @@ func (s *Applications) List(ctx context.Context, p service.Principal, f Applicat
 
 // Get — заявка, если p её видит; чужая и несуществующая — одинаково 404 (IDOR).
 func (s *Applications) Get(ctx context.Context, p service.Principal, id uuid.UUID) (Application, error) {
-	return s.reread(ctx, s.store, p, id)
+	return LoadApplication(ctx, s.store, p, id)
 }
 
 // History — переходы заявки и её офферов по времени. Кредитор видит только свои офферы
@@ -322,7 +322,7 @@ func (s *Applications) Create(ctx context.Context, p service.Principal, meta ser
 		if err := service.WriteAudit(ctx, q, meta, applicationAudit(AuditApplicationCreate, p, created.ID)); err != nil {
 			return err
 		}
-		out, err = s.reread(ctx, q, p, created.ID)
+		out, err = LoadApplication(ctx, q, p, created.ID)
 		return err
 	})
 	return out, err
@@ -358,7 +358,7 @@ func (s *Applications) Update(ctx context.Context, p service.Principal, id uuid.
 		if err != nil {
 			return transitionErr(err, status, status)
 		}
-		out, err = s.reread(ctx, q, p, id)
+		out, err = LoadApplication(ctx, q, p, id)
 		return err
 	})
 	return out, err
@@ -414,7 +414,7 @@ func (s *Applications) Submit(ctx context.Context, p service.Principal, meta ser
 				return err
 			}
 		}
-		out, err = s.reread(ctx, q, p, id)
+		out, err = LoadApplication(ctx, q, p, id)
 		return err
 	})
 	return out, err
@@ -452,7 +452,7 @@ func (s *Applications) Cancel(ctx context.Context, p service.Principal, meta ser
 		if err := service.WriteAudit(ctx, q, meta, applicationAudit(AuditApplicationCancel, p, id)); err != nil {
 			return err
 		}
-		out, err = s.reread(ctx, q, p, id)
+		out, err = LoadApplication(ctx, q, p, id)
 		return err
 	})
 	return out, err
@@ -544,9 +544,15 @@ func transitionErr(err error, from, to ApplicationStatus) error {
 	return pgerr.Map(err, applicationNotFound)
 }
 
-// reread — заявка глазами p на том же q: ответ мутации собирает borrower, offers_count и
-// остальные вычисляемые поля той же конвертацией, что и Get.
-func (s *Applications) reread(ctx context.Context, q ApplicationStore, p service.Principal, id uuid.UUID) (Application, error) {
+// ApplicationReader — чтение заявки глазами пользователя: store или q транзакции.
+type ApplicationReader interface {
+	GetApplicationVisible(ctx context.Context, arg repository.GetApplicationVisibleParams) (repository.GetApplicationVisibleRow, error)
+}
+
+// LoadApplication — заявка глазами p на том же q: ответ мутации собирает borrower,
+// offers_count и остальные вычисляемые поля той же конвертацией, что и Get. Экспортирована
+// для модерации (service/admin): ответ админа строится так же, как у остальных ролей.
+func LoadApplication(ctx context.Context, q ApplicationReader, p service.Principal, id uuid.UUID) (Application, error) {
 	row, err := q.GetApplicationVisible(ctx, repository.GetApplicationVisibleParams{
 		ID: id, ViewerRole: p.ViewerRole(), ViewerOrg: p.ViewerOrg(),
 	})

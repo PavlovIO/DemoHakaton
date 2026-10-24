@@ -48,8 +48,9 @@ func kycEditDenied() *apperr.Error {
 	return apperr.New(apperr.CodeInvalidTransition, "Профиль и документы можно менять только в статусах draft и rejected")
 }
 
-// nextKycStatus — статус после действия или 409 INVALID_STATUS_TRANSITION.
-func nextKycStatus(from repository.KycStatus, action KycAction) (repository.KycStatus, error) {
+// NextKycStatus — статус после действия или 409 INVALID_STATUS_TRANSITION. Экспортирована
+// для решений админа (service/admin): таблица переходов остаётся одна (ADR-0001).
+func NextKycStatus(from repository.KycStatus, action KycAction) (repository.KycStatus, error) {
 	if to, ok := kycTransitions[from][action]; ok {
 		return to, nil
 	}

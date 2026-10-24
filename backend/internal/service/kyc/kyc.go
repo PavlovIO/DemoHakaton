@@ -127,7 +127,7 @@ func (k *Kyc) MyOrganization(ctx context.Context, p service.Principal) (Organiza
 	if err != nil {
 		return OrganizationProfile{}, err
 	}
-	return k.profile(ctx, k.store, orgID)
+	return LoadProfile(ctx, k.store, orgID)
 }
 
 // UpdateMyOrganization правит профиль и (если передан) заменяет список бенефициаров.
@@ -150,7 +150,7 @@ func (k *Kyc) UpdateMyOrganization(ctx context.Context, p service.Principal, in 
 		if err != nil {
 			return pgerr.Map(err, "Организация не найдена")
 		}
-		if _, err := nextKycStatus(org.KycStatus, KycEdit); err != nil {
+		if _, err := NextKycStatus(org.KycStatus, KycEdit); err != nil {
 			return err
 		}
 		if _, err := q.UpdateOrganization(ctx, updateOrganizationParams(orgID, in)); err != nil {
@@ -165,7 +165,7 @@ func (k *Kyc) UpdateMyOrganization(ctx context.Context, p service.Principal, in 
 				return err
 			}
 		}
-		profile, err = k.profile(ctx, q, orgID)
+		profile, err = LoadProfile(ctx, q, orgID)
 		return err
 	})
 	if err != nil {
@@ -217,13 +217,15 @@ func updateOrganizationParams(orgID uuid.UUID, in OrganizationUpdateInput) repos
 	}
 }
 
-// profileReader — то, что нужно для чтения профиля и вне транзакции, и внутри неё.
-type profileReader interface {
+// ProfileReader — то, что нужно для чтения профиля и вне транзакции, и внутри неё.
+type ProfileReader interface {
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (repository.Organization, error)
 	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]repository.Beneficiary, error)
 }
 
-func (k *Kyc) profile(ctx context.Context, r profileReader, orgID uuid.UUID) (OrganizationProfile, error) {
+// LoadProfile — организация с бенефициарами: ответ профиля, submitKyc и решений админа
+// (BE-12). r — store или q транзакции: внутри InTx ответ видит только что сделанный переход.
+func LoadProfile(ctx context.Context, r ProfileReader, orgID uuid.UUID) (OrganizationProfile, error) {
 	org, err := r.GetOrganizationByID(ctx, orgID)
 	if err != nil {
 		return OrganizationProfile{}, pgerr.Map(err, "Организация не найдена")
