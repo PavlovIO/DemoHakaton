@@ -179,12 +179,7 @@ func applicationFilter(q api.ListApplicationsParams) service.ApplicationFilter {
 	if q.Sort != nil {
 		f.Sort = string(*q.Sort)
 	}
-	if q.Page != nil {
-		f.Page = *q.Page
-	}
-	if q.PageSize != nil {
-		f.PageSize = *q.PageSize
-	}
+	f.Page, f.PageSize = pageParams(q.Page, q.PageSize)
 	return f
 }
 
