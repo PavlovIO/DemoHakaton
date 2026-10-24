@@ -173,7 +173,15 @@ func TestApproveKycConcurrent(t *testing.T) {
 	ctx := context.Background()
 	pool := servicetest.NewPool(t)
 	company := insertCompany(ctx, t, pool, "Concurrent approve", repository.KycStatusUnderReview)
-	adm := insertAdmin(ctx, t, pool)
+	// Админ закоммичен в общую БД, пока идут тесты других пакетов: blocked, чтобы не попасть
+	// в «каждому активному админу» (TestSubmitKycIntegration считает их). Сервису статус
+	// principal не важен — его проверяет сессия.
+	var adminID uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO users (email, password_hash, role, status)
+		VALUES ($1, 'x', 'admin', 'blocked') RETURNING id`, "test-"+uuid.NewString()+"@example.test").Scan(&adminID); err != nil {
+		t.Fatalf("admin: %v", err)
+	}
+	adm := service.Principal{UserID: adminID, Role: "admin"}
 	t.Cleanup(func() { deleteCommitted(t, pool, *company.OrgID, adm.UserID) })
 
 	svc := newIntegrationAdmin(pool)
