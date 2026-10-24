@@ -181,7 +181,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 |---|---|---|---|
 | GET | `/dictionaries/countries` | Страны (ISO 3166-1) с флагом `fatf_high_risk` | все |
 | GET | `/dictionaries/currencies` | Валюты (ISO 4217) | все |
-| GET | `/dictionaries/transfer-methods` | Способы передачи средств (`swift`, `sepa`, `other`) | все |
+| GET | `/dictionaries/transfer-methods` | Способы передачи средств (`swift`, `sepa`, `spfs`, `cips`, `other`) | все |
 
 ### applications — заявки заёмщиков
 

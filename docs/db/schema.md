@@ -145,9 +145,9 @@ erDiagram
 |---|---|---|
 | `countries` | ISO 3166-1 alpha-2, названия ru/en, `fatf_list` (`black`/`grey`/NULL) + `fatf_as_of`, `is_unfriendly` | `GET /dictionaries/countries`. Поле `fatf_high_risk = fatf_list IS NOT NULL` |
 | `currencies` | ISO 4217 | `GET /dictionaries/currencies` |
-| `transfer_methods` | swift / sepa / other | `GET /dictionaries/transfer-methods` |
+| `transfer_methods` | swift / sepa / spfs (СПФС) / cips (CIPS) / other | `GET /dictionaries/transfer-methods` |
 
-В сиде не полный ISO, а около 30 стран, нужных для демо и типичных юрисдикций. Чёрный список FATF взят по итогам пленара июня 2026. Серый список и перечень недружественных стран (распоряжение № 430-р) нужно сверить с первоисточниками: это отдельная задача.
+В сиде не полный ISO, а около 50 стран, нужных для демо и типичных юрисдикций. Чёрный (`00002`) и серый (`00005`, 22 юрисдикции) списки FATF взяты по итогам пленара июня 2026. Перечень недружественных стран (распоряжение № 430-р) и полный ISO 3166-1 — отдельная задача (BE-02).
 
 ### Организации и пользователи
 

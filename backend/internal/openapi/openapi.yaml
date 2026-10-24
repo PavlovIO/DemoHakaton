@@ -2993,6 +2993,8 @@ components:
       enum:
         - swift
         - sepa
+        - spfs
+        - cips
         - other
       type: string
     User:
