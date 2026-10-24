@@ -2,7 +2,9 @@
 -- Права роли приложения lp_app (создаёт backend/db/roles.sql; без неё миграция падает — так задумано).
 -- Минимум, выведенный из backend/queries/*.sql. Добавляешь таблицу — добавь GRANT для lp_app
 -- в той же миграции: ALTER DEFAULT PRIVILEGES не используем, забытый GRANT ловит
--- TestDBPrivilegesIntegration. Последовательности не нужны: id — GENERATED ALWAYS AS IDENTITY.
+-- TestDBPrivilegesIntegration (только отсутствие SELECT: недостающие INSERT/UPDATE ловят интеграционные
+-- тесты сервисов). Последовательности не нужны: id и номера — uuid или GENERATED ALWAYS AS
+-- IDENTITY, а identity не требует USAGE на свою последовательность.
 
 GRANT USAGE ON SCHEMA public TO lp_app;
 

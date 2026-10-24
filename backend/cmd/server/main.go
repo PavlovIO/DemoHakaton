@@ -166,7 +166,10 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 	if cfg.DBMaxConns > 0 {
 		poolCfg.MaxConns = cfg.DBMaxConns
 	}
-	poolCfg.ConnConfig.RuntimeParams["application_name"] = dbApplicationName
+	// Своё имя из DATABASE_URL (например, чтобы различать реплики) не затираем.
+	if _, ok := poolCfg.ConnConfig.RuntimeParams["application_name"]; !ok {
+		poolCfg.ConnConfig.RuntimeParams["application_name"] = dbApplicationName
+	}
 	warnIfPlaintextRemote(poolCfg)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -180,7 +183,7 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 		pool.Close()
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
-	if err := warnIfSuperuser(pingCtx, pool); err != nil {
+	if err := warnIfPrivilegedRole(pingCtx, pool); err != nil {
 		pool.Close()
 		return nil, err
 	}
@@ -188,28 +191,39 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// warnIfSuperuser предупреждает, если DATABASE_URL указывает на суперпользователя.
-// Приложение должно ходить под lp_app (backend/db/roles.sql): права БД — последняя линия
-// защиты audit_log и сделок. Не падаем, чтобы устаревший .env не ломал запуск.
-func warnIfSuperuser(ctx context.Context, pool *pgxpool.Pool) error {
-	var superuser bool
-	err := pool.QueryRow(ctx, "SELECT rolsuper FROM pg_roles WHERE rolname = current_user").Scan(&superuser)
+// warnIfPrivilegedRole предупреждает, если DATABASE_URL указывает на суперпользователя или
+// владельца таблиц (lp_migrator из MIGRATE_DATABASE_URL): обоим GRANT не указ. Приложение
+// должно ходить под lp_app (backend/db/roles.sql): права БД — последняя линия защиты
+// audit_log и сделок. Не падаем, чтобы устаревший .env не ломал запуск.
+func warnIfPrivilegedRole(ctx context.Context, pool *pgxpool.Pool) error {
+	var superuser, owner bool
+	err := pool.QueryRow(ctx, `SELECT rolsuper,
+		EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tableowner = current_user)
+		FROM pg_roles WHERE rolname = current_user`).Scan(&superuser, &owner)
 	if err != nil {
 		return fmt.Errorf("check database role: %w", err)
 	}
-	if superuser {
+	switch {
+	case superuser:
 		slog.Warn("DATABASE_URL connects as a superuser; use the lp_app role (see .env.example)")
+	case owner:
+		slog.Warn("DATABASE_URL connects as the owner of the tables; use the lp_app role (see .env.example)")
 	}
 	return nil
 }
 
-// warnIfPlaintextRemote предупреждает о соединении с удалённой БД без TLS (sslmode=disable).
-// На стенде sslmode=require/verify-full задаётся в DATABASE_URL.
+// warnIfPlaintextRemote предупреждает о соединении с удалённой БД, которое может пойти без TLS:
+// sslmode=disable или allow/prefer (prefer — дефолт без sslmode: pgx откатывается на открытый
+// канал через Fallbacks). На стенде sslmode=require/verify-full задаётся в DATABASE_URL.
 func warnIfPlaintextRemote(poolCfg *pgxpool.Config) {
 	host := poolCfg.ConnConfig.Host
 	// Путь — unix-сокет, он не выходит за пределы машины.
 	isLocal := host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "/")
-	if !isLocal && poolCfg.ConnConfig.TLSConfig == nil {
+	plaintext := poolCfg.ConnConfig.TLSConfig == nil
+	for _, fb := range poolCfg.ConnConfig.Fallbacks {
+		plaintext = plaintext || fb.TLSConfig == nil
+	}
+	if !isLocal && plaintext {
 		slog.Warn("database connection to a remote host is not encrypted; set sslmode=require or verify-full", "host", host)
 	}
 }

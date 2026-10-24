@@ -215,6 +215,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: build
         run: docker compose --profile seed build
+      # Бэкенд ходит под lp_app — роли до его старта, как make db-roles.
+      - name: db roles
+        run: |
+          docker compose up -d --wait --wait-timeout 60 postgres
+          docker compose exec -T postgres psql -U lp -d liquidity_platform -v ON_ERROR_STOP=1             -v app_password=lp_app_dev_password -v migrator_password=lp_migrator_dev_password             -f - < backend/db/roles.sql
       - name: up
         run: docker compose up -d --wait --wait-timeout 120 backend
       - name: non-root

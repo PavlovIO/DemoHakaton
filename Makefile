@@ -90,7 +90,8 @@ migrate-create:
 	@echo "usage: make migrate-create name=<name>"
 	$(GOOSE) -dir $(MIGRATIONS) create $(name) sql
 
-# Роли lp_migrator/lp_app и права на БД; идемпотентно, работает и на существующем контейнере.
+# Роли lp_migrator/lp_app и права на БД; идемпотентно. На volume, созданном до ролей, таблицы
+# принадлежат lp и migrate-up под lp_migrator упадёт — нужен make db-reset (удаляет данные).
 db-roles:
 	docker cp backend/db/roles.sql $(PG_CONTAINER):/tmp/roles.sql
 	$(PSQL) -v "app_password=$(LP_APP_PASSWORD)" -v "migrator_password=$(LP_MIGRATOR_PASSWORD)" -f /tmp/roles.sql

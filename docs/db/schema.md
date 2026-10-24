@@ -47,7 +47,7 @@ goose -dir backend/migrations postgres "$MIGRATE_DATABASE_URL" reset
 | `SELECT, INSERT, UPDATE` | organizations, users, applications (`FOR UPDATE` требует UPDATE), offers, notifications, aml_flags, message_reads (upsert) |
 | `SELECT, INSERT, UPDATE, DELETE` | sessions, kyc_documents, beneficiaries |
 
-**Новая таблица** получает права только явным `GRANT … TO lp_app` в своей же миграции: `ALTER DEFAULT PRIVILEGES` не используем, а забытый `GRANT` ловит `TestDBPrivilegesIntegration` (`backend/internal/service/db_privileges_integration_test.go`). Права на последовательности не нужны: все `id` — `GENERATED ALWAYS AS IDENTITY`.
+**Новая таблица** получает права только явным `GRANT … TO lp_app` в своей же миграции: `ALTER DEFAULT PRIVILEGES` не используем, а таблицу без `SELECT` ловит `TestDBPrivilegesIntegration` (`backend/internal/service/db_privileges_integration_test.go`), недостающие `INSERT`/`UPDATE` — интеграционные тесты сервисов. Права на последовательности не нужны: `id` и номера — `uuid` или `GENERATED ALWAYS AS IDENTITY`, а identity не требует `USAGE` на свою последовательность.
 
 Сервер при старте пишет warning, если `DATABASE_URL` указывает на суперпользователя или на удалённый хост без TLS; на стенде `sslmode=require`/`verify-full` задаётся в `DATABASE_URL`, пароли ролей — переменными `LP_APP_PASSWORD` / `LP_MIGRATOR_PASSWORD` из секретов.
 
