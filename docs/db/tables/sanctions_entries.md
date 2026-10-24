@@ -34,13 +34,16 @@ erDiagram
     sanctions_entries ||..o{ aml_flags : "скрининг → rule = sanctions_match (без FK)"
 ```
 
-## sqlc-запросы (`queries/admin.sql`)
+## sqlc-запросы
 
-| Запрос | Тип | Что делает |
-|---|---|---|
-| `SearchSanctions` | `:many` | Кандидаты по `name_normalized % $1`, сортировка по `similarity` DESC, с лимитом |
+| Запрос | Файл | Тип | Что делает |
+|---|---|---|---|
+| `SearchSanctions` | `admin.sql` | `:many` | Кандидаты: `name_normalized % @query` и `similarity ≥ @min_similarity`, возвращает `trgm_score`, сортировка `trgm_score DESC, id`, лимит |
+| `DeleteSanctionsBySource` | `sanctions.sql` | `:execrows` | Удалить все записи источника |
+| `InsertSanctionsEntries` | `sanctions.sql` | `:copyfrom` | Залить записи источника (COPY) |
 
 Замечания:
-- Перед `SearchSanctions` нужно выполнить `SET pg_trgm.similarity_threshold = 0.4` **на том же соединении** (лучше `SET LOCAL` в транзакции). Иначе действует порог по умолчанию 0.3, а через пул соединений настройка может не дойти до запроса.
-- `similarity` не возвращается в результате, а он нужен для отладки и порога. Финальный скоринг (Jaro-Winkler) — в Go.
-- Нет запросов для загрузчика списков: upsert записей и удаление устаревших (`:copyfrom` или `INSERT … ON CONFLICT`).
+- Результат `SearchSanctions` не зависит от GUC `pg_trgm.similarity_threshold`, пока GUC ≤ 0.4 (`aml.candidateMinSimilarity`): `%` нужен только ради GIN-индекса, порог задаёт явное условие. GUC в коде не меняем. Проверяет `TestSearchSanctionsThresholdIndependent`.
+- Финальный скоринг (Jaro-Winkler) — в Go, `internal/aml`.
+- Загрузчик — `make load-sanctions` (`backend/cmd/loadsanctions`): мок-список (`internal/aml/sanctionslist/mock.json`, `source = 'mock'`) или UK Sanctions List CSV (`SANCTIONS_SOURCE=uk_fcdo SANCTIONS_FILE=…`). Источник заменяется атомарно: `DeleteSanctionsBySource` и `InsertSanctionsEntries` в одной транзакции; дубли `(external_id, name_normalized)` снимаются до вставки. Подключение — `MIGRATE_DATABASE_URL`, иначе `DATABASE_URL`: после DB-SEC у `lp_app` только `SELECT`.
+- Поменял `aml.Normalize` — перезагрузи списки, иначе `name_normalized` в БД разойдётся с запросом.

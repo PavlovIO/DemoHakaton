@@ -296,19 +296,24 @@ SELECT org.country_code, count(DISTINCT o.id) FROM offers o
 ### Санкционный скрининг
 
 ```sql
-SET pg_trgm.similarity_threshold = 0.4;            -- широкий отбор кандидатов
-SELECT id, source, name, similarity(name_normalized, $q) AS score
+SELECT id, source, external_id, entity_kind, name, name_normalized,
+       similarity(name_normalized, @query) AS trgm_score
   FROM sanctions_entries
- WHERE name_normalized % $q
- ORDER BY score DESC LIMIT 20;
+ WHERE name_normalized % @query                               -- GIN-индекс
+   AND similarity(name_normalized, @query) >= @min_similarity -- 0.4: результат не зависит от GUC
+ ORDER BY trgm_score DESC, id LIMIT 20;
 -- Кандидатов досчитать Jaro-Winkler в Go. ≥ 0.90 → флаг high, 0.85–0.90 → medium (ручная проверка).
 ```
 
-Перед поиском имя нормализуется одинаково для списка и для запроса:
-- нижний регистр;
-- транслитерация кириллицы в латиницу;
+Порог задаётся в самом запросе, GUC на соединении не меняем: на соединении из пула настройка утекает в чужие запросы. Инвариант: GUC роли (`0.3` по умолчанию, `0.4` на `lp_app` после DB-SEC) ≤ `candidateMinSimilarity` (`0.4`, `internal/aml/rules.go`) — иначе `%` отрежет кандидатов раньше явного порога.
+
+Имя нормализуется одной функцией `aml.Normalize` для загрузчика и для запроса:
+- снятие диакритики, нижний регистр;
+- транслитерация кириллицы (ICAO); при скрининге кириллического имени ищется ещё вариант BGN/PCGN (`Юрий` → `iurii` и `yuriy`), берётся лучший score;
 - удаление орг. форм (ООО, LLC, Ltd, GmbH);
 - схлопывание пробелов.
+
+Score — `max(JW(a, b), JW(sortTokens(a), sortTokens(b)))`: «Petrov Ivan» и «Ivan Petrov» совпадают. Флаг — один на субъект (компанию или бенефициара), по лучшему кандидату: на распространённом имени иначе была бы лавина флагов.
 
 ## Покрытие sqlc
 
@@ -326,14 +331,14 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessagesVisible`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
 | `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
-| `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `admin.sql` | aml_flags, sanctions_entries, countries, audit_log, аналитика | `CreateAmlFlag`, `HasSimilarAmlFlag`, `ListAmlFlags`, `CountAmlFlags`, `GetAmlFlagByID`, `ListAmlFlagsByOrganization`, `CountOpenHighAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `ListCountriesFatf`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `sanctions.sql` | sanctions_entries | `DeleteSanctionsBySource`, `InsertSanctionsEntries` (`:copyfrom`, загрузчик `cmd/loadsanctions`) |
 
 ### Чего не хватает и где запросы расходятся с этим документом
 
 Пробелы (запросов нет):
 - `status_history` — нет чтения для `GET /applications/{id}/history`;
-- `aml_flags` — нет `Count` и `GetByID`; `audit_log` — нет фильтров и `Count`;
-- `sanctions_entries` — нет запросов загрузчика списков.
+- `audit_log` — нет фильтров и `Count`.
 
 Расхождения с примерами выше:
 - **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). Чат читается `ListMessagesVisible` с тем же правилом; `CreateMessage` и `MarkMessagesRead` вызываются только после `GetOfferVisible`. `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`. Запросы уведомлений фильтруют по `user_id` текущего пользователя; `MarkNotificationRead` — `:execrows`, 0 строк → `404`.

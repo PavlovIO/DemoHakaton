@@ -22,7 +22,7 @@
 
 ```sh
 cp .env.example .env   # один раз
-make db                # Postgres + миграции + демо-данные
+make db                # Postgres + миграции + мок-санкционный список + демо-данные
 make run               # API на http://localhost:8080/api/v1
 curl localhost:8080/api/v1/healthz
 ```
@@ -39,6 +39,9 @@ curl localhost:8080/api/v1/healthz
 | `make test-all` | Все тесты, включая интеграционные (нужен `make db`) |
 | `make lint` | golangci-lint |
 | `make build` | Бинарник в `backend/bin/` |
+| `make load-sanctions` | Залить санкционный список для AML-скрининга (по умолчанию — вымышленный мок-список, он же входит в `make db`). Список заменяется целиком |
+
+Официальный UK Sanctions List: скачайте CSV со страницы [The UK Sanctions List](https://www.gov.uk/government/publications/the-uk-sanctions-list) (ссылка «CSV», без регистрации) и выполните `make load-sanctions SANCTIONS_SOURCE=uk_fcdo SANCTIONS_FILE=path/to/UK-Sanctions-List.csv`. Файл в репозиторий не коммитится. Загрузчик подключается через `MIGRATE_DATABASE_URL`, а без неё — через `DATABASE_URL`.
 
 Загруженные KYC-документы сервер хранит в каталоге `DOCUMENT_STORAGE_DIR` (по умолчанию `storage/documents` в корне репо, в `.gitignore`; права `0700`, файлы `0600` под случайными именами). Каталог должен переживать перезапуски: когда появится контейнер бэкенда — named volume на этот путь. Сервер не стартует, если в каталог нельзя писать.
 
