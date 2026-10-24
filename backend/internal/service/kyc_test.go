@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
@@ -211,7 +212,7 @@ func newKyc(store *fakeKycStore) *service.Kyc {
 }
 
 func newKycWithFiles(store *fakeKycStore, files *fakeFiles) *service.Kyc {
-	return service.NewKyc(service.KycDeps{Store: store, Tx: fakeKycTx{store: store}, Files: files})
+	return service.NewKyc(service.KycDeps{Store: store, Tx: fakeKycTx{store: store}, Files: files, Screener: aml.NoopScreener{}})
 }
 
 func ptr[T any](v T) *T { return &v }

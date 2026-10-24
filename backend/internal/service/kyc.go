@@ -91,8 +91,12 @@ type Kyc struct {
 	notifier Notifier
 }
 
-// NewKyc создаёт сервис KYC.
+// NewKyc создаёт сервис KYC. Без Screener паникует: AML обязателен (fail-closed), и
+// ошибку конфигурации лучше поймать при старте, чем nil-разыменованием на первом submit.
 func NewKyc(d KycDeps) *Kyc {
+	if d.Screener == nil {
+		panic("service.NewKyc: Screener обязателен")
+	}
 	return &Kyc{store: d.Store, tx: d.Tx, files: d.Files, screener: d.Screener, verifier: d.Verifier}
 }
 
