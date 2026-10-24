@@ -113,6 +113,12 @@ type DealService interface {
 	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Deal, error)
 }
 
+// ChatService — чат по офферу: polling и отправка (service.Chat).
+type ChatService interface {
+	List(ctx context.Context, p service.Principal, offerID uuid.UUID, afterID int64, limit int32) ([]service.Message, error)
+	Send(ctx context.Context, p service.Principal, offerID uuid.UUID, text string) (service.Message, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
 	DB           Pinger
@@ -123,6 +129,7 @@ type Deps struct {
 	Applications ApplicationService
 	Offers       OfferService
 	Deals        DealService
+	Chat         ChatService
 	CookieSecure bool
 }
 
@@ -136,6 +143,7 @@ type Handler struct {
 	applications ApplicationService
 	offers       OfferService
 	deals        DealService
+	chat         ChatService
 	cookieSecure bool
 }
 
@@ -154,5 +162,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, cookieSecure: d.CookieSecure}
 }
