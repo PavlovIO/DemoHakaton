@@ -135,8 +135,11 @@ type Querier interface {
 	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error)
 	// Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
 	// массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
+	// id DESC — тай-брейк: строки одной транзакции получают одинаковый now(), без него
+	// LIMIT/OFFSET повторяет и теряет строки между страницами.
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
+	// id DESC — тай-брейк, как в ListOrganizations.
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	// Пользователи компании для карточки админа (BE-12): колонки ListUsers, без password_hash.
 	ListUsersByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]ListUsersByOrganizationRow, error)

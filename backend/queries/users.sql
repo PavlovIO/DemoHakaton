@@ -34,7 +34,8 @@ FROM users
 WHERE (sqlc.narg('role')::user_role IS NULL OR role = sqlc.narg('role')::user_role)
   AND (sqlc.narg('status')::user_status IS NULL OR status = sqlc.narg('status')::user_status)
   AND (sqlc.narg('q')::text IS NULL OR email ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\')
-ORDER BY created_at DESC
+-- id DESC — тай-брейк, как в ListOrganizations.
+ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2;
 
 -- name: CountUsers :one
