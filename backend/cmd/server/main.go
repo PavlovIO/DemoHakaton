@@ -79,10 +79,11 @@ func run(ctx context.Context) error {
 			Store: queries, Tx: txManager,
 			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
 		}),
-		Offers:       service.NewOffers(service.OffersDeps{Store: queries, Tx: txManager}),
-		Deals:        service.NewDeals(service.DealsDeps{Store: queries, Tx: txManager}),
-		Chat:         service.NewChat(service.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
-		CookieSecure: cfg.CookieSecure,
+		Offers:        service.NewOffers(service.OffersDeps{Store: queries, Tx: txManager}),
+		Deals:         service.NewDeals(service.DealsDeps{Store: queries, Tx: txManager}),
+		Chat:          service.NewChat(service.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
+		Notifications: service.NewNotifications(queries),
+		CookieSecure:  cfg.CookieSecure,
 	})
 
 	srv := &http.Server{

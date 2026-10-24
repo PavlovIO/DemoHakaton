@@ -119,32 +119,41 @@ type ChatService interface {
 	Send(ctx context.Context, p service.Principal, offerID uuid.UUID, text string) (service.Message, error)
 }
 
+// NotificationService — лента уведомлений текущего пользователя (service.Notifications).
+type NotificationService interface {
+	List(ctx context.Context, p service.Principal, f service.NotificationFilter) (service.NotificationPage, error)
+	MarkRead(ctx context.Context, p service.Principal, id int64) error
+	MarkAllRead(ctx context.Context, p service.Principal) error
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
-	DB           Pinger
-	Dicts        DictionaryService
-	Auth         AuthService
-	Kyc          KycService
-	Registry     RegistryService
-	Applications ApplicationService
-	Offers       OfferService
-	Deals        DealService
-	Chat         ChatService
-	CookieSecure bool
+	DB            Pinger
+	Dicts         DictionaryService
+	Auth          AuthService
+	Kyc           KycService
+	Registry      RegistryService
+	Applications  ApplicationService
+	Offers        OfferService
+	Deals         DealService
+	Chat          ChatService
+	Notifications NotificationService
+	CookieSecure  bool
 }
 
 // Handler логирует через slog.Default() — его настраивает cmd/server.
 type Handler struct {
-	db           Pinger
-	dicts        DictionaryService
-	auth         AuthService
-	kyc          KycService
-	registry     RegistryService
-	applications ApplicationService
-	offers       OfferService
-	deals        DealService
-	chat         ChatService
-	cookieSecure bool
+	db            Pinger
+	dicts         DictionaryService
+	auth          AuthService
+	kyc           KycService
+	registry      RegistryService
+	applications  ApplicationService
+	offers        OfferService
+	deals         DealService
+	chat          ChatService
+	notifications NotificationService
+	cookieSecure  bool
 }
 
 // Компилятор проверяет, что Handler реализует все операции спеки: по интерфейсу на тег.
@@ -162,5 +171,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, chat: d.Chat, notifications: d.Notifications, cookieSecure: d.CookieSecure}
 }
