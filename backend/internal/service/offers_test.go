@@ -188,6 +188,7 @@ func (s *fakeAppStore) offerRow(o repository.Offer) repository.ListOffersVisible
 }
 
 func (s *fakeAppStore) GetOfferVisible(_ context.Context, arg repository.GetOfferVisibleParams) (repository.GetOfferVisibleRow, error) {
+	s.calls = append(s.calls, "GetOfferVisible")
 	for _, o := range s.offers {
 		if o.ID == arg.ID && s.offerVisible(o, arg.ViewerRole, arg.ViewerOrg) {
 			return repository.GetOfferVisibleRow(s.offerRow(o)), nil
