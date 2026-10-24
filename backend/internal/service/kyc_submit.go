@@ -44,9 +44,10 @@ type CompanyVerifier interface {
 //
 // До транзакции — ранний 409 и сверка с реестром: сетевой вызов не держит блокировку
 // строки (idle_in_transaction_session_timeout = 15 с у lp_app). В транзакции под
-// блокировкой: статус, обязательные документы, бенефициары, AML-скрининг, переход,
-// история, снапшот реестра, флаги, аудит и уведомления — всё или ничего. Скрининг упал —
-// submit падает целиком (fail-closed): без AML в under_review не переводим.
+// блокировкой: статус, неизменность реквизитов после сверки, обязательные документы,
+// бенефициары, AML-скрининг, переход, история, снапшот реестра, флаги, аудит и
+// уведомления — всё или ничего. Скрининг упал — submit падает целиком (fail-closed):
+// без AML в under_review не переводим.
 func (k *Kyc) SubmitKyc(ctx context.Context, p Principal, meta ClientMeta) (OrganizationProfile, error) {
 	orgID, err := ownOrganization(p)
 	if err != nil {
@@ -60,11 +61,17 @@ func (k *Kyc) SubmitKyc(ctx context.Context, p Principal, meta ClientMeta) (Orga
 		return OrganizationProfile{}, err
 	}
 	registryCheck, snapshot := k.checkRegistry(ctx, org)
+	checked := org
 
 	err = k.tx.InTx(ctx, func(q repository.Querier) error {
 		org, err := q.GetOrganizationForUpdate(ctx, orgID)
 		if err != nil {
 			return pgerr.Map(err, "Организация не найдена")
+		}
+		// Реестр сверялся до блокировки: параллельный PATCH мог сменить реквизиты, и тогда
+		// снапшот и AML-сверка относились бы к другой компании.
+		if registryCheck != nil && !sameRegistryIdentity(checked, org) {
+			return apperr.Conflict("Реквизиты компании изменились во время проверки — отправьте повторно")
 		}
 		to, err := nextKycStatus(org.KycStatus, KycSubmit)
 		if err != nil {
@@ -113,6 +120,11 @@ func (k *Kyc) checkRegistry(ctx context.Context, org repository.Organization) (*
 		return amlRegistryResult(result, err), nil
 	}
 	return amlRegistryResult(result, nil), &result
+}
+
+// sameRegistryIdentity — те же идентификаторы, по которым checkRegistry ищет в реестре.
+func sameRegistryIdentity(a, b repository.Organization) bool {
+	return a.CountryCode == b.CountryCode && a.RegistrationNumber == b.RegistrationNumber && a.Lei == b.Lei
 }
 
 // checkRequiredDocuments — 400 с записью на каждый недостающий тип.
