@@ -96,6 +96,12 @@ SELECT * FROM beneficiaries
 WHERE organization_id = $1
 ORDER BY created_at, id;
 
+-- name: ListBeneficiariesByOrganizations :many
+-- Бенефициары страницы админского списка компаний (BE-12) одним запросом вместо N.
+SELECT * FROM beneficiaries
+WHERE organization_id = ANY(sqlc.arg('organization_ids')::uuid[])
+ORDER BY organization_id, created_at, id;
+
 -- name: DeleteBeneficiariesByOrg :exec
 -- Список бенефициаров заменяется целиком: delete + insert в одной транзакции.
 DELETE FROM beneficiaries

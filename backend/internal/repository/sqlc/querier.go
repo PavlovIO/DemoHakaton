@@ -91,6 +91,9 @@ type Querier interface {
 	GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// Блокировка пользователя для block/unblock (BE-12): два параллельных решения не запишут
+	// историю дважды — второе увидит уже новый статус и ответит без записей.
+	GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error)
 	// Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
 	// и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
 	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
@@ -110,6 +113,8 @@ type Querier interface {
 	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]ListApplicationsVisibleRow, error)
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]Beneficiary, error)
+	// Бенефициары страницы админского списка компаний (BE-12) одним запросом вместо N.
+	ListBeneficiariesByOrganizations(ctx context.Context, organizationIds []uuid.UUID) ([]Beneficiary, error)
 	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
 	// fatf_high_risk: страна в чёрном или сером списке FATF.
 	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
