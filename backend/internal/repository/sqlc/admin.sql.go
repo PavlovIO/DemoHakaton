@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 const countAmlFlags = `-- name: CountAmlFlags :one
@@ -39,6 +40,45 @@ func (q *Queries) CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (i
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countApplicationsByStatus = `-- name: CountApplicationsByStatus :many
+SELECT status, count(*)::bigint AS count
+FROM applications
+WHERE ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
+GROUP BY status
+`
+
+type CountApplicationsByStatusParams struct {
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+}
+
+type CountApplicationsByStatusRow struct {
+	Status ApplicationStatus `json:"status"`
+	Count  int64             `json:"count"`
+}
+
+// Статусы без заявок в выборку не попадают.
+func (q *Queries) CountApplicationsByStatus(ctx context.Context, arg CountApplicationsByStatusParams) ([]CountApplicationsByStatusRow, error) {
+	rows, err := q.db.Query(ctx, countApplicationsByStatus, arg.CreatedFrom, arg.CreatedTo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountApplicationsByStatusRow{}
+	for rows.Next() {
+		var i CountApplicationsByStatusRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const countAuditLog = `-- name: CountAuditLog :one
@@ -70,6 +110,42 @@ func (q *Queries) CountAuditLog(ctx context.Context, arg CountAuditLogParams) (i
 		arg.CreatedFrom,
 		arg.CreatedTo,
 	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countDealsInPeriod = `-- name: CountDealsInPeriod :one
+SELECT count(*) FROM deals
+WHERE ($1::timestamptz IS NULL OR agreed_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR agreed_at < $2::timestamptz)
+`
+
+type CountDealsInPeriodParams struct {
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+}
+
+func (q *Queries) CountDealsInPeriod(ctx context.Context, arg CountDealsInPeriodParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDealsInPeriod, arg.CreatedFrom, arg.CreatedTo)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOffersInPeriod = `-- name: CountOffersInPeriod :one
+SELECT count(*) FROM offers
+WHERE ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
+`
+
+type CountOffersInPeriodParams struct {
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+}
+
+func (q *Queries) CountOffersInPeriod(ctx context.Context, arg CountOffersInPeriodParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOffersInPeriod, arg.CreatedFrom, arg.CreatedTo)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -211,21 +287,36 @@ func (q *Queries) GetAmlFlagByID(ctx context.Context, id int64) (GetAmlFlagByIDR
 }
 
 const getAnalyticsSummaryByCurrency = `-- name: GetAnalyticsSummaryByCurrency :many
-SELECT currency, count(*) as count, sum(amount) as total_amount, round(avg(amount), 2) as average_amount
+
+SELECT currency, count(*)::bigint AS count, sum(amount)::numeric AS total_amount,
+       round(avg(amount), 2)::numeric AS average_amount
 FROM applications
-WHERE status NOT IN ('draft', 'cancelled')
+WHERE status <> 'draft'
+  AND ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
 GROUP BY currency
+ORDER BY currency
 `
 
-type GetAnalyticsSummaryByCurrencyRow struct {
-	Currency      string         `json:"currency"`
-	Count         int64          `json:"count"`
-	TotalAmount   int64          `json:"total_amount"`
-	AverageAmount pgtype.Numeric `json:"average_amount"`
+type GetAnalyticsSummaryByCurrencyParams struct {
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
 }
 
-func (q *Queries) GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error) {
-	rows, err := q.db.Query(ctx, getAnalyticsSummaryByCurrency)
+type GetAnalyticsSummaryByCurrencyRow struct {
+	Currency      string          `json:"currency"`
+	Count         int64           `json:"count"`
+	TotalAmount   decimal.Decimal `json:"total_amount"`
+	AverageAmount decimal.Decimal `json:"average_amount"`
+}
+
+// Аналитика (BE-14). Период — полуинтервал [created_from, created_to), narg NULL — без границы.
+// Заявки и спрос — по applications.created_at, офферы и предложение — по offers.created_at,
+// сделки — по deals.agreed_at.
+// Суммы по валютам без конвертации. Все статусы, кроме draft: cancelled и rejected — тоже
+// поданный спрос. Явный ::numeric — иначе sqlc выводит sum(numeric) как int64.
+func (q *Queries) GetAnalyticsSummaryByCurrency(ctx context.Context, arg GetAnalyticsSummaryByCurrencyParams) ([]GetAnalyticsSummaryByCurrencyRow, error) {
+	rows, err := q.db.Query(ctx, getAnalyticsSummaryByCurrency, arg.CreatedFrom, arg.CreatedTo)
 	if err != nil {
 		return nil, err
 	}
@@ -250,21 +341,30 @@ func (q *Queries) GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnaly
 }
 
 const getTopDemandCountries = `-- name: GetTopDemandCountries :many
-SELECT target_country_code as country_code, count(*)::int as count
+SELECT target_country_code AS country_code, count(*)::int AS count
 FROM applications
 WHERE status IN ('published', 'agreed')
+  AND ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
 GROUP BY target_country_code
-ORDER BY count DESC
-LIMIT $1
+ORDER BY count DESC, country_code
+LIMIT $3
 `
+
+type GetTopDemandCountriesParams struct {
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+	TopN        int32              `json:"top_n"`
+}
 
 type GetTopDemandCountriesRow struct {
 	CountryCode string `json:"country_code"`
 	Count       int32  `json:"count"`
 }
 
-func (q *Queries) GetTopDemandCountries(ctx context.Context, limit int32) ([]GetTopDemandCountriesRow, error) {
-	rows, err := q.db.Query(ctx, getTopDemandCountries, limit)
+// Спрос — только опубликованные и согласованные заявки. country_code — тай-брейк.
+func (q *Queries) GetTopDemandCountries(ctx context.Context, arg GetTopDemandCountriesParams) ([]GetTopDemandCountriesRow, error) {
+	rows, err := q.db.Query(ctx, getTopDemandCountries, arg.CreatedFrom, arg.CreatedTo, arg.TopN)
 	if err != nil {
 		return nil, err
 	}
@@ -284,21 +384,30 @@ func (q *Queries) GetTopDemandCountries(ctx context.Context, limit int32) ([]Get
 }
 
 const getTopSupplyCountries = `-- name: GetTopSupplyCountries :many
-SELECT org.country_code, count(DISTINCT o.id)::int as count
+SELECT org.country_code, count(o.id)::int AS count
 FROM offers o
 JOIN organizations org ON org.id = o.lender_organization_id
+WHERE ($1::timestamptz IS NULL OR o.created_at >= $1::timestamptz)
+  AND ($2::timestamptz IS NULL OR o.created_at < $2::timestamptz)
 GROUP BY org.country_code
-ORDER BY count DESC
-LIMIT $1
+ORDER BY count DESC, org.country_code
+LIMIT $3
 `
+
+type GetTopSupplyCountriesParams struct {
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+	TopN        int32              `json:"top_n"`
+}
 
 type GetTopSupplyCountriesRow struct {
 	CountryCode string `json:"country_code"`
 	Count       int32  `json:"count"`
 }
 
-func (q *Queries) GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error) {
-	rows, err := q.db.Query(ctx, getTopSupplyCountries, limit)
+// Предложение — страны регистрации кредиторов по числу офферов.
+func (q *Queries) GetTopSupplyCountries(ctx context.Context, arg GetTopSupplyCountriesParams) ([]GetTopSupplyCountriesRow, error) {
+	rows, err := q.db.Query(ctx, getTopSupplyCountries, arg.CreatedFrom, arg.CreatedTo, arg.TopN)
 	if err != nil {
 		return nil, err
 	}

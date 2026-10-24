@@ -106,27 +106,61 @@ WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uui
   AND (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
   AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz);
 
+-- Аналитика (BE-14). Период — полуинтервал [created_from, created_to), narg NULL — без границы.
+-- Заявки и спрос — по applications.created_at, офферы и предложение — по offers.created_at,
+-- сделки — по deals.agreed_at.
+
 -- name: GetAnalyticsSummaryByCurrency :many
-SELECT currency, count(*) as count, sum(amount) as total_amount, round(avg(amount), 2) as average_amount
+-- Суммы по валютам без конвертации. Все статусы, кроме draft: cancelled и rejected — тоже
+-- поданный спрос. Явный ::numeric — иначе sqlc выводит sum(numeric) как int64.
+SELECT currency, count(*)::bigint AS count, sum(amount)::numeric AS total_amount,
+       round(avg(amount), 2)::numeric AS average_amount
 FROM applications
-WHERE status NOT IN ('draft', 'cancelled')
-GROUP BY currency;
+WHERE status <> 'draft'
+  AND (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz)
+GROUP BY currency
+ORDER BY currency;
+
+-- name: CountApplicationsByStatus :many
+-- Статусы без заявок в выборку не попадают.
+SELECT status, count(*)::bigint AS count
+FROM applications
+WHERE (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz)
+GROUP BY status;
+
+-- name: CountOffersInPeriod :one
+SELECT count(*) FROM offers
+WHERE (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz);
+
+-- name: CountDealsInPeriod :one
+SELECT count(*) FROM deals
+WHERE (sqlc.narg('created_from')::timestamptz IS NULL OR agreed_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR agreed_at < sqlc.narg('created_to')::timestamptz);
 
 -- name: GetTopDemandCountries :many
-SELECT target_country_code as country_code, count(*)::int as count
+-- Спрос — только опубликованные и согласованные заявки. country_code — тай-брейк.
+SELECT target_country_code AS country_code, count(*)::int AS count
 FROM applications
 WHERE status IN ('published', 'agreed')
+  AND (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz)
 GROUP BY target_country_code
-ORDER BY count DESC
-LIMIT $1;
+ORDER BY count DESC, country_code
+LIMIT sqlc.arg('top_n');
 
 -- name: GetTopSupplyCountries :many
-SELECT org.country_code, count(DISTINCT o.id)::int as count
+-- Предложение — страны регистрации кредиторов по числу офферов.
+SELECT org.country_code, count(o.id)::int AS count
 FROM offers o
 JOIN organizations org ON org.id = o.lender_organization_id
+WHERE (sqlc.narg('created_from')::timestamptz IS NULL OR o.created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR o.created_at < sqlc.narg('created_to')::timestamptz)
 GROUP BY org.country_code
-ORDER BY count DESC
-LIMIT $1;
+ORDER BY count DESC, org.country_code
+LIMIT sqlc.arg('top_n');
 
 -- name: ListAmlFlagsByOrganization :many
 -- Флаги компании в карточке админа (BE-12): без пагинации, открытые сверху. Название и

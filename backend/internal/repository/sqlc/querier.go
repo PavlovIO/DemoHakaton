@@ -24,13 +24,17 @@ type Querier interface {
 	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
 	// Счётчик для ListAmlFlags: те же фильтры.
 	CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (int64, error)
+	// Статусы без заявок в выборку не попадают.
+	CountApplicationsByStatus(ctx context.Context, arg CountApplicationsByStatusParams) ([]CountApplicationsByStatusRow, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
 	// Счётчик для ListAuditLog: те же фильтры.
 	CountAuditLog(ctx context.Context, arg CountAuditLogParams) (int64, error)
+	CountDealsInPeriod(ctx context.Context, arg CountDealsInPeriodParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
 	// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
 	// сервис берёт из total или unread в зависимости от unread_only.
 	CountNotifications(ctx context.Context, userID uuid.UUID) (CountNotificationsRow, error)
+	CountOffersInPeriod(ctx context.Context, arg CountOffersInPeriodParams) (int64, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
 	// Открытые high-флаги блокируют approve KYC (409 CONFLICT, BE-12).
 	CountOpenHighAmlFlags(ctx context.Context, organizationID uuid.UUID) (int64, error)
@@ -73,7 +77,12 @@ type Querier interface {
 	// Флаг с организацией — ответ resolve и различение 404/409, когда ResolveAmlFlag не нашёл
 	// открытый флаг.
 	GetAmlFlagByID(ctx context.Context, id int64) (GetAmlFlagByIDRow, error)
-	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
+	// Аналитика (BE-14). Период — полуинтервал [created_from, created_to), narg NULL — без границы.
+	// Заявки и спрос — по applications.created_at, офферы и предложение — по offers.created_at,
+	// сделки — по deals.agreed_at.
+	// Суммы по валютам без конвертации. Все статусы, кроме draft: cancelled и rejected — тоже
+	// поданный спрос. Явный ::numeric — иначе sqlc выводит sum(numeric) как int64.
+	GetAnalyticsSummaryByCurrency(ctx context.Context, arg GetAnalyticsSummaryByCurrencyParams) ([]GetAnalyticsSummaryByCurrencyRow, error)
 	// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
 	// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
 	// Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
@@ -97,8 +106,10 @@ type Querier interface {
 	// kyc_status читается на каждом запросе и не кэшируется: одобрение KYC действует со следующего.
 	// LEFT JOIN: у admin organization_id IS NULL (users_admin_org_chk), с INNER JOIN он не вошёл бы.
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
-	GetTopDemandCountries(ctx context.Context, limit int32) ([]GetTopDemandCountriesRow, error)
-	GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error)
+	// Спрос — только опубликованные и согласованные заявки. country_code — тай-брейк.
+	GetTopDemandCountries(ctx context.Context, arg GetTopDemandCountriesParams) ([]GetTopDemandCountriesRow, error)
+	// Предложение — страны регистрации кредиторов по числу офферов.
+	GetTopSupplyCountries(ctx context.Context, arg GetTopSupplyCountriesParams) ([]GetTopSupplyCountriesRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// Блокировка пользователя для block/unblock (BE-12): два параллельных решения не запишут

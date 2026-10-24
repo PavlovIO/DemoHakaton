@@ -277,21 +277,30 @@ SELECT a.*, o.name, o.country_code,
 
 ### Аналитика (`GET /admin/analytics/summary`)
 
+Период — полуинтервал `[created_from, created_to)`, без границ — всё время. Заявки и спрос — по `applications.created_at`, офферы и предложение — по `offers.created_at`, сделки — по `deals.agreed_at`. Все шесть запросов идут в одном снимке (`ReadSnapshot`).
+
 ```sql
--- Средний размер по каждой валюте отдельно (без конвертации)
-SELECT currency, count(*), sum(amount), round(avg(amount), 2)
-  FROM applications WHERE status NOT IN ('draft') AND created_at BETWEEN $from AND $to
- GROUP BY currency;
+-- Средний размер по каждой валюте отдельно (без конвертации); cancelled и rejected — тоже поданный спрос
+SELECT currency, count(*), sum(amount)::numeric, round(avg(amount), 2)::numeric
+  FROM applications WHERE status <> 'draft' AND created_at >= $from AND created_at < $to
+ GROUP BY currency ORDER BY currency;
+
+-- Заявки по статусам (total — их сумма), офферы и сделки за период
+SELECT status, count(*) FROM applications WHERE <период по created_at> GROUP BY status;
+SELECT count(*) FROM offers WHERE <период по created_at>;
+SELECT count(*) FROM deals  WHERE <период по agreed_at>;
 
 -- Топ стран спроса (куда хотят деньги)
 SELECT target_country_code, count(*) FROM applications
- WHERE status IN ('published', 'agreed') GROUP BY 1 ORDER BY 2 DESC LIMIT $n;
+ WHERE status IN ('published', 'agreed') AND <период> GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $n;
 
 -- Топ стран предложения (откуда кредиторы, сделавшие офферы)
-SELECT org.country_code, count(DISTINCT o.id) FROM offers o
+SELECT org.country_code, count(o.id) FROM offers o
   JOIN organizations org ON org.id = o.lender_organization_id
- GROUP BY 1 ORDER BY 2 DESC LIMIT $n;
+ WHERE <период по o.created_at> GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $n;
 ```
+
+Явный `::numeric` у сумм нужен sqlc: без него `sum(numeric)` выводится как `int64`, а override из `sqlc.yaml` на `decimal.Decimal` не срабатывает.
 
 ### Санкционный скрининг
 
@@ -332,19 +341,17 @@ Score — `max(JW(a, b), JW(sortTokens(a), sortTokens(b)))`: «Petrov Ivan» и 
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessagesVisible`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
 | `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
-| `admin.sql` | aml_flags, sanctions_entries, countries, audit_log, аналитика | `CreateAmlFlag`, `HasSimilarAmlFlag`, `ListAmlFlags`, `CountAmlFlags`, `GetAmlFlagByID`, `ListAmlFlagsByOrganization`, `CountOpenHighAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `ListCountriesFatf`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `admin.sql` | aml_flags, sanctions_entries, countries, audit_log, аналитика | `CreateAmlFlag`, `HasSimilarAmlFlag`, `ListAmlFlags`, `CountAmlFlags`, `GetAmlFlagByID`, `ListAmlFlagsByOrganization`, `CountOpenHighAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `ListCountriesFatf`, `CreateAuditLog`, `ListAuditLog`, `CountAuditLog`, `GetAnalyticsSummaryByCurrency`, `CountApplicationsByStatus`, `CountOffersInPeriod`, `CountDealsInPeriod`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
 | `sanctions.sql` | sanctions_entries | `DeleteSanctionsBySource`, `InsertSanctionsEntries` (`:copyfrom`, загрузчик `cmd/loadsanctions`) |
 
 ### Чего не хватает и где запросы расходятся с этим документом
 
 Пробелы (запросов нет):
-- `status_history` — нет чтения для `GET /applications/{id}/history`;
-- `audit_log` — нет фильтров и `Count`.
+- `status_history` — нет чтения для `GET /applications/{id}/history`.
 
 Расхождения с примерами выше:
 - **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). Чат читается `ListMessagesVisible` с тем же правилом; `CreateMessage` и `MarkMessagesRead` вызываются только после `GetOfferVisible`. `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`. Запросы уведомлений фильтруют по `user_id` текущего пользователя; `MarkNotificationRead` — `:execrows`, 0 строк → `404`.
 - **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
-- **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
 - **Переходы статусов** заявок и решения админа по KYC (`ApproveKyc`, `RejectKyc`) не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`, у `UpdateOrganization` и `SubmitKycForReview` — `kyc_status IN ('draft','rejected')` плюс `GetOrganizationForUpdate`). Параллельные запросы могут проскочить проверку сервиса.
 
 ## Что сознательно не делаем в MVP
