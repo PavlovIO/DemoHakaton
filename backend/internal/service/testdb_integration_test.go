@@ -33,8 +33,14 @@ func uniqueRegistrationNumber() string {
 	return uuid.NewString()
 }
 
+// rowQuerier — pgx.Tx или *pgxpool.Pool: фикстуры пишутся и в откатываемую транзакцию, и
+// с коммитом (тест конкурентности, BE-09).
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // insertTestUser создаёт пользователя с уникальным email; org == nil — у admin.
-func insertTestUser(ctx context.Context, t *testing.T, tx pgx.Tx, role repository.UserRole, org *uuid.UUID) uuid.UUID {
+func insertTestUser(ctx context.Context, t *testing.T, tx rowQuerier, role repository.UserRole, org *uuid.UUID) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
 	err := tx.QueryRow(ctx, `INSERT INTO users (email, password_hash, role, organization_id)
