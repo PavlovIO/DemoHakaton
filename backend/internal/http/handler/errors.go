@@ -15,18 +15,20 @@ import (
 
 // statusByCode — единственное место, где доменный код превращается в HTTP-статус.
 var statusByCode = map[apperr.Code]int{
-	apperr.CodeValidation:        http.StatusBadRequest,
-	apperr.CodeUnauthorized:      http.StatusUnauthorized,
-	apperr.CodeForbidden:         http.StatusForbidden,
-	apperr.CodeCSRFInvalid:       http.StatusForbidden,
-	apperr.CodeKYCNotVerified:    http.StatusForbidden,
-	apperr.CodeNotFound:          http.StatusNotFound,
-	apperr.CodeConflict:          http.StatusConflict,
-	apperr.CodeInvalidTransition: http.StatusConflict,
-	apperr.CodeRateLimited:       http.StatusTooManyRequests,
-	apperr.CodeInternal:          http.StatusInternalServerError,
-	apperr.CodeNotImplemented:    http.StatusNotImplemented,
-	apperr.CodeUnavailable:       http.StatusServiceUnavailable,
+	apperr.CodeValidation:          http.StatusBadRequest,
+	apperr.CodeUnauthorized:        http.StatusUnauthorized,
+	apperr.CodeForbidden:           http.StatusForbidden,
+	apperr.CodeCSRFInvalid:         http.StatusForbidden,
+	apperr.CodeKYCNotVerified:      http.StatusForbidden,
+	apperr.CodeFileTooLarge:        http.StatusRequestEntityTooLarge,
+	apperr.CodeNotFound:            http.StatusNotFound,
+	apperr.CodeConflict:            http.StatusConflict,
+	apperr.CodeInvalidTransition:   http.StatusConflict,
+	apperr.CodeRateLimited:         http.StatusTooManyRequests,
+	apperr.CodeInternal:            http.StatusInternalServerError,
+	apperr.CodeNotImplemented:      http.StatusNotImplemented,
+	apperr.CodeUnavailable:         http.StatusServiceUnavailable,
+	apperr.CodeUpstreamUnavailable: http.StatusBadGateway,
 }
 
 const internalMessage = "Внутренняя ошибка сервера"

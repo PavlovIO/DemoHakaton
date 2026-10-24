@@ -7,6 +7,7 @@ import (
 
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/servicetest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -141,6 +142,54 @@ func TestTxManagerInTx(t *testing.T) {
 	}
 }
 
+// fakeSnapshotBeginner — пул: умеет BeginTx и запоминает опции транзакции.
+type fakeSnapshotBeginner struct {
+	fakeTxBeginner
+	opts *pgx.TxOptions
+}
+
+func (b *fakeSnapshotBeginner) BeginTx(_ context.Context, opts pgx.TxOptions) (pgx.Tx, error) {
+	b.opts = &opts
+	return b.tx, b.err
+}
+
+func TestTxManagerReadSnapshot(t *testing.T) {
+	tx := &fakeTx{}
+	beginner := &fakeSnapshotBeginner{fakeTxBeginner: fakeTxBeginner{tx: tx}}
+
+	err := service.NewTxManager(beginner).ReadSnapshot(context.Background(), func(q repository.Querier) error {
+		if q == nil {
+			t.Fatal("callback received a nil querier")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}
+	if beginner.opts == nil || *beginner.opts != want {
+		t.Fatalf("BeginTx opts = %+v, want %+v", beginner.opts, want)
+	}
+	if beginner.beginCalls != 0 || tx.commitCalls != 1 {
+		t.Fatalf("Begin() calls = %d, Commit() calls = %d; want 0 и 1", beginner.beginCalls, tx.commitCalls)
+	}
+}
+
+// Без BeginTx (pgx.Tx в интеграционных тестах) снимок — обычный Begin: savepoint внешней транзакции.
+func TestTxManagerReadSnapshotFallsBackToBegin(t *testing.T) {
+	tx := &fakeTx{}
+	beginner := &fakeTxBeginner{tx: tx}
+
+	if err := service.NewTxManager(beginner).ReadSnapshot(context.Background(), func(repository.Querier) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if beginner.beginCalls != 1 || tx.commitCalls != 1 {
+		t.Fatalf("Begin() calls = %d, Commit() calls = %d; want 1 и 1", beginner.beginCalls, tx.commitCalls)
+	}
+}
+
 func TestTxManagerRollbackWithCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -165,7 +214,7 @@ func TestTxManagerRollbackWithCanceledContext(t *testing.T) {
 }
 
 func TestTxManagerIntegrationRollback(t *testing.T) {
-	pool := newPool(t)
+	pool := servicetest.NewPool(t)
 	ctx := context.Background()
 	action := "tx-manager-integration-rollback-" + uuid.NewString()
 	wantErr := errors.New("force rollback")

@@ -118,6 +118,19 @@ func (siw *ServerInterfaceWrapper) AdminListAMLFlags(w http.ResponseWriter, r *h
 		return
 	}
 
+	// ------------- Optional query parameter "application_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "application_id", r.URL.Query(), &params.ApplicationID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "application_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "application_id", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "page" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -1041,6 +1054,20 @@ func (response AdminAnalyticsSummary200JSONResponse) VisitAdminAnalyticsSummaryR
 	return err
 }
 
+type AdminAnalyticsSummary400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AdminAnalyticsSummary400JSONResponse) VisitAdminAnalyticsSummaryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminAnalyticsSummary401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response AdminAnalyticsSummary401JSONResponse) VisitAdminAnalyticsSummaryResponse(w http.ResponseWriter) error {
@@ -1259,6 +1286,20 @@ func (response AdminListAuditLog200JSONResponse) VisitAdminListAuditLogResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminListAuditLog400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AdminListAuditLog400JSONResponse) VisitAdminListAuditLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1646,6 +1687,20 @@ func (response AdminBlockUser200JSONResponse) VisitAdminBlockUserResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminBlockUser400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AdminBlockUser400JSONResponse) VisitAdminBlockUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }

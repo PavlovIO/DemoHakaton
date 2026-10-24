@@ -14,11 +14,15 @@ const (
 	CSRFHeaderName = "X-CSRF-Token"
 )
 
-// CSRF проверяет совпадение CSRF-токена cookie и заголовка для изменяющих запросов.
+// CSRF проверяет совпадение CSRF-токена cookie и заголовка (double-submit) у изменяющих
+// запросов к защищённым операциям. Стоит после Authorize: правило операции берётся из
+// контекста. Не проверяются: путь не из спеки (404 отдаст валидатор), публичные операции
+// (register, login — DECISIONS п. 1) и безопасные методы.
 func CSRF(writeErr ErrorWriter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isPublic(r) || isSafeMethod(r.Method) {
+			rule, ok := accessRuleFromContext(r.Context())
+			if !ok || rule.Public || isSafeMethod(r.Method) {
 				next.ServeHTTP(w, r)
 				return
 			}

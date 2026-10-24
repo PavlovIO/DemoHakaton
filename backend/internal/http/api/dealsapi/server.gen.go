@@ -46,6 +46,32 @@ func (siw *ServerInterfaceWrapper) ListDeals(w http.ResponseWriter, r *http.Requ
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListDealsParams
 
+	// ------------- Optional query parameter "borrower_organization_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "borrower_organization_id", r.URL.Query(), &params.BorrowerOrganizationID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "borrower_organization_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "borrower_organization_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "lender_organization_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "lender_organization_id", r.URL.Query(), &params.LenderOrganizationID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "lender_organization_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "lender_organization_id", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "created_from" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "created_from", r.URL.Query(), &params.CreatedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})

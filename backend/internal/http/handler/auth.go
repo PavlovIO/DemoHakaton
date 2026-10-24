@@ -11,7 +11,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/authapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -20,11 +20,11 @@ func (h *Handler) Register(ctx context.Context, request authapi.RegisterRequestO
 	if request.Body == nil {
 		return nil, apperr.Validation("Некорректное тело запроса")
 	}
-	input := service.RegisterInput{
+	input := auth.RegisterInput{
 		Email:    string(request.Body.Email),
 		Password: request.Body.Password,
 		Role:     string(request.Body.Role),
-		Org: service.RegisterOrganizationInput{
+		Org: auth.RegisterOrganizationInput{
 			Name:               request.Body.Organization.Name,
 			CountryCode:        request.Body.Organization.CountryCode,
 			RegistrationNumber: request.Body.Organization.RegistrationNumber,
@@ -82,9 +82,9 @@ func (h *Handler) Logout(ctx context.Context, _ authapi.LogoutRequestObject) (au
 
 // GetMe возвращает профиль пользователя из principal контекста.
 func (h *Handler) GetMe(ctx context.Context, _ authapi.GetMeRequestObject) (authapi.GetMeResponseObject, error) {
-	principal, ok := middleware.PrincipalFromContext(ctx)
-	if !ok {
-		return nil, apperr.Unauthorized("Сессия недействительна")
+	principal, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	me, err := h.auth.Me(ctx, principal)
 	if err != nil {
@@ -160,7 +160,7 @@ func writeAuthJSON(w http.ResponseWriter, status int, body api.Me, cookies []*ht
 	return err
 }
 
-func meToAPI(me *service.Me) api.Me {
+func meToAPI(me *auth.Me) api.Me {
 	user := api.User{
 		ID:        me.User.ID,
 		Email:     openapi_types.Email(me.User.Email),
@@ -175,20 +175,8 @@ func meToAPI(me *service.Me) api.Me {
 
 	var organization *api.Organization
 	if me.Organization != nil {
-		organization = &api.Organization{
-			ID:                 me.Organization.ID,
-			Type:               api.OrganizationType(me.Organization.Type),
-			Name:               me.Organization.Name,
-			CountryCode:        me.Organization.CountryCode,
-			RegistrationNumber: me.Organization.RegistrationNumber,
-			LEI:                me.Organization.LEI,
-			LegalAddress:       me.Organization.LegalAddress,
-			KYCStatus:          api.KYCStatus(me.Organization.KycStatus),
-			CreatedAt:          me.Organization.CreatedAt,
-			VerifiedAt:         me.Organization.VerifiedAt,
-			KYCRejectReason:    me.Organization.KycRejectReason,
-			Beneficiaries:      []api.Beneficiary{},
-		}
+		org := organizationToAPI(me.Organization, nil)
+		organization = &org
 	}
 	return api.Me{User: user, Organization: organization}
 }

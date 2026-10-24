@@ -59,7 +59,9 @@ paths:
       operationId: adminApproveKyc
       x-roles: [admin]
       summary: Верифицировать компанию (under_review → verified)
-      description: 409, если у компании есть открытые AML-флаги с severity=high.
+      description: >-
+        409 `CONFLICT` — у компании есть открытые AML-флаги с severity=high;
+        409 `INVALID_STATUS_TRANSITION` — компания не в статусе under_review.
       parameters:
         - $ref: '../components.yaml#/components/parameters/OrganizationId'
       requestBody:
@@ -186,6 +188,9 @@ paths:
       operationId: adminBlockUser
       x-roles: [admin]
       summary: Заблокировать пользователя (инвалидирует все его сессии)
+      description: >-
+        403 `FORBIDDEN` — нельзя заблокировать администратора, в том числе себя.
+        Повторная блокировка идемпотентна.
       parameters:
         - $ref: '../components.yaml#/components/parameters/UserId'
       requestBody:
@@ -199,6 +204,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '../schemas/auth.yaml#/components/schemas/User' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
         '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
@@ -208,6 +214,9 @@ paths:
       tags: [admin]
       operationId: adminUnblockUser
       x-roles: [admin]
+      description: >-
+        403 `FORBIDDEN` — статус администратора не меняется: администратора нельзя
+        заблокировать, поэтому и разблокировать нечего. Повторная разблокировка идемпотентна.
       parameters:
         - $ref: '../components.yaml#/components/parameters/UserId'
       responses:
@@ -235,6 +244,10 @@ paths:
           schema: { $ref: '../schemas/enums.yaml#/components/schemas/AmlSeverity' }
         - name: organization_id
           in: query
+          schema: { type: string, format: uuid }
+        - name: application_id
+          in: query
+          description: Флаги конкретной заявки (экран модерации)
           schema: { type: string, format: uuid }
         - $ref: '../components.yaml#/components/parameters/Page'
         - $ref: '../components.yaml#/components/parameters/PageSize'
@@ -299,6 +312,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '../schemas/analytics.yaml#/components/schemas/AnalyticsSummary' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
         '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
 
@@ -331,5 +345,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '../schemas/analytics.yaml#/components/schemas/AuditLogPage' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
         '403': { $ref: '../components.yaml#/components/responses/Forbidden' }

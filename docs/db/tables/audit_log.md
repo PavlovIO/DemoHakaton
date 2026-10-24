@@ -41,6 +41,5 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateAuditLog` | `:one` | Записать действие |
-| `ListAuditLog` | `:many` | Последние записи, `created_at DESC`, пагинация |
-
-`ListAuditLog` пока без фильтров по `user_id`, `action`, `entity`, хотя индексы под них уже есть. Счётчика для пагинации тоже нет.
+| `ListAuditLog` | `:many` | Страница журнала, `created_at DESC, id DESC`; фильтры `user_id`, `action`, `entity_type`, `entity_id`, период `[created_from, created_to)` — все `narg`, `NULL` = без фильтра |
+| `CountAuditLog` | `:one` | `total` для `ListAuditLog` с теми же фильтрами |

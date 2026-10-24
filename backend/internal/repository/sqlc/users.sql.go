@@ -52,7 +52,7 @@ const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
 WHERE ($1::user_role IS NULL OR role = $1::user_role)
   AND ($2::user_status IS NULL OR status = $2::user_status)
-  AND ($3::text IS NULL OR email ILIKE '%' || $3::text || '%')
+  AND ($3::text IS NULL OR email ILIKE '%' || $3::text || '%' ESCAPE '\')
 `
 
 type CountUsersParams struct {
@@ -159,13 +159,41 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const getUserForUpdate = `-- name: GetUserForUpdate :one
+SELECT id, email, password_hash, role, status, organization_id,
+       blocked_reason, last_login_at, created_at, updated_at
+FROM users
+WHERE id = $1
+FOR UPDATE
+`
+
+// Блокировка пользователя для block/unblock (BE-12): два параллельных решения не запишут
+// историю дважды — второе увидит уже новый статус и ответит без записей.
+func (q *Queries) GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUserForUpdate, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.OrganizationID,
+		&i.BlockedReason,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, email, role, status, organization_id, created_at
 FROM users
 WHERE ($3::user_role IS NULL OR role = $3::user_role)
   AND ($4::user_status IS NULL OR status = $4::user_status)
-  AND ($5::text IS NULL OR email ILIKE '%' || $5::text || '%')
-ORDER BY created_at DESC
+  AND ($5::text IS NULL OR email ILIKE '%' || $5::text || '%' ESCAPE '\')
+ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -186,6 +214,7 @@ type ListUsersRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+// id DESC — тай-брейк, как в ListOrganizations.
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers,
 		arg.Limit,
@@ -201,6 +230,50 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	items := []ListUsersRow{}
 	for rows.Next() {
 		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Role,
+			&i.Status,
+			&i.OrganizationID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsersByOrganization = `-- name: ListUsersByOrganization :many
+SELECT id, email, role, status, organization_id, created_at
+FROM users
+WHERE organization_id = $1
+ORDER BY created_at, id
+`
+
+type ListUsersByOrganizationRow struct {
+	ID             uuid.UUID          `json:"id"`
+	Email          string             `json:"email"`
+	Role           UserRole           `json:"role"`
+	Status         UserStatus         `json:"status"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// Пользователи компании для карточки админа (BE-12): колонки ListUsers, без password_hash.
+func (q *Queries) ListUsersByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]ListUsersByOrganizationRow, error) {
+	rows, err := q.db.Query(ctx, listUsersByOrganization, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersByOrganizationRow{}
+	for rows.Next() {
+		var i ListUsersByOrganizationRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Email,

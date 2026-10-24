@@ -13,9 +13,13 @@ import (
 
 // Валидация запросов по спеке (nethttp-middleware) стоит перед роутингом: мусор
 // получает 400 с полем в details ещё до хендлера, а для нереализованных операций
-// корректный запрос доходит до заглушки (501).
+// корректный запрос доходит до хендлера.
 func TestRequestValidation(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService()})
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService(), Applications: &fakeApplications{app: testApplication()}})
+	// Админские операции Authorize пускает только admin: иначе 403 раньше валидатора.
+	adminAuth := testAuthService()
+	adminAuth.principal.Role = "admin"
+	adminSrv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: adminAuth})
 
 	tests := []struct {
 		name       string
@@ -27,13 +31,16 @@ func TestRequestValidation(t *testing.T) {
 		wantCode   string
 		wantField  string // первое поле в details; "" — не проверять
 		wantFields int    // число записей в details; 0 — не проверять
+		admin      bool   // запрос от admin
 	}{
 		// Позитивные: путь / query / тело — доходят до хендлера или заглушки.
 		{name: "ok путь", method: "GET", path: "/api/v1/dictionaries/countries", wantStatus: 200},
 		{name: "registry lookup без сессии", method: "GET", path: "/api/v1/registry/lookup", wantStatus: 400, wantCode: "VALIDATION_ERROR"},
-		{name: "ok query -> заглушка", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
-		{name: "ok тело -> заглушка", method: "PATCH", path: "/api/v1/organizations/me", body: `{"name":"Acme GmbH"}`, ctype: "application/json", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
-		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 501},
+		{name: "ok query -> хендлер", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 200},
+		{name: "ok тело -> хендлер", method: "PATCH", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", body: `{"term_months":12}`, ctype: "application/json", wantStatus: 200},
+		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 200},
+		{name: "ok несколько target_country", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=TR", wantStatus: 200},
+		{name: "ok витрина и архив откликов", method: "GET", path: "/api/v1/applications?status=published&sort=published_at_desc&has_my_offer=true", wantStatus: 200},
 		// HEAD: ServeMux сопоставляет его с GET-паттернами, валидатор (gorillamux) — нет; раньше было 200.
 		{name: "HEAD как GET", method: "HEAD", path: "/api/v1/dictionaries/countries", wantStatus: 200},
 
@@ -42,6 +49,10 @@ func TestRequestValidation(t *testing.T) {
 		{name: "status вне enum", method: "GET", path: "/api/v1/applications?status=bogus", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "status"},
 		{name: "amount_min не по паттерну", method: "GET", path: "/api/v1/applications?amount_min=abc", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "amount_min"},
 		{name: "page_size > maximum", method: "GET", path: "/api/v1/applications?page_size=1000", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "page_size"},
+		{name: "target_country не ISO-код", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=Germany", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "target_country"},
+		{name: "has_my_offer не boolean", method: "GET", path: "/api/v1/applications?has_my_offer=yes", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "has_my_offer"},
+		{name: "deals: организация не uuid", method: "GET", path: "/api/v1/deals?lender_organization_id=acme", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "lender_organization_id"},
+		{name: "aml: заявка не uuid", method: "GET", path: "/api/v1/admin/aml/flags?application_id=APP-1", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "application_id", admin: true},
 
 		// Путь.
 		{name: "не uuid в пути", method: "GET", path: "/api/v1/applications/not-a-uuid", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "applicationId"},
@@ -68,16 +79,19 @@ func TestRequestValidation(t *testing.T) {
 			if tt.body != "" {
 				body = strings.NewReader(tt.body)
 			}
-			req, err := http.NewRequest(tt.method, srv.URL+tt.path, body)
+			baseURL := srv.URL
+			if tt.admin {
+				baseURL = adminSrv.URL
+			}
+			req, err := http.NewRequest(tt.method, baseURL+tt.path, body)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if tt.ctype != "" {
 				req.Header.Set("Content-Type", tt.ctype)
 			}
-			if needsTestAuthentication(tt.method, tt.path) {
-				addValidTestSession(req)
-			}
+			// Сессия и CSRF — на каждом запросе: публичные операции их игнорируют.
+			addValidTestSession(req)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -114,7 +128,7 @@ func TestRequestValidation(t *testing.T) {
 
 	t.Run("multipart пропускается", func(t *testing.T) {
 		// Загрузку файла валидатор не трогает (читал бы multipart целиком в память):
-		// мусорное тело доходит до заглушки — 501, а не 400.
+		// мусорное тело доходит до хендлера, и форму проверяет он сам — нет части file.
 		req, _ := http.NewRequest("POST", srv.URL+"/api/v1/organizations/me/documents", strings.NewReader("garbage"))
 		req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
 		addValidTestSession(req)
@@ -123,41 +137,11 @@ func TestRequestValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusNotImplemented {
-			raw, _ := io.ReadAll(resp.Body)
-			t.Fatalf("status = %d, want 501; body %s", resp.StatusCode, raw)
+		raw, _ := io.ReadAll(resp.Body)
+		var e api.Error
+		_ = json.Unmarshal(raw, &e)
+		if resp.StatusCode != http.StatusBadRequest || len(e.Error.Details) == 0 || e.Error.Details[0].Field != "file" {
+			t.Fatalf("status = %d, want 400 с field file; body %s", resp.StatusCode, raw)
 		}
 	})
-}
-
-func TestRegistryLookupWithoutSession(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService()})
-	resp, body := request(t, srv, http.MethodGet, "/api/v1/registry/lookup?country_code=RU&number=7707083893", "")
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want %d; body %s", resp.StatusCode, http.StatusNotImplemented, body)
-	}
-	var e api.Error
-	if err := json.Unmarshal(body, &e); err != nil {
-		t.Fatalf("decode %s: %v", body, err)
-	}
-	if e.Error.Code != "NOT_IMPLEMENTED" {
-		t.Fatalf("code = %s, want NOT_IMPLEMENTED; body %s", e.Error.Code, body)
-	}
-}
-
-func needsTestAuthentication(method, path string) bool {
-	switch {
-	case method == http.MethodGet && path == "/api/v1/healthz":
-		return false
-	case method == http.MethodGet && (path == "/api/v1/dictionaries/countries" ||
-		path == "/api/v1/dictionaries/currencies" ||
-		path == "/api/v1/dictionaries/transfer-methods" ||
-		path == "/api/v1/registry/lookup"):
-		return false
-	case method == http.MethodPost && (path == "/api/v1/auth/register" ||
-		path == "/api/v1/auth/login"):
-		return false
-	default:
-		return true
-	}
 }

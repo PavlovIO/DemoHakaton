@@ -16,10 +16,20 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/config"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/admin"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/dictionaries"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/notifications"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
 )
 
 const dbConnectTimeout = 5 * time.Second
@@ -50,19 +60,14 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 
-	queries := repository.New(pool)
-	txManager := service.NewTxManager(pool)
-	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, service.NewMemoryRateLimiter(), service.DefaultAuthLimits)
-	h := handler.New(handler.Deps{
-		DB:           pool,
-		Dicts:        service.NewDictionaries(queries),
-		Auth:         auth,
-		CookieSecure: cfg.CookieSecure,
-	})
+	router, err := newRouter(pool, cfg)
+	if err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           handler.NewRouter(h),
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -96,12 +101,55 @@ func run(ctx context.Context) error {
 	return nil
 }
 
+// newRouter собирает граф зависимостей API поверх пула: его же поднимает TestIDOR,
+// чтобы проверять доступ на тех же сервисах и SQL, что в проде.
+func newRouter(pool *pgxpool.Pool, cfg config.Config) (http.Handler, error) {
+	// Каталог документов недоступен для записи — сервер не стартует, а не падает на загрузке.
+	documents, err := storage.NewLocal(cfg.DocumentStorageDir)
+	if err != nil {
+		return nil, err
+	}
+
+	queries := repository.New(pool)
+	txManager := service.NewTxManager(pool)
+	// Один ограничитель на процесс: ключи login/register/registry_lookup/chat:send различаются префиксом.
+	limiter := service.NewMemoryRateLimiter()
+	authService := auth.NewAuth(queries, txManager, cfg.SessionTTL, limiter, auth.DefaultAuthLimits)
+	companyRegistry := registry.NewMock() // в MVP реестр — только мок (DECISIONS п. 17)
+	// AML-скрининг читает только локальную БД (санкции, FATF): submitKyc и submit заявки
+	// при его ошибке откатываются (fail-closed).
+	screener := aml.RuleScreener{}
+	return handler.NewRouter(handler.New(handler.Deps{
+		DB:    pool,
+		Dicts: dictionaries.NewDictionaries(queries),
+		Auth:  authService,
+		Kyc: kyc.NewKyc(kyc.KycDeps{
+			Store: queries, Tx: txManager, Files: documents,
+			Screener: screener,
+			Verifier: companyRegistry,
+		}),
+		Registry: kyc.NewRegistry(companyRegistry, limiter),
+		Applications: lending.NewApplications(lending.ApplicationsDeps{
+			Store: queries, Tx: txManager,
+			Screener: screener,
+		}),
+		Offers:             lending.NewOffers(lending.OffersDeps{Store: queries, Tx: txManager}),
+		Deals:              lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),
+		Chat:               lending.NewChat(lending.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
+		Notifications:      notifications.NewNotifications(queries, txManager),
+		Admin:              admin.New(admin.Deps{Tx: txManager}),
+		CookieSecure:       cfg.CookieSecure,
+		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
+	})), nil
+}
+
 func newLogger(cfg config.Config) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	var h slog.Handler = slog.NewTextHandler(os.Stdout, opts)
 	if cfg.LogFormat == "json" {
-		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+		h = slog.NewJSONHandler(os.Stdout, opts)
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+	return slog.New(middleware.ContextHandler{Handler: h}) // request_id и user_id в каждой строке запроса
 }
 
 // newPool создаёт пул и сразу проверяет соединение: без БД сервер не стартует (fail fast).

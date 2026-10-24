@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"context"
-	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
@@ -21,20 +21,6 @@ type contextKey struct {
 var (
 	principalContextKey    = contextKey{name: "principal"}
 	sessionTokenContextKey = contextKey{name: "session_token"}
-
-	publicRoutes = map[string]map[string]struct{}{
-		http.MethodGet: {
-			"/api/v1/healthz":                       {},
-			"/api/v1/dictionaries/countries":        {},
-			"/api/v1/dictionaries/currencies":       {},
-			"/api/v1/dictionaries/transfer-methods": {},
-			"/api/v1/registry/lookup":               {},
-		},
-		http.MethodPost: {
-			"/api/v1/auth/register": {},
-			"/api/v1/auth/login":    {},
-		},
-	}
 )
 
 // Authenticator проверяет токен сессии и возвращает principal.
@@ -42,41 +28,48 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, token string) (*service.Principal, error)
 }
 
-// Authenticate пропускает публичные маршруты и проверяет сессию на остальных.
-// Отказ пишется через writeErr (handler.WriteError) — тот же формат и статусы, что у хендлеров.
+// Authenticate кладёт principal в контекст, если сессия валидна. Он «мягкий»: без cookie
+// или с невалидной сессией запрос идёт дальше без principal — отвечать ли 401, решает
+// Authorize, потому что только он знает, публичная ли операция (протухшая cookie не должна
+// мешать login). Сбой проверки (БД) — 500.
 func Authenticate(a Authenticator, writeErr ErrorWriter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isPublic(r) {
-				next.ServeHTTP(w, r)
-				return
-			}
-
 			cookie, err := r.Cookie(SessionCookieName)
 			if err != nil || cookie.Value == "" {
-				writeErr(w, r, apperr.Unauthorized("Сессия недействительна"))
+				next.ServeHTTP(w, r)
 				return
 			}
 
 			principal, err := a.Authenticate(r.Context(), cookie.Value)
 			if err != nil {
-				if _, ok := apperr.As(err); !ok || errors.Is(err, &apperr.Error{Code: apperr.CodeInternal}) {
-					writeErr(w, r, err)
+				if appErr, ok := apperr.As(err); ok && appErr.Code == apperr.CodeUnauthorized {
+					next.ServeHTTP(w, r)
 					return
 				}
-				writeErr(w, r, apperr.Unauthorized("Сессия недействительна"))
+				writeErr(w, r, err)
 				return
 			}
 			if principal == nil {
-				writeErr(w, r, apperr.Unauthorized("Сессия недействительна"))
+				next.ServeHTTP(w, r)
 				return
 			}
 
+			logPrincipal(r.Context(), *principal)
 			ctx := context.WithValue(r.Context(), principalContextKey, *principal)
 			ctx = context.WithValue(ctx, sessionTokenContextKey, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// logPrincipal дописывает пользователя в строки лога запроса; у admin организации нет.
+func logPrincipal(ctx context.Context, p service.Principal) {
+	attrs := []slog.Attr{slog.String("user_id", p.UserID.String())}
+	if p.OrgID != nil {
+		attrs = append(attrs, slog.String("org_id", p.OrgID.String()))
+	}
+	WithLogAttrs(ctx, attrs...)
 }
 
 // PrincipalFromContext возвращает principal из контекста запроса.
@@ -89,17 +82,4 @@ func PrincipalFromContext(ctx context.Context) (service.Principal, bool) {
 func SessionTokenFromContext(ctx context.Context) (string, bool) {
 	token, ok := ctx.Value(sessionTokenContextKey).(string)
 	return token, ok
-}
-
-func isPublic(r *http.Request) bool {
-	method := r.Method
-	if method == http.MethodHead { // HEAD обслуживается теми же маршрутами, что GET
-		method = http.MethodGet
-	}
-	methods, ok := publicRoutes[method]
-	if !ok {
-		return false
-	}
-	_, ok = methods[r.URL.Path]
-	return ok
 }

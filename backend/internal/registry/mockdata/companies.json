@@ -1,0 +1,74 @@
+[
+  {
+    "country_code": "RU",
+    "number": "7700000009",
+    "name": "ООО «Альфа»",
+    "full_name": "Общество с ограниченной ответственностью «Альфа»",
+    "registration_number": "7700000009",
+    "legal_address": "125009, г. Москва, ул. Тверская, д. 1",
+    "status": "active"
+  },
+  {
+    "country_code": "RU",
+    "number": "7700000016",
+    "name": "АО «Вектор»",
+    "full_name": "Акционерное общество «Вектор»",
+    "registration_number": "7700000016",
+    "legal_address": "115035, г. Москва, ул. Садовническая, д. 5",
+    "status": "active"
+  },
+  {
+    "country_code": "RU",
+    "number": "7700000023",
+    "name": "ООО «Омега»",
+    "full_name": "Общество с ограниченной ответственностью «Омега»",
+    "registration_number": "7700000023",
+    "legal_address": "190000, г. Санкт-Петербург, Невский пр-т, д. 10",
+    "status": "liquidated"
+  },
+  {
+    "country_code": "RU",
+    "number": "7700000030",
+    "name": "ООО «Сигма»",
+    "full_name": "Общество с ограниченной ответственностью «Сигма»",
+    "registration_number": "7700000030",
+    "legal_address": "420111, г. Казань, ул. Баумана, д. 3",
+    "status": "active"
+  },
+  {
+    "country_code": "CY",
+    "number": "DEMO00BETACORP000162",
+    "name": "Beta Corp Ltd",
+    "full_name": "Beta Corp Ltd",
+    "registration_number": "CY-123456",
+    "legal_address": "1 Makariou Avenue, 1065, Nicosia, CY",
+    "status": "active"
+  },
+  {
+    "country_code": "DE",
+    "number": "DEMO00GAMMAGMBH00148",
+    "name": "Gamma GmbH",
+    "full_name": "Gamma GmbH",
+    "registration_number": "HRB-555555",
+    "legal_address": "Friedrichstrasse 100, 10117, Berlin, DE",
+    "status": "active"
+  },
+  {
+    "country_code": "KW",
+    "number": "DEMO00DELTATRADE0174",
+    "name": "Delta Trading",
+    "full_name": "Delta Trading",
+    "registration_number": "KW-777777",
+    "legal_address": "Al Hamra Tower, 13001, Kuwait City, KW",
+    "status": "active"
+  },
+  {
+    "country_code": "SG",
+    "number": "DEMO00EPSILONCAP0155",
+    "name": "Epsilon Capital Pte",
+    "full_name": "Epsilon Capital Pte",
+    "registration_number": "201988888E",
+    "legal_address": "1 Raffles Place, 048616, Singapore, SG",
+    "status": "active"
+  }
+]

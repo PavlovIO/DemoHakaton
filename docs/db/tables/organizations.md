@@ -59,14 +59,17 @@ erDiagram
 |---|---|---|
 | `CreateOrganization` | `:one` | Регистрация компании, `kyc_status = 'draft'` |
 | `GetOrganizationByID` | `:one` | Карточка компании по `id` |
-| `UpdateOrganization` | `:one` | Частичное обновление (`COALESCE` по `name`, `registration_number`, `legal_address`, `lei`) |
-| `SubmitKycForReview` | `:one` | → `under_review`, ставит `kyc_submitted_at`, сбрасывает причину отказа |
+| `GetOrganizationForUpdate` | `:one` | То же с `FOR UPDATE`: сериализует правку профиля, документы и submit KYC |
+| `UpdateOrganization` | `:one` | Частичное обновление (`COALESCE` по `name`, `registration_number`, `legal_address`); `lei`: `NULL` — не трогать, `''` — очистить. Только в `draft`/`rejected` |
+| `SubmitKycForReview` | `:one` | `draft`/`rejected` → `under_review`, ставит `kyc_submitted_at`, сбрасывает причину отказа; возвращает всю строку |
 | `ApproveKyc` | `:one` | → `verified`, ставит `verified_at` |
 | `RejectKyc` | `:one` | → `rejected` с причиной, сбрасывает `verified_at` |
 | `ListOrganizations` | `:many` | Админский список с фильтрами `kyc_status`, `type`, `country_code`, `q` (ILIKE по имени и рег. номеру), пагинация |
 | `CountOrganizations` | `:one` | Счётчик для того же фильтра |
+| `ListBeneficiariesByOrg` | `:many` | Бенефициары компании по порядку добавления |
+| `DeleteBeneficiariesByOrg` | `:exec` | Очистка списка перед заменой |
+| `CreateBeneficiary` | `:one` | Вставка одного бенефициара (до 50 в цикле) |
 
 Замечания:
-- В `UPDATE`-запросах KYC нет условия по текущему статусу в `WHERE`: допустимость перехода проверяет сервис. Двойное одобрение одной заявки на KYC БД не остановит.
-- `UpdateOrganization` через `COALESCE` не умеет обнулить `lei`.
+- `UpdateOrganization` и `SubmitKycForReview` охраняют статус в `WHERE` (`kyc_status IN ('draft','rejected')`); сервис перед ними берёт `GetOrganizationForUpdate`. У `ApproveKyc` и `RejectKyc` условия по статусу пока нет — их доводит BE-12.
 - `country_code` и `type` не меняются после регистрации: в `UpdateOrganization` их нет.

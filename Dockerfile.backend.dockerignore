@@ -1,0 +1,8 @@
+# Контекст Dockerfile.backend (BuildKit берёт <Dockerfile>.dockerignore вместо общего
+# .dockerignore): только backend/, без бинарников и локального хранилища документов.
+*
+!backend/
+backend/bin/
+backend/storage/
+**/*.test
+**/*.out

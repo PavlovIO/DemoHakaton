@@ -11,26 +11,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const countUnreadMessages = `-- name: CountUnreadMessages :one
-SELECT count(*) FROM messages m
-LEFT JOIN message_reads r ON r.offer_id = m.offer_id AND r.user_id = $2
-WHERE m.offer_id = $1
-  AND m.author_user_id <> $2
-  AND (r.last_read_message_id IS NULL OR m.id > r.last_read_message_id)
-`
-
-type CountUnreadMessagesParams struct {
-	OfferID uuid.UUID `json:"offer_id"`
-	UserID  uuid.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUnreadMessages, arg.OfferID, arg.UserID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createMessage = `-- name: CreateMessage :one
 INSERT INTO messages (offer_id, author_user_id, text)
 VALUES ($1, $2, $3)
@@ -43,6 +23,7 @@ type CreateMessageParams struct {
 	Text         string    `json:"text"`
 }
 
+// Только после GetOfferVisible в той же транзакции: запрос не проверяет, что автор — сторона оффера.
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
 	row := q.db.QueryRow(ctx, createMessage, arg.OfferID, arg.AuthorUserID, arg.Text)
 	var i Message
@@ -56,35 +37,69 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 	return i, err
 }
 
-const listMessages = `-- name: ListMessages :many
-SELECT id, offer_id, author_user_id, text, created_at FROM messages
-WHERE offer_id = $1 AND id > $2
-ORDER BY id ASC
-LIMIT $3
+const listMessagesVisible = `-- name: ListMessagesVisible :many
+SELECT m.id, m.offer_id, m.author_user_id, m.text, m.created_at,
+       u.role AS author_role,
+       ao.id AS author_org_id, ao.name AS author_org_name, ao.country_code AS author_org_country_code
+  FROM messages m
+  JOIN offers o         ON o.id  = m.offer_id
+  JOIN applications a   ON a.id  = o.application_id
+  JOIN users u          ON u.id  = m.author_user_id
+  JOIN organizations ao ON ao.id = u.organization_id
+ WHERE m.offer_id = $1 AND m.id > $2::bigint
+   AND (   $3::user_role = 'admin'
+        OR ($3::user_role = 'lender'   AND o.lender_organization_id   = $4::uuid)
+        OR ($3::user_role = 'borrower' AND a.borrower_organization_id = $4::uuid))
+ ORDER BY m.id
+ LIMIT $5
 `
 
-type ListMessagesParams struct {
-	OfferID uuid.UUID `json:"offer_id"`
-	ID      int64     `json:"id"`
-	Limit   int32     `json:"limit"`
+type ListMessagesVisibleParams struct {
+	OfferID    uuid.UUID `json:"offer_id"`
+	AfterID    int64     `json:"after_id"`
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
+	MaxRows    int32     `json:"max_rows"`
 }
 
-// Для polling используем after_id. Если передать 0, вернет последние сообщения.
-func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error) {
-	rows, err := q.db.Query(ctx, listMessages, arg.OfferID, arg.ID, arg.Limit)
+type ListMessagesVisibleRow struct {
+	Message              Message   `json:"message"`
+	AuthorRole           UserRole  `json:"author_role"`
+	AuthorOrgID          uuid.UUID `json:"author_org_id"`
+	AuthorOrgName        string    `json:"author_org_name"`
+	AuthorOrgCountryCode string    `json:"author_org_country_code"`
+}
+
+// Polling: сообщения с id > after_id по возрастанию; after_id = 0 → самые старые max_rows штук
+// (не последние: «последние N» потребовали бы ORDER BY id DESC, в MVP не нужно).
+// Правило видимости — то же, что у GetOfferVisible: чужой чат даёт 0 строк, но сервис
+// всё равно сначала зовёт GetOfferVisible, чтобы отличить 404 от пустого чата.
+// JOIN organizations внутренний: автор — всегда borrower или lender (admin не пишет).
+func (q *Queries) ListMessagesVisible(ctx context.Context, arg ListMessagesVisibleParams) ([]ListMessagesVisibleRow, error) {
+	rows, err := q.db.Query(ctx, listMessagesVisible,
+		arg.OfferID,
+		arg.AfterID,
+		arg.ViewerRole,
+		arg.ViewerOrg,
+		arg.MaxRows,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Message{}
+	items := []ListMessagesVisibleRow{}
 	for rows.Next() {
-		var i Message
+		var i ListMessagesVisibleRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.OfferID,
-			&i.AuthorUserID,
-			&i.Text,
-			&i.CreatedAt,
+			&i.Message.ID,
+			&i.Message.OfferID,
+			&i.Message.AuthorUserID,
+			&i.Message.Text,
+			&i.Message.CreatedAt,
+			&i.AuthorRole,
+			&i.AuthorOrgID,
+			&i.AuthorOrgName,
+			&i.AuthorOrgCountryCode,
 		); err != nil {
 			return nil, err
 		}
@@ -94,6 +109,20 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]M
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOfferChat = `-- name: LockOfferChat :exec
+SELECT pg_advisory_xact_lock(hashtext('chat'), hashtext($1::uuid::text))
+`
+
+// Транзакционная блокировка чата оффера перед CreateMessage. id из IDENTITY выдаётся до коммита,
+// и без блокировки сообщение 10 может закоммититься после 11: клиент, уже получивший 11,
+// опрашивает с after_id = 11 и 10 не увидит никогда (а MarkMessagesRead сочтёт его прочитанным).
+// Под блокировкой сообщения одного оффера коммитятся в порядке id. Первый ключ — пространство
+// «чат», чтобы не пересекаться с другими advisory-блокировками.
+func (q *Queries) LockOfferChat(ctx context.Context, offerID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockOfferChat, offerID)
+	return err
 }
 
 const markMessagesRead = `-- name: MarkMessagesRead :exec
@@ -109,6 +138,7 @@ type MarkMessagesReadParams struct {
 	LastReadMessageID int64     `json:"last_read_message_id"`
 }
 
+// Только после GetOfferVisible: запрос не проверяет, что читатель — сторона оффера.
 // Upsert: обновляем last_read_message_id, только если новое значение больше старого
 func (q *Queries) MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error {
 	_, err := q.db.Exec(ctx, markMessagesRead, arg.OfferID, arg.UserID, arg.LastReadMessageID)

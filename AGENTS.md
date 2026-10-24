@@ -15,9 +15,10 @@ MVP платформы ликвидности: SPA (React + Vite + TypeScript + 
 Контракт-first (`docs/adr/0001-architecture-and-api-contract.md`): любое изменение API начинается с `api/`, потом код бэка и фронта.
 - Источник правды — `api/openapi.root.yaml` + `api/paths/*.yaml` (по файлу на тег) + `api/schemas/*.yaml`. `api/openapi.yaml` — сгенерированный бандл.
 - Слои бэкенда: `internal/http/handler` (транспорт, по файлу на тег) → `internal/service` (бизнес-логика, статусные машины, транзакции) → `internal/repository` (sqlc). Каждый слой знает только о соседнем снизу: хендлер не ходит в репозиторий, сервис не знает про HTTP.
+- `internal/service` (ADR-0005): ядро в корне (`Principal`, `TxManager`, `Notifier`, аудит, история статусов, `PageWindow`) и пакеты доменов `auth/`, `kyc/`, `lending/` (заявки, офферы, сделки, чат), `notifications/`, `dictionaries/`. Домен импортирует только ядро, не соседние домены; исключение — `admin/` (решения администратора), он стоит над `kyc` и `lending` и вызывает их переходы. Общий хелпер двух доменов — в ядро (или `pgconv/`), хелпер тестов — в `servicetest/`.
 - SQL-запросы пишутся в `backend/queries/*.sql`, схема БД — в `backend/migrations/` (goose).
 - `internal/aml` — правила AML-скрининга, `internal/registry` — клиенты DaData/GLEIF, `internal/apperr` — доменные ошибки.
-- Новая операция API — по шагам из раздела «Как добавить операцию» в `backend/README.md`; образец — справочники (`handler/dictionaries.go`, `service/dictionaries.go`).
+- Новая операция API — по шагам из раздела «Как добавить операцию» в `backend/README.md`; образец — справочники (`handler/dictionaries.go`, `service/dictionaries/dictionaries.go`).
 
 Сгенерированное — руками не править, а перегенерировать:
 
@@ -36,10 +37,10 @@ MVP платформы ликвидности: SPA (React + Vite + TypeScript + 
 
 Схема аутентификации описана в `api/openapi.root.yaml` (`info.description`) и `backend/README.md` («Аутентификация», «Роли и доступ») — не меняй её без обсуждения.
 - **CSRF:** сессия — HttpOnly-cookie `session`; все запросы, кроме GET/HEAD/OPTIONS, обязаны слать `X-CSRF-Token`, равный cookie `csrf_token` (double-submit), иначе `403 CSRF_INVALID`. Исключение: операции с `security: []` (`register`, `login`) CSRF не проверяют — до входа cookie `csrf_token` нет; от login-CSRF защищает обязательный `Content-Type: application/json`. Других исключений для мутирующих эндпоинтов не делай и не меняй состояние в GET.
-- **Доступ (IDOR):** владение проверяется в каждом запросе к сущности — в SQL всегда `AND org_id = <организация пользователя>`. Чужая сущность → `404`, не `403`. Роль (`borrower`/`lender`/`admin`) проверяй в сервисе, а не только на фронте.
+- **Доступ (IDOR):** владение проверяется в каждом запросе к сущности — в SQL всегда `AND org_id = <организация пользователя>`; заявки, офферы, сделки читай запросами `*Visible` с обязательными `viewer_role`/`viewer_org`. Чужая сущность → `404`, не `403`. Роль и KYC объявляй у операции в спеке (`x-roles`/`x-kyc-required`, проверяет `middleware.Authorize`) и повторяй проверку роли в сервисе, а не только на фронте (ADR-0004).
 - **SQL:** только параметризованные запросы через sqlc (`backend/queries/`); никакой склейки SQL из строк.
 - **Входные данные:** ограничения (`maxLength`, `format`, `enum`, `minimum`) задаются в схемах контракта — их проверяет `handler/validate.go`; не дублируй валидацию вручную в хендлере.
-- **Пароли и токены:** хэширование — только `internal/service/password.go` (argon2id); в БД — только хэши токенов сессий. Пароли, токены, хэши и содержимое документов не логируй и не возвращай в ответах.
+- **Пароли и токены:** хэширование — только `internal/service/auth/password.go` (argon2id); в БД — только хэши токенов сессий. Пароли, токены, хэши и содержимое документов не логируй и не возвращай в ответах.
 - **XSS (фронт):** пользовательский текст (чат, описания заявок, названия компаний) выводи только через JSX-экранирование; `dangerouslySetInnerHTML` с пользовательскими данными запрещён. Токены не клади в `localStorage` — сессия живёт в HttpOnly-cookie, фронт читает лишь `csrf_token` и кладёт его в заголовок.
 - 🚫 Не коммить `.env` и реальные секреты; новые переменные окружения добавляй в `.env.example`.
 
@@ -52,12 +53,12 @@ MVP платформы ликвидности: SPA (React + Vite + TypeScript + 
 
 - Бизнес-логика (`internal/service`, `internal/aml`) — обязательно модульные тесты; статусные переходы — табличными тестами (одна функция переходов на сущность, ADR-0001).
 - Тесты хендлеров — через `httptest` с настоящим роутером и фейковым сервисом (образец: `handler/dictionaries_test.go`).
-- Интеграционные тесты с БД пропускаются при `testing.Short()` или без `DATABASE_URL` (образец: `service/dictionaries_integration_test.go`).
+- Интеграционные тесты с БД пропускаются при `testing.Short()` или без `DATABASE_URL` (образец: `service/dictionaries/dictionaries_integration_test.go`; БД и фикстуры — `service/servicetest`).
 
 ```bash
 make test       # юнит-тесты, БД не нужна
 make test-all   # + интеграционные (сначала make db)
-go -C backend test -short -run TestName ./internal/service/   # один тест
+go -C backend test -short -run TestName ./internal/service/lending/   # один тест
 ```
 
 ## Документация

@@ -50,8 +50,10 @@ info:
 
     ## Ошибки
     Единый формат `Error`. Коды: `VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `CSRF_INVALID`,
-    `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `RATE_LIMITED`, `INTERNAL`,
-    `NOT_IMPLEMENTED` (501, операция ещё не реализована), `UNAVAILABLE` (503, например нет соединения с БД).
+    `KYC_NOT_VERIFIED`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATUS_TRANSITION`, `FILE_TOO_LARGE` (413),
+    `RATE_LIMITED`, `INTERNAL`, `NOT_IMPLEMENTED` (501, операция ещё не реализована),
+    `UNAVAILABLE` (503, например нет соединения с БД),
+    `UPSTREAM_UNAVAILABLE` (502, внешний реестр не ответил — `registryLookup`).
 
     ## Пагинация
     `page` (с 1) + `page_size` (по умолчанию 20, максимум 100). Ответ: `{items, total, page, page_size}`.
@@ -155,7 +157,7 @@ paths:
         - admin
   /admin/organizations/{organizationId}/kyc/approve:
     post:
-      description: 409, если у компании есть открытые AML-флаги с severity=high.
+      description: 409 `CONFLICT` — у компании есть открытые AML-флаги с severity=high; 409 `INVALID_STATUS_TRANSITION` — компания не в статусе under_review.
       operationId: adminApproveKyc
       parameters:
         - $ref: '#/components/parameters/OrganizationId'
@@ -318,6 +320,7 @@ paths:
         - admin
   /admin/users/{userId}/block:
     post:
+      description: 403 `FORBIDDEN` — нельзя заблокировать администратора, в том числе себя. Повторная блокировка идемпотентна.
       operationId: adminBlockUser
       parameters:
         - $ref: '#/components/parameters/UserId'
@@ -334,6 +337,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/User'
           description: OK
+        "400":
+          $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -347,6 +352,7 @@ paths:
         - admin
   /admin/users/{userId}/unblock:
     post:
+      description: '403 `FORBIDDEN` — статус администратора не меняется: администратора нельзя заблокировать, поэтому и разблокировать нечего. Повторная разблокировка идемпотентна.'
       operationId: adminUnblockUser
       parameters:
         - $ref: '#/components/parameters/UserId'
@@ -381,6 +387,12 @@ paths:
             $ref: '#/components/schemas/AmlSeverity'
         - in: query
           name: organization_id
+          schema:
+            format: uuid
+            type: string
+        - description: Флаги конкретной заявки (экран модерации)
+          in: query
+          name: application_id
           schema:
             format: uuid
             type: string
@@ -472,6 +484,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/AnalyticsSummary'
           description: OK
+        "400":
+          $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -514,6 +528,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuditLogPage'
           description: OK
+        "400":
+          $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -530,6 +546,7 @@ paths:
         - `lender` — только `published` + заявки, по которым у компании есть оффер (для архива);
         - `admin` — все заявки.
         Фильтр по сумме (`amount_min`/`amount_max`) применяется только вместе с `currency`.
+        Витрина кредитора — `status=published&sort=published_at_desc`, архив его откликов — `has_my_offer=true`.
       operationId: listApplications
       parameters:
         - explode: true
@@ -540,10 +557,31 @@ paths:
               $ref: '#/components/schemas/ApplicationStatus'
             type: array
           style: form
-        - in: query
+        - description: Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ
+          explode: true
+          in: query
           name: target_country
           schema:
-            $ref: '#/components/schemas/CountryCode'
+            items:
+              $ref: '#/components/schemas/CountryCode'
+            type: array
+          style: form
+        - description: Способ перевода; несколько значений — ИЛИ
+          explode: true
+          in: query
+          name: transfer_method
+          schema:
+            items:
+              $ref: '#/components/schemas/TransferMethod'
+            type: array
+          style: form
+        - description: |
+            Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
+            `false` — только без моего оффера. Для других ролей игнорируется.
+          in: query
+          name: has_my_offer
+          schema:
+            type: boolean
         - in: query
           name: currency
           schema:
@@ -586,6 +624,8 @@ paths:
             enum:
               - created_at_desc
               - created_at_asc
+              - published_at_desc
+              - published_at_asc
               - amount_desc
               - amount_asc
               - term_asc
@@ -1053,7 +1093,7 @@ paths:
           $ref: '#/components/responses/InvalidTransition'
         "429":
           $ref: '#/components/responses/RateLimited'
-      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+      summary: Написать в чат (стороны оффера; оффер в статусе sent или accepted; admin — только чтение, 403)
       tags:
         - chat
       x-roles:
@@ -1061,8 +1101,21 @@ paths:
         - lender
   /deals:
     get:
+      description: Период `created_from`/`created_to` фильтрует по `agreed_at`.
       operationId: listDeals
       parameters:
+        - description: Только для admin
+          in: query
+          name: borrower_organization_id
+          schema:
+            format: uuid
+            type: string
+        - description: Только для admin
+          in: query
+          name: lender_organization_id
+          schema:
+            format: uuid
+            type: string
         - $ref: '#/components/parameters/CreatedFrom'
         - $ref: '#/components/parameters/CreatedTo'
         - $ref: '#/components/parameters/Page'
@@ -1341,6 +1394,7 @@ paths:
       summary: Принять оффер (borrower-владелец заявки)
       tags:
         - offers
+      x-kyc-required: true
       x-roles:
         - borrower
   /offers/{offerId}/reject:
@@ -1479,6 +1533,10 @@ paths:
         Тип определяется по содержимому (magic bytes), а не по расширению.
         Файл хранится вне веб-корня под случайным именем.
         Только в статусах организации draft / rejected.
+        Поле `doc_type` передаётся в форме до `file`: сервер читает форму потоком
+        и проверяет тип документа до приёма файла (браузерный `FormData` сохраняет
+        порядок `append`). Иначе — 400 `VALIDATION_ERROR` с `field: doc_type`.
+        Файл больше 10 MB — 413 `FILE_TOO_LARGE`.
       operationId: uploadMyDocument
       requestBody:
         content:
@@ -1557,6 +1615,17 @@ paths:
                 format: binary
                 type: string
           description: Файл (Content-Disposition attachment)
+          headers:
+            Content-Disposition:
+              description: '`attachment` с исходным именем файла (RFC 2231 для не-ASCII)'
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: Браузер не угадывает тип содержимого
+              schema:
+                enum:
+                  - nosniff
+                type: string
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":
@@ -1576,8 +1645,11 @@ paths:
         `draft|rejected → under_review`. Проверяет, что загружены обязательные документы:
         - все: `charter`, `registration_certificate`, `address_proof`, `beneficiaries_register`;
         - кредитор дополнительно: `source_of_funds`.
+        Нужен хотя бы один бенефициар, иначе 400 `VALIDATION_ERROR` с `field: beneficiaries`.
         При переходе бэкенд запускает AML-скрининг (санкционные списки, FATF-юрисдикции)
         и создаёт `AmlFlag` при совпадениях. Админ получает уведомление.
+        Реквизиты (`registration_number`, `lei`, страна) изменились параллельно со сверкой
+        с реестром — 409 `CONFLICT`, отправку нужно повторить.
       operationId: submitKyc
       responses:
         "200":
@@ -1602,7 +1674,7 @@ paths:
         - lender
   /registry/lookup:
     get:
-      description: Доступно без логина на шаге регистрации; жёсткий rate limit.
+      description: 'Доступно без логина на шаге регистрации. В MVP реестр — мок на фикстурах демо-компаний. Rate limit: 10 запросов в минуту с IP и 60 в минуту всего (429).'
       operationId: registryLookup
       parameters:
         - in: query
@@ -1636,7 +1708,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Внешний реестр недоступен
       security: []
-      summary: Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+      summary: Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
       tags:
         - organizations
   /healthz:
@@ -1945,7 +2017,7 @@ components:
           example: APP-000123
           type: string
         offers_count:
-          description: Только для владельца и admin; для lender — null
+          description: Все офферы заявки в любом статусе; только для владельца и admin, для lender — null
           nullable: true
           type: integer
         published_at:
@@ -2057,6 +2129,7 @@ components:
         transfer_method:
           $ref: '#/components/schemas/TransferMethod'
         transfer_method_comment:
+          description: '`""` очищает комментарий; отсутствие поля или `null` — оставить как есть'
           maxLength: 500
           nullable: true
           type: string
@@ -2786,8 +2859,9 @@ components:
           maxLength: 1000
           type: string
         lei:
+          description: '`""` очищает LEI; отсутствие поля или `null` — оставить как есть.'
           nullable: true
-          pattern: ^[A-Z0-9]{20}$
+          pattern: ^([A-Z0-9]{20})?$
           type: string
         name:
           maxLength: 300
@@ -2854,9 +2928,11 @@ components:
           nullable: true
           type: string
         source:
+          description: Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний (в MVP реестр только мок).
           enum:
             - egrul_dadata
             - gleif
+            - mock
           type: string
       required:
         - source
@@ -2917,6 +2993,8 @@ components:
       enum:
         - swift
         - sepa
+        - spfs
+        - cips
         - other
       type: string
     User:

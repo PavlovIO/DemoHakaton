@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -14,14 +15,42 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/openapi"
 )
 
+// SchemaError.Error() по умолчанию печатает схему и значение поля, а WriteError пишет текст
+// ошибки в лог (debug для 4xx): короткий пароль в register попал бы в лог как есть.
+// Без деталей остаются путь и правило; details ответа строит fieldErrors — их это не меняет.
+func init() { openapi3.SchemaErrorDetailsDisabled = true }
+
 // Лимиты тела запроса: валидатор читает тело целиком в память (см. middleware.MaxBody).
 const (
 	maxBodyDefault int64 = 1 << 20 // 1 МБ — JSON-тела
 	// 10 МБ файла по спеке плюс запас на multipart-обёртку и остальные поля формы:
-	// лимит стоит на всём теле, а не на файле. TODO(uploadMyDocument): в хендлере
-	// проверять размер самого файла и отдавать 413 из контракта, а не 400 отсюда.
+	// лимит стоит на всём теле, а не на файле. Размер самого файла проверяет сервис;
+	// превышение любого из лимитов — 413 FILE_TOO_LARGE (UploadMyDocument).
 	maxBodyUpload int64 = 10<<20 + 64<<10
 )
+
+// uploadTimeout — сколько можно принимать загрузку. ReadTimeout сервера (15 с) действует
+// на всё тело: 10 МБ за 15 с — это ≥ 5,6 Мбит/с, на медленном канале загрузка оборвалась бы.
+const uploadTimeout = 60 * time.Second
+
+// uploadResponseTimeout — запас на запись ответа после приёма файла: WriteTimeout
+// сервера отсчитывается от начала запроса и истёк бы раньше, чем ушёл ответ 201.
+const uploadResponseTimeout = 10 * time.Second
+
+// uploadDeadlines продлевает дедлайны чтения и записи соединения только для загрузки
+// документа; остальные запросы живут по таймаутам сервера.
+func uploadDeadlines(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isUpload(r) {
+			rc := http.NewResponseController(w)
+			now := time.Now()
+			// Ошибка — ResponseWriter без поддержки дедлайнов (тесты): остаются таймауты сервера.
+			_ = rc.SetReadDeadline(now.Add(uploadTimeout))
+			_ = rc.SetWriteDeadline(now.Add(uploadTimeout + uploadResponseTimeout))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // isUpload — POST /organizations/me/documents (multipart с файлом).
 func isUpload(r *http.Request) bool {
@@ -44,7 +73,7 @@ func validateRequests() func(http.Handler) http.Handler {
 		Options: openapi3filter.Options{
 			// В спеке глобальный security: [cookieAuth]; при nil-функции openapi3filter
 			// отдаёт SecurityRequirementsError на каждый запрос (401 на всё).
-			// Аутентификацию делает своё middleware. TODO(BE-03): проверять сессию здесь.
+			// Сессию и роли проверяют свои middleware раньше (Authenticate, Authorize).
 			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
 			// Все ошибки формы, а не первая: одна запись на поле в error.details.
 			MultiError: true,

@@ -42,7 +42,7 @@ type ServerInterface interface {
 	// SubmitKYC Отправить компанию на верификацию
 	// (POST /organizations/me/kyc/submit)
 	SubmitKYC(w http.ResponseWriter, r *http.Request)
-	// RegistryLookup Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+	// RegistryLookup Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
 	// (GET /registry/lookup)
 	RegistryLookup(w http.ResponseWriter, r *http.Request, params RegistryLookupParams)
 }
@@ -383,8 +383,14 @@ type DownloadDocumentResponseObject interface {
 	VisitDownloadDocumentResponse(w http.ResponseWriter) error
 }
 
+type DownloadDocument200ResponseHeaders struct {
+	ContentDisposition  *string
+	XContentTypeOptions *string
+}
+
 type DownloadDocument200ApplicationOctetStreamResponse struct {
 	Body          io.Reader
+	Headers       DownloadDocument200ResponseHeaders
 	ContentLength int64
 }
 
@@ -393,6 +399,12 @@ func (response DownloadDocument200ApplicationOctetStreamResponse) VisitDownloadD
 	w.Header().Set("Content-Type", "application/octet-stream")
 	if response.ContentLength != 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	if response.Headers.ContentDisposition != nil {
+		w.Header().Set("Content-Disposition", fmt.Sprint(*response.Headers.ContentDisposition))
+	}
+	if response.Headers.XContentTypeOptions != nil {
+		w.Header().Set("X-Content-Type-Options", fmt.Sprint(*response.Headers.XContentTypeOptions))
 	}
 	w.WriteHeader(200)
 
@@ -952,7 +964,7 @@ type StrictServerInterface interface {
 	// SubmitKYC Отправить компанию на верификацию
 	// (POST /organizations/me/kyc/submit)
 	SubmitKYC(ctx context.Context, request SubmitKYCRequestObject) (SubmitKYCResponseObject, error)
-	// RegistryLookup Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
+	// RegistryLookup Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
 	// (GET /registry/lookup)
 	RegistryLookup(ctx context.Context, request RegistryLookupRequestObject) (RegistryLookupResponseObject, error)
 }

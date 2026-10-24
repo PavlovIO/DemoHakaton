@@ -11,6 +11,7 @@ paths:
         - `lender` — только `published` + заявки, по которым у компании есть оффер (для архива);
         - `admin` — все заявки.
         Фильтр по сумме (`amount_min`/`amount_max`) применяется только вместе с `currency`.
+        Витрина кредитора — `status=published&sort=published_at_desc`, архив его откликов — `has_my_offer=true`.
       parameters:
         - name: status
           in: query
@@ -21,7 +22,26 @@ paths:
             items: { $ref: '../schemas/enums.yaml#/components/schemas/ApplicationStatus' }
         - name: target_country
           in: query
-          schema: { $ref: '../schemas/primitives.yaml#/components/schemas/CountryCode' }
+          description: Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/primitives.yaml#/components/schemas/CountryCode' }
+        - name: transfer_method
+          in: query
+          description: Способ перевода; несколько значений — ИЛИ
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/enums.yaml#/components/schemas/TransferMethod' }
+        - name: has_my_offer
+          in: query
+          description: |
+            Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
+            `false` — только без моего оффера. Для других ролей игнорируется.
+          schema: { type: boolean }
         - name: currency
           in: query
           schema: { $ref: '../schemas/primitives.yaml#/components/schemas/CurrencyCode' }
@@ -51,7 +71,8 @@ paths:
           in: query
           schema:
             type: string
-            enum: [created_at_desc, created_at_asc, amount_desc, amount_asc, term_asc, term_desc]
+            enum:
+              [created_at_desc, created_at_asc, published_at_desc, published_at_asc, amount_desc, amount_asc, term_asc, term_desc]
             default: created_at_desc
         - $ref: '../components.yaml#/components/parameters/Page'
         - $ref: '../components.yaml#/components/parameters/PageSize'

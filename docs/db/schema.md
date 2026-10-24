@@ -6,6 +6,7 @@ PostgreSQL 16. Миграции лежат в `backend/migrations` в форма
 |---|---|
 | `00001_init.sql` | Расширения, enum-типы, все таблицы, индексы, триггеры `updated_at` |
 | `00002_seed_dictionaries.sql` | Справочники: страны (с FATF и «недружественностью»), валюты, способы перевода |
+| `00003_notifications_feed_idx.sql` | Индекс ленты уведомлений с тай-брейком по `id` вместо `notifications_user_idx` |
 | `testdata/invariants_test.sql` | Smoke-тест ограничений: 19 проверок, в том числе транзакция принятия оффера |
 
 ## Как запустить
@@ -144,9 +145,9 @@ erDiagram
 |---|---|---|
 | `countries` | ISO 3166-1 alpha-2, названия ru/en, `fatf_list` (`black`/`grey`/NULL) + `fatf_as_of`, `is_unfriendly` | `GET /dictionaries/countries`. Поле `fatf_high_risk = fatf_list IS NOT NULL` |
 | `currencies` | ISO 4217 | `GET /dictionaries/currencies` |
-| `transfer_methods` | swift / sepa / other | `GET /dictionaries/transfer-methods` |
+| `transfer_methods` | swift / sepa / spfs (СПФС) / cips (CIPS) / other | `GET /dictionaries/transfer-methods` |
 
-В сиде не полный ISO, а около 30 стран, нужных для демо и типичных юрисдикций. Чёрный список FATF взят по итогам пленара июня 2026. Серый список и перечень недружественных стран (распоряжение № 430-р) нужно сверить с первоисточниками: это отдельная задача.
+В сиде не полный ISO, а около 50 стран, нужных для демо и типичных юрисдикций. Чёрный (`00002`) и серый (`00005`, 22 юрисдикции) списки FATF взяты по итогам пленара июня 2026. Перечень недружественных стран (распоряжение № 430-р) и полный ISO 3166-1 — отдельная задача (BE-02).
 
 ### Организации и пользователи
 
@@ -195,7 +196,7 @@ erDiagram
 | Админ без компании, остальные с компанией | БД `users_admin_org_chk` |
 | Один аккаунт на компанию (решение для MVP) | БД `users_one_per_org_uq`. Чтобы снять — удалить индекс |
 | Роль пользователя совпадает с типом организации | **Сервис** регистрации |
-| Создавать заявки и офферы можно только при `kyc_status = verified` | **Сервис** |
+| Создавать заявки и офферы можно только при `kyc_status = verified` | **HTTP-middleware** по `x-kyc-required` и сервис |
 | Разрешённые переходы статусов | **Сервис** (таблица переходов + табличные тесты) |
 | `agreed` ⇔ есть `accepted_offer_id` | БД `applications_agreed_chk` |
 | Один активный оффер компании на заявку | БД `offers_one_active_per_lender_uq` |
@@ -212,32 +213,42 @@ erDiagram
 
 ### Принятие оффера (`POST /offers/{offerId}/accept`)
 
-Всё выполняется в одной транзакции. `FOR UPDATE` на заявке сериализует параллельные клики. Если гонка всё же прорвётся, второй коммит упадёт на `offers_one_accepted_uq`.
+Всё выполняется в одной транзакции (`service.Deals.AcceptOffer`). `FOR UPDATE` на заявке сериализует параллельные клики: в `READ COMMITTED` вторая транзакция после ожидания видит новую версию строки (`agreed`) и получает 409. Если гонка всё же прорвётся, второй коммит упадёт на `offers_one_accepted_uq` / `deals_application_id_key` / `deals_offer_id_key` — сервис отвечает тем же 409 `INVALID_STATUS_TRANSITION`.
 
 ```sql
 BEGIN;
--- 1. Блокируем заявку и одновременно проверяем владельца и статус
+-- 1. Блокируем заявку и проверяем владельца (LockApplicationByOfferForBorrower).
+--    Статус НЕ фильтруется: иначе «уже agreed» и «чужая» обе дали бы 0 строк,
+--    и 404 от 409 не отличить. Статус заявки сервис проверяет по заблокированной
+--    строке → 409.
 SELECT a.* FROM applications a
   JOIN offers o ON o.application_id = a.id
  WHERE o.id = $offer_id
    AND a.borrower_organization_id = $my_org_id     -- IDOR: чужая заявка → 0 строк → 404
-   AND a.status = 'published'
-   FOR UPDATE OF a;                                -- 0 строк при верном владельце → 409
+   FOR UPDATE OF a;
 
--- 2. Принимаем оффер (должна обновиться ровно 1 строка, иначе 409)
+-- 2. Блокируем сам оффер (LockOfferForAccept): статус (sent) и valid_until сервис
+--    проверяет по заблокированной строке → 409; условия до снапшота не поменяются.
+SELECT * FROM offers WHERE id = $offer_id AND application_id = $app_id FOR UPDATE;
+
+-- 3. Принимаем оффер (должна обновиться ровно 1 строка, иначе 409); снапшот сделки —
+--    из RETURNING этой строки
 UPDATE offers SET status = 'accepted', decided_at = now()
- WHERE id = $offer_id AND status = 'sent';
+ WHERE id = $offer_id AND status = 'sent' AND application_id = $app_id
+RETURNING *;
 
--- 3. Остальные активные офферы отклоняем
+-- 4. Остальные активные офферы отклоняем
 UPDATE offers SET status = 'rejected', reject_reason = 'another_offer_accepted', decided_at = now()
  WHERE application_id = $app_id AND status = 'sent'
 RETURNING id, lender_organization_id;              -- им нужны уведомления
 
--- 4. Заявка → agreed
-UPDATE applications SET status = 'agreed', accepted_offer_id = $offer_id WHERE id = $app_id;
+-- 5. Заявка → agreed
+UPDATE applications SET status = 'agreed', accepted_offer_id = $offer_id
+ WHERE id = $app_id AND status = 'published';
 
--- 5. Снапшот сделки, 6. status_history, 7. notifications, 8. audit_log
-INSERT INTO deals (...) SELECT ... RETURNING *;
+-- 6. Снапшот сделки: fee_amount = round(amount × fee_percent / 100, 2) считает сервис
+-- 7. status_history, 8. notifications, 9. audit_log
+INSERT INTO deals (...) VALUES (...) RETURNING *;
 COMMIT;
 ```
 
@@ -266,38 +277,53 @@ SELECT a.*, o.name, o.country_code,
 
 ### Аналитика (`GET /admin/analytics/summary`)
 
+Период — полуинтервал `[created_from, created_to)`, без границ — всё время. Заявки и спрос — по `applications.created_at`, офферы и предложение — по `offers.created_at`, сделки — по `deals.agreed_at`. Все шесть запросов идут в одном снимке (`ReadSnapshot`).
+
 ```sql
--- Средний размер по каждой валюте отдельно (без конвертации)
-SELECT currency, count(*), sum(amount), round(avg(amount), 2)
-  FROM applications WHERE status NOT IN ('draft') AND created_at BETWEEN $from AND $to
- GROUP BY currency;
+-- Средний размер по каждой валюте отдельно (без конвертации); cancelled и rejected — тоже поданный спрос
+SELECT currency, count(*), sum(amount)::numeric, round(avg(amount), 2)::numeric
+  FROM applications WHERE status <> 'draft' AND created_at >= $from AND created_at < $to
+ GROUP BY currency ORDER BY currency;
+
+-- Заявки по статусам (total — их сумма), офферы и сделки за период
+SELECT status, count(*) FROM applications WHERE <период по created_at> GROUP BY status;
+SELECT count(*) FROM offers WHERE <период по created_at>;
+SELECT count(*) FROM deals  WHERE <период по agreed_at>;
 
 -- Топ стран спроса (куда хотят деньги)
 SELECT target_country_code, count(*) FROM applications
- WHERE status IN ('published', 'agreed') GROUP BY 1 ORDER BY 2 DESC LIMIT $n;
+ WHERE status IN ('published', 'agreed') AND <период> GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $n;
 
 -- Топ стран предложения (откуда кредиторы, сделавшие офферы)
-SELECT org.country_code, count(DISTINCT o.id) FROM offers o
+SELECT org.country_code, count(o.id) FROM offers o
   JOIN organizations org ON org.id = o.lender_organization_id
- GROUP BY 1 ORDER BY 2 DESC LIMIT $n;
+ WHERE <период по o.created_at> GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $n;
 ```
+
+Явный `::numeric` у сумм нужен sqlc: без него `sum(numeric)` выводится как `int64`, а override из `sqlc.yaml` на `decimal.Decimal` не срабатывает.
 
 ### Санкционный скрининг
 
 ```sql
-SET pg_trgm.similarity_threshold = 0.4;            -- широкий отбор кандидатов
-SELECT id, source, name, similarity(name_normalized, $q) AS score
+SELECT id, source, external_id, entity_kind, name, name_normalized,
+       similarity(name_normalized, @query) AS trgm_score
   FROM sanctions_entries
- WHERE name_normalized % $q
- ORDER BY score DESC LIMIT 20;
+ WHERE name_normalized % @query                               -- GIN-индекс
+   AND similarity(name_normalized, @query) >= @min_similarity -- 0.4: результат не зависит от GUC
+   AND entity_kind = ANY(@entity_kinds)                       -- до LIMIT: персоны не вытесняют организацию
+ ORDER BY trgm_score DESC, id LIMIT 20;
 -- Кандидатов досчитать Jaro-Winkler в Go. ≥ 0.90 → флаг high, 0.85–0.90 → medium (ручная проверка).
 ```
 
-Перед поиском имя нормализуется одинаково для списка и для запроса:
-- нижний регистр;
-- транслитерация кириллицы в латиницу;
+Порог задаётся в самом запросе, GUC на соединении не меняем: на соединении из пула настройка утекает в чужие запросы. Инвариант: GUC роли (`0.3` по умолчанию, `0.4` на `lp_app` после DB-SEC) ≤ `candidateMinSimilarity` (`0.4`, `internal/aml/rules.go`) — иначе `%` отрежет кандидатов раньше явного порога.
+
+Имя нормализуется одной функцией `aml.Normalize` для загрузчика и для запроса:
+- снятие диакритики, нижний регистр;
+- транслитерация кириллицы (ICAO); при скрининге кириллического имени ищется ещё вариант BGN/PCGN (`Юрий` → `iurii` и `yuriy`), берётся лучший score;
 - удаление орг. форм (ООО, LLC, Ltd, GmbH);
 - схлопывание пробелов.
+
+Score — `max(JW(a, b), JW(sortTokens(a), sortTokens(b)))`: «Petrov Ivan» и «Ivan Petrov» совпадают. Флаг — один на субъект (компанию или бенефициара), по лучшему кандидату: на распространённом имени иначе была бы лавина флагов.
 
 ## Покрытие sqlc
 
@@ -308,31 +334,25 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `dictionaries.sql` | countries, currencies, transfer_methods | `ListCountries`, `ListCurrencies`, `ListTransferMethods` |
 | `users.sql` | users | `GetUserByID`, `GetUserByEmail`, `CreateUser`, `UpdateLastLogin`, `BlockUser`, `UnblockUser`, `ListUsers`, `CountUsers` |
 | `sessions.sql` | sessions (+ users, organizations) | `CreateSession`, `GetSessionByTokenHash`, `TouchSession`, `DeleteSessionByTokenHash`, `DeleteSessionsByUserID`, `DeleteExpiredSessions` |
-| `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations` |
-| `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
-| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationVisible`, `GetApplicationForUpdate`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplicationsVisible`, `CountApplicationsVisible`, `CreateStatusHistory` |
-| `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListOffersByApplication`, `ListOffersVisible`, `CountOffersVisible`, `AcceptOffer`, `RejectOtherOffers`, `RejectOffer`, `WithdrawOffer`, `RejectAllOffersForApplication` |
+| `organizations.sql` | organizations | `CreateOrganization`, `GetOrganizationByID`, `GetOrganizationForUpdate`, `UpdateOrganization`, `SubmitKycForReview`, `ApproveKyc`, `RejectKyc`, `ListOrganizations`, `CountOrganizations`, `ListBeneficiariesByOrg`, `DeleteBeneficiariesByOrg`, `CreateBeneficiary` |
+| `kyc.sql` | kyc_documents, registry_checks | `CreateKycDocument`, `ListKycDocumentsByOrg`, `GetKycDocumentVisible`, `DeleteKycDocument`, `CreateRegistryCheck`, `GetLatestRegistryCheck` |
+| `applications.sql` | applications, status_history | `CreateApplication`, `GetApplicationVisible`, `LockApplicationByOfferForBorrower`, `UpdateApplication`, `SubmitApplication`, `ApproveApplication`, `RejectApplication`, `CancelApplication`, `AgreeApplication`, `ListApplicationsVisible`, `CountApplicationsVisible`, `CreateStatusHistory` |
+| `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListApplicationOffersVisible`, `ListOffersVisible`, `CountOffersVisible`, `LockApplicationForLender`, `LockOfferForAccept`, `AcceptOffer`, `RejectOffer`, `WithdrawOffer`, `RejectSentOffersByApplication` |
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
-| `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessages`, `MarkMessagesRead`, `CountUnreadMessages` |
-| `notifications.sql` | notifications | `CreateNotification`, `ListNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
-| `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessagesVisible`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
+| `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
+| `admin.sql` | aml_flags, sanctions_entries, countries, audit_log, аналитика | `CreateAmlFlag`, `HasSimilarAmlFlag`, `ListAmlFlags`, `CountAmlFlags`, `GetAmlFlagByID`, `ListAmlFlagsByOrganization`, `CountOpenHighAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `ListCountriesFatf`, `CreateAuditLog`, `ListAuditLog`, `CountAuditLog`, `GetAnalyticsSummaryByCurrency`, `CountApplicationsByStatus`, `CountOffersInPeriod`, `CountDealsInPeriod`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
+| `sanctions.sql` | sanctions_entries | `DeleteSanctionsBySource`, `InsertSanctionsEntries` (`:copyfrom`, загрузчик `cmd/loadsanctions`) |
 
 ### Чего не хватает и где запросы расходятся с этим документом
 
 Пробелы (запросов нет):
-- `beneficiaries` — ни одного запроса, хотя `PATCH /organizations/me` должен заменять список;
-- `status_history` — нет чтения для `GET /applications/{id}/history`;
-- `kyc_documents` — нет получения документа по `id` для скачивания;
-- `aml_flags` — нет `Count` и `GetByID`; `audit_log` — нет фильтров и `Count`;
-- `sanctions_entries` — нет запросов загрузчика списков.
+- `status_history` — нет чтения для `GET /applications/{id}/history`.
 
 Расхождения с примерами выше:
-- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). `GetApplicationForUpdate`, `ListMessages`, `ListOffersByApplication` и `UPDATE` статусов пока фильтруют только по `id`; фильтр владельца в `WHERE` им добавляют BE-07…BE-10 (таблица в плане BE-04).
-- **Принятие оффера.** `GetApplicationForUpdate` не проверяет владельца и `status = 'published'`. `RejectOtherOffers` — `:exec` без `RETURNING`, поэтому кредиторам отклонённых офферов не из чего отправить уведомления.
+- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). Чат читается `ListMessagesVisible` с тем же правилом; `CreateMessage` и `MarkMessagesRead` вызываются только после `GetOfferVisible`. `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`. Запросы уведомлений фильтруют по `user_id` текущего пользователя; `MarkNotificationRead` — `:execrows`, 0 строк → `404`.
 - **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
-- **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
-- **Сделка.** `fee_amount` считается в SQL (`CreateDeal`), а не в бэкенде.
-- **Переходы статусов** заявок и KYC не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`). Параллельные запросы могут проскочить проверку сервиса.
+- **Переходы статусов** заявок и решения админа по KYC (`ApproveKyc`, `RejectKyc`) не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`, у `UpdateOrganization` и `SubmitKycForReview` — `kyc_status IN ('draft','rejected')` плюс `GetOrganizationForUpdate`). Параллельные запросы могут проскочить проверку сервиса.
 
 ## Что сознательно не делаем в MVP
 
@@ -340,3 +360,4 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - **Партиционирование `audit_log` и `messages`.** Объёмы демо этого не требуют.
 - **Row-Level Security.** IDOR закрываем в репозитории. RLS — хороший следующий шаг, если останется время.
 - **Конвертация валют.** Суммы и аналитика считаются по каждой валюте отдельно.
+- **Чистка старых уведомлений.** Строки `notifications` не удаляются: объёмы демо малы, ленту, включая сортировку `created_at DESC, id DESC`, покрывает индекс `notifications_feed_idx` (DECISIONS п. 39).

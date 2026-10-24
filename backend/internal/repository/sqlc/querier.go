@@ -12,100 +12,225 @@ import (
 )
 
 type Querier interface {
-	// Вызывать внутри транзакции после GetApplicationForUpdate
-	AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error)
+	// Вызывать внутри транзакции после LockApplicationByOfferForBorrower. 0 строк — оффер
+	// уже не sent (гонка) или не из заблокированной заявки → 409.
+	AcceptOffer(ctx context.Context, arg AcceptOfferParams) (Offer, error)
 	AgreeApplication(ctx context.Context, arg AgreeApplicationParams) (Application, error)
-	ApproveApplication(ctx context.Context, id uuid.UUID) (Application, error)
-	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
+	ApproveApplication(ctx context.Context, arg ApproveApplicationParams) (Application, error)
+	// Решение админа (BE-12). Охрана статуса в WHERE — страховка к FOR UPDATE в сервисе:
+	// 0 строк значит «уже не under_review» (409), а не «нет компании».
+	ApproveKyc(ctx context.Context, id uuid.UUID) (Organization, error)
 	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
-	CancelApplication(ctx context.Context, id uuid.UUID) (Application, error)
+	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
+	// Счётчик для ListAmlFlags: те же фильтры.
+	CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (int64, error)
+	// Статусы без заявок в выборку не попадают.
+	CountApplicationsByStatus(ctx context.Context, arg CountApplicationsByStatusParams) ([]CountApplicationsByStatusRow, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
+	// Счётчик для ListAuditLog: те же фильтры.
+	CountAuditLog(ctx context.Context, arg CountAuditLogParams) (int64, error)
+	CountDealsInPeriod(ctx context.Context, arg CountDealsInPeriodParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
+	// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
+	// сервис берёт из total или unread в зависимости от unread_only.
+	CountNotifications(ctx context.Context, userID uuid.UUID) (CountNotificationsRow, error)
+	CountOffersInPeriod(ctx context.Context, arg CountOffersInPeriodParams) (int64, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
+	// Открытые high-флаги блокируют approve KYC (409 CONFLICT, BE-12).
+	CountOpenHighAmlFlags(ctx context.Context, organizationID uuid.UUID) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
-	CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error)
-	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
+	// clock_timestamp(), а не DEFAULT now(): список вставляется одной транзакцией, now() у всех
+	// строк одинаковый, и ORDER BY created_at в ListBeneficiariesByOrg потерял бы порядок из PATCH.
+	CreateBeneficiary(ctx context.Context, arg CreateBeneficiaryParams) (Beneficiary, error)
+	// Снапшот условий принятого оффера. fee_amount считает сервис (dealFee): правило
+	// округления — в одном месте, в Go; NULL ⇔ fee_percent NULL (deals_fee_chk).
 	CreateDeal(ctx context.Context, arg CreateDealParams) (Deal, error)
 	CreateKycDocument(ctx context.Context, arg CreateKycDocumentParams) (KycDocument, error)
+	// Только после GetOfferVisible в той же транзакции: запрос не проверяет, что автор — сторона оффера.
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	// Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
+	// в INSERT … SELECT sqlc не выводит тип параметра из колонки.
+	CreateNotificationsForAdmins(ctx context.Context, arg CreateNotificationsForAdminsParams) (int64, error)
+	// Уведомление каждому активному пользователю компании (BE-11, шаг 1).
+	CreateNotificationsForOrganization(ctx context.Context, arg CreateNotificationsForOrganizationParams) (int64, error)
 	CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateRegistryCheck(ctx context.Context, arg CreateRegistryCheckParams) (RegistryCheck, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error)
 	CreateStatusHistory(ctx context.Context, arg CreateStatusHistoryParams) (StatusHistory, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
+	// Список бенефициаров заменяется целиком: delete + insert в одной транзакции.
+	DeleteBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) error
 	DeleteExpiredSessions(ctx context.Context) error
-	DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) error
+	// storage_key — чтобы после коммита удалить файл; нет строки (чужой, уже удалён) → 404.
+	DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) (string, error)
+	// Загрузчик санкционных списков (cmd/loadsanctions, BE-13): источник заменяется атомарно —
+	// DELETE и COPY в одной транзакции. Под lp_app (только SELECT) запросы падают с 42501.
+	DeleteSanctionsBySource(ctx context.Context, source string) (int64, error)
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
-	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
-	// Блокировка строки для транзакции acceptOffer. Вызывать первым шагом в pgx.Tx.
-	GetApplicationForUpdate(ctx context.Context, id uuid.UUID) (GetApplicationForUpdateRow, error)
+	// Флаг с организацией — ответ resolve и различение 404/409, когда ResolveAmlFlag не нашёл
+	// открытый флаг.
+	GetAmlFlagByID(ctx context.Context, id int64) (GetAmlFlagByIDRow, error)
+	// Аналитика (BE-14). Период — полуинтервал [created_from, created_to), narg NULL — без границы.
+	// Заявки и спрос — по applications.created_at, офферы и предложение — по offers.created_at,
+	// сделки — по deals.agreed_at.
+	// Суммы по валютам без конвертации. Все статусы, кроме draft: cancelled и rejected — тоже
+	// поданный спрос. Явный ::numeric — иначе sqlc выводит sum(numeric) как int64.
+	GetAnalyticsSummaryByCurrency(ctx context.Context, arg GetAnalyticsSummaryByCurrencyParams) ([]GetAnalyticsSummaryByCurrencyRow, error)
 	// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
 	// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
 	// Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
-	GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (Application, error)
+	GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (GetApplicationVisibleRow, error)
 	// Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
 	// несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
-	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error)
+	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (GetDealVisibleRow, error)
+	// Документ, если пользователь его видит: admin — любой, остальные — своей организации.
+	// Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR). Admin передаёт uuid.Nil.
+	GetKycDocumentVisible(ctx context.Context, arg GetKycDocumentVisibleParams) (KycDocument, error)
 	GetLatestRegistryCheck(ctx context.Context, organizationID pgtype.UUID) (RegistryCheck, error)
 	// Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
 	// свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
-	// EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
-	GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (Offer, error)
+	// Правило и колонки совпадают с ListOffersVisible и ListApplicationOffersVisible.
+	// borrower_organization_id — получатель уведомлений о судьбе оффера (BE-08, BE-10).
+	GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (GetOfferVisibleRow, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
+	// Блокирует строку организации до конца транзакции: правка профиля, загрузка и удаление
+	// документа и submit KYC сериализуются, и проверка статуса в сервисе не устаревает.
+	GetOrganizationForUpdate(ctx context.Context, id uuid.UUID) (Organization, error)
 	// kyc_status читается на каждом запросе и не кэшируется: одобрение KYC действует со следующего.
 	// LEFT JOIN: у admin organization_id IS NULL (users_admin_org_chk), с INNER JOIN он не вошёл бы.
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (GetSessionByTokenHashRow, error)
-	GetTopDemandCountries(ctx context.Context, limit int32) ([]GetTopDemandCountriesRow, error)
-	GetTopSupplyCountries(ctx context.Context, limit int32) ([]GetTopSupplyCountriesRow, error)
+	// Спрос — только опубликованные и согласованные заявки. country_code — тай-брейк.
+	GetTopDemandCountries(ctx context.Context, arg GetTopDemandCountriesParams) ([]GetTopDemandCountriesRow, error)
+	// Предложение — страны регистрации кредиторов по числу офферов.
+	GetTopSupplyCountries(ctx context.Context, arg GetTopSupplyCountriesParams) ([]GetTopSupplyCountriesRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
-	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
-	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
-	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]Application, error)
+	// Блокировка пользователя для block/unblock (BE-12): два параллельных решения не запишут
+	// историю дважды — второе увидит уже новый статус и ответит без записей.
+	GetUserForUpdate(ctx context.Context, id uuid.UUID) (User, error)
+	// Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
+	// и match_key в статусе open или false_positive. Повторный submit после rejected не плодит
+	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+	// Ключ, а не details: в тексте есть дата FATF и score, они меняются при обновлении данных.
+	HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error)
+	InsertSanctionsEntries(ctx context.Context, arg []InsertSanctionsEntriesParams) (int64, error)
+	// Админский список флагов (BE-13): фильтры через narg — «нет значения → всё». Название и
+	// страна — для AmlFlag.organization (OrganizationShort).
+	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]ListAmlFlagsRow, error)
+	// Флаги компании в карточке админа (BE-12): без пагинации, открытые сверху. Название и
+	// страна — для AmlFlag.organization (OrganizationShort), aml_flags их не хранит.
+	ListAmlFlagsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]ListAmlFlagsByOrganizationRow, error)
+	// История заявки и её офферов. Доступ к заявке проверяется до вызова (GetApplicationVisible);
+	// фильтр по офферам не даёт кредитору увидеть историю чужих офферов.
+	ListApplicationHistory(ctx context.Context, arg ListApplicationHistoryParams) ([]StatusHistory, error)
+	// Офферы заявки глазами зрителя: кредитор видит только свой (DECISIONS п. 11), заёмщик-
+	// владелец и admin — все. Без пагинации: контракт отдаёт массив.
+	ListApplicationOffersVisible(ctx context.Context, arg ListApplicationOffersVisibleParams) ([]ListApplicationOffersVisibleRow, error)
+	// Видимость — на обязательных arg (как в GetApplicationVisible); бизнес-фильтры — narg:
+	// они только сужают выборку и не могут её открыть.
+	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]ListApplicationsVisibleRow, error)
+	// Журнал для админа (BE-14): фильтры через narg — «нет значения → всё», период —
+	// полуинтервал [created_from, created_to). id — тай-брейк для записей одной транзакции.
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
+	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]Beneficiary, error)
+	// Бенефициары страницы админского списка компаний (BE-12) одним запросом вместо N.
+	ListBeneficiariesByOrganizations(ctx context.Context, organizationIds []uuid.UUID) ([]Beneficiary, error)
 	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
 	// fatf_high_risk: страна в чёрном или сером списке FATF.
 	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
+	// Страны из списков FATF среди codes: скрининг компании и бенефициаров одним запросом.
+	ListCountriesFatf(ctx context.Context, codes []string) ([]ListCountriesFatfRow, error)
 	ListCurrencies(ctx context.Context) ([]ListCurrenciesRow, error)
-	ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]Deal, error)
+	// Видимость — на обязательных arg (как в GetDealVisible); бизнес-фильтры — narg:
+	// они только сужают выборку и не могут её открыть.
+	ListDealsVisible(ctx context.Context, arg ListDealsVisibleParams) ([]ListDealsVisibleRow, error)
 	ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error)
-	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
-	ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error)
+	// Polling: сообщения с id > after_id по возрастанию; after_id = 0 → самые старые max_rows штук
+	// (не последние: «последние N» потребовали бы ORDER BY id DESC, в MVP не нужно).
+	// Правило видимости — то же, что у GetOfferVisible: чужой чат даёт 0 строк, но сервис
+	// всё равно сначала зовёт GetOfferVisible, чтобы отличить 404 от пустого чата.
+	// JOIN organizations внутренний: автор — всегда borrower или lender (admin не пишет).
+	ListMessagesVisible(ctx context.Context, arg ListMessagesVisibleParams) ([]ListMessagesVisibleRow, error)
+	// id DESC — тай-брейк: уведомления одной транзакции получают одинаковый now().
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
-	ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error)
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
-	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]Offer, error)
+	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error)
+	// Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
+	// массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
+	// id DESC — тай-брейк: строки одной транзакции получают одинаковый now(), без него
+	// LIMIT/OFFSET повторяет и теряет строки между страницами.
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
+	// id DESC — тай-брейк, как в ListOrganizations.
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	// Пользователи компании для карточки админа (BE-12): колонки ListUsers, без password_hash.
+	ListUsersByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]ListUsersByOrganizationRow, error)
+	// Блокировка заявки админом для модерации (BE-12): аналог LockApplicationForBorrower без
+	// фильтра по владельцу — у админа нет организации. Порядок блокировок тот же: заявка первой.
+	LockApplicationByID(ctx context.Context, id uuid.UUID) (Application, error)
+	// Первый шаг acceptOffer: блокирует заявку оффера, если она принадлежит заёмщику.
+	// Статус намеренно не фильтруется: сервис отличает 404 (чужая) от 409 (уже agreed/cancelled).
+	LockApplicationByOfferForBorrower(ctx context.Context, arg LockApplicationByOfferForBorrowerParams) (Application, error)
+	// Блокировка заявки заёмщиком-владельцем для мутаций (PATCH, submit, cancel, reject-offers).
+	// Чужая и несуществующая — 0 строк → 404. Порядок блокировок: сначала заявка, потом её
+	// офферы — так же в acceptOffer (BE-09), иначе cancel и accept ловят deadlock.
+	LockApplicationForBorrower(ctx context.Context, arg LockApplicationForBorrowerParams) (Application, error)
+	// FOR SHARE на заявку при создании оффера: конфликтует с FOR UPDATE из cancel, reject-offers
+	// (BE-07) и accept (BE-09) — оффер не появится на заявке, которую в этот момент отменяют или
+	// принимают. Условие совпадает с видимостью заявки для lender в GetApplicationVisible:
+	// невидимая — 0 строк → 404. Порядок блокировок общий: сначала заявка, потом офферы.
+	LockApplicationForLender(ctx context.Context, arg LockApplicationForLenderParams) (LockApplicationForLenderRow, error)
+	// Транзакционная блокировка чата оффера перед CreateMessage. id из IDENTITY выдаётся до коммита,
+	// и без блокировки сообщение 10 может закоммититься после 11: клиент, уже получивший 11,
+	// опрашивает с after_id = 11 и 10 не увидит никогда (а MarkMessagesRead сочтёт его прочитанным).
+	// Под блокировкой сообщения одного оффера коммитятся в порядке id. Первый ключ — пространство
+	// «чат», чтобы не пересекаться с другими advisory-блокировками.
+	LockOfferChat(ctx context.Context, offerID uuid.UUID) error
+	// Второй шаг acceptOffer, после LockApplicationByOfferForBorrower: блокирует принимаемый
+	// оффер, чтобы его статус, valid_until и условия не поменялись до UPDATE и снапшота сделки.
+	// Видимость не нужна: владельца уже проверила блокировка заявки, application_id — та же заявка.
+	LockOfferForAccept(ctx context.Context, arg LockOfferForAcceptParams) (Offer, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
+	// Только после GetOfferVisible: запрос не проверяет, что читатель — сторона оффера.
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
-	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
-	RejectAllOffersForApplication(ctx context.Context, applicationID uuid.UUID) error
+	// 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).
+	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error)
 	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
-	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
+	// Причина видна компании: kyc_reject_reason отдаёт getMyOrganization и /auth/me.
+	RejectKyc(ctx context.Context, arg RejectKycParams) (Organization, error)
+	// 0 строк после проверки статуса в сервисе — гонка с другим решением → 409.
 	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
-	// Вызывать внутри транзакции после AcceptOffer
-	RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error
+	// Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
+	// Вызывать после LockApplicationForBorrower (cancel, reject-offers) или LockApplicationByOfferForBorrower
+	// (accept) в той же транзакции: сначала заявка, потом офферы.
+	// RETURNING — для истории офферов и уведомлений их кредиторам.
+	RejectSentOffersByApplication(ctx context.Context, arg RejectSentOffersByApplicationParams) ([]RejectSentOffersByApplicationRow, error)
 	ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) (AmlFlag, error)
-	// Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
-	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SanctionsEntry, error)
-	SubmitApplication(ctx context.Context, id uuid.UUID) (Application, error)
-	SubmitKycForReview(ctx context.Context, id uuid.UUID) (SubmitKycForReviewRow, error)
+	// Кандидаты санкционного скрининга (BE-13). «%» — ради GIN-индекса, он отбирает строки с
+	// similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
+	// результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
+	// ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
+	// утекает в чужие запросы. entity_kind фильтруется до LIMIT: иначе на большом списке
+	// топ кандидатов по названию компании могут занять персоны, и организацию не сравнят.
+	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SearchSanctionsRow, error)
+	SubmitApplication(ctx context.Context, arg SubmitApplicationParams) (Application, error)
+	SubmitKycForReview(ctx context.Context, id uuid.UUID) (Organization, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UnblockUser(ctx context.Context, id uuid.UUID) (UnblockUserRow, error)
 	UpdateApplication(ctx context.Context, arg UpdateApplicationParams) (Application, error)
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
+	// lei: NULL — не трогать, пустая строка — очистить (DECISIONS п. 7), иначе — записать.
+	// Охрана статуса в WHERE — вторая линия после блокировки и проверки в сервисе.
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
-	WithdrawOffer(ctx context.Context, id uuid.UUID) (Offer, error)
+	WithdrawOffer(ctx context.Context, arg WithdrawOfferParams) (Offer, error)
 }
 
 var _ Querier = (*Queries)(nil)

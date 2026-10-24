@@ -27,9 +27,11 @@ func TestErrorMapping(t *testing.T) {
 		{apperr.NotFound("nope"), 404, "NOT_FOUND"},
 		{apperr.Conflict("email taken"), 409, "CONFLICT"},
 		{apperr.InvalidTransition("published", "draft"), 409, "INVALID_STATUS_TRANSITION"},
+		{apperr.FileTooLarge(), 413, "FILE_TOO_LARGE"},
 		{apperr.RateLimited(), 429, "RATE_LIMITED"},
 		{apperr.NotImplemented("listDeals"), 501, "NOT_IMPLEMENTED"},
 		{apperr.Unavailable("db down", errors.New("dial")), 503, "UNAVAILABLE"},
+		{apperr.UpstreamUnavailable("registry down", errors.New("timeout")), 502, "UPSTREAM_UNAVAILABLE"},
 		{errors.New("boom"), 500, "INTERNAL"},
 		// Доменная ошибка, обёрнутая через fmt.Errorf("...: %w"), всё равно распознаётся.
 		{wrap(apperr.NotFound("nope")), 404, "NOT_FOUND"},
@@ -98,6 +100,7 @@ func TestEveryCodeHasStatus(t *testing.T) {
 		apperr.CodeValidation, apperr.CodeUnauthorized, apperr.CodeForbidden, apperr.CodeCSRFInvalid,
 		apperr.CodeKYCNotVerified, apperr.CodeNotFound, apperr.CodeConflict, apperr.CodeInvalidTransition,
 		apperr.CodeRateLimited, apperr.CodeInternal, apperr.CodeNotImplemented, apperr.CodeUnavailable,
+		apperr.CodeFileTooLarge, apperr.CodeUpstreamUnavailable,
 	}
 	for _, c := range codes {
 		if s := handler.StatusOf(c); s == http.StatusInternalServerError && c != apperr.CodeInternal {
@@ -120,7 +123,6 @@ func TestRouterErrors(t *testing.T) {
 		{"invalid uuid in path", "/api/v1/applications/not-a-uuid", 400, "VALIDATION_ERROR", "applicationId"},
 		{"invalid query param", "/api/v1/applications?page=abc", 400, "VALIDATION_ERROR", "page"},
 		{"unknown route", "/api/v1/nope", 404, "NOT_FOUND", ""},
-		{"not implemented yet", "/api/v1/deals", 501, "NOT_IMPLEMENTED", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

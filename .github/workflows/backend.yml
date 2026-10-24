@@ -7,6 +7,9 @@ on:
       - "api/**"
       - "Makefile"
       - "versions.env"
+      - "Dockerfile.backend"
+      - "Dockerfile.backend.dockerignore"
+      - "docker-compose.yml"
       - ".github/workflows/backend.yml"
 
 # Ловушка «required check + paths»: PR, не трогающий эти пути, workflow не запускает вовсе,
@@ -159,9 +162,22 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: migrate
         run: make migrate-up
+      - name: load sanctions
+        run: make load-sanctions
       # Без -short: интеграционные тесты идут против Postgres из services.
       - name: go test
         run: go -C backend test -race -count=1 ./...
+      # Демо-сид (BE-16) — как make seed-demo, но psql раннера вместо docker exec. После
+      # тестов: TestSeedDemoVariantA/B применяют оба варианта в откатываемой транзакции и
+      # нужны БД без сида (вариант A на заселённой пропускается). Этот шаг ловит то, что
+      # тест не видит: применение psql-ом одной транзакцией. Файлы документов не копируются —
+      # тесты к ним не обращаются.
+      - name: seed
+        run: >-
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction
+          -f backend/migrations/testdata/seed_demo_common.sql
+          -f backend/migrations/testdata/seed_demo_b.sql
+          -f backend/migrations/testdata/seed_demo_kyc.sql
 
   build:
     needs: [lint, gen-check, test]
@@ -175,3 +191,33 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: build
         run: go -C backend build -o bin/server ./cmd/server
+
+  # Образ бэкенда (INF-01): сборка обеих целей Dockerfile.backend через compose и смоук —
+  # compose поднимает Postgres и бэкенд до healthy (/healthz пингует БД), seed-files
+  # кладёт demo-PDF в volume под пользователем сервера. Схема не нужна: /healthz её не читает.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: docker compose --profile seed build
+      - name: up
+        run: docker compose up -d --wait --wait-timeout 120 backend
+      - name: non-root
+        run: |
+          user="$(docker inspect -f '{{.Config.User}}' lp_backend)"
+          if [ "$user" != "app:app" ]; then
+            echo "::error::Контейнер бэкенда запущен не от app:app (User=$user)"
+            exit 1
+          fi
+      - name: healthz
+        run: curl -fsS http://localhost:8080/api/v1/healthz
+      - name: seed files
+        run: docker compose run --rm seed-files
+      - name: logs
+        if: failure()
+        run: docker compose logs
+      - name: down
+        if: always()
+        run: docker compose --profile seed down -v

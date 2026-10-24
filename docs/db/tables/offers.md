@@ -62,20 +62,20 @@ erDiagram
 | Запрос | Тип | Что делает |
 |---|---|---|
 | `CreateOffer` | `:one` | Новый оффер в статусе `sent` |
-| `GetOfferVisible` | `:one` | Оффер по `id`, если его видит `viewer_role`/`viewer_org`: `lender` — свой, `borrower` — на свою заявку, `admin` — любой. Чужой и несуществующий → 0 строк → `404` |
-| `ListOffersByApplication` | `:many` | Офферы заявки, опционально по `statuses[]` (для заёмщика) |
-| `ListOffersVisible` | `:many` | То же правило видимости (обязательные `viewer_role`, `viewer_org`), фильтры `application_id`, `statuses[]`, пагинация |
+| `GetOfferVisible` | `:one` | Оффер по `id`, если его видит `viewer_role`/`viewer_org`: `lender` — свой, `borrower` — на свою заявку, `admin` — любой. Чужой и несуществующий → 0 строк → `404`. Плюс номер заявки, её заёмщик, имя и страна кредитора, `unread_messages` для `viewer_user` |
+| `ListApplicationOffersVisible` | `:many` | Офферы заявки с тем же правилом видимости и колонками: кредитор получает только свой; фильтр `statuses` |
+| `ListOffersVisible` | `:many` | То же правило видимости и колонки; фильтры `statuses`, `application_id`, `lender_org_filter`, `borrower_org_filter`, `created_from`/`created_to`, пагинация |
 | `CountOffersVisible` | `:one` | Счётчик для того же фильтра |
-| `AcceptOffer` | `:one` | `sent` → `accepted`. 0 строк = оффер уже не активен (409) |
-| `RejectOtherOffers` | `:exec` | Остальные `sent`-офферы заявки → `rejected` (`another_offer_accepted`) |
-| `RejectOffer` | `:one` | Заёмщик отклоняет: → `rejected` (`rejected_by_borrower`) с комментарием |
-| `WithdrawOffer` | `:one` | Кредитор отзывает: → `withdrawn` |
-| `RejectAllOffersForApplication` | `:exec` | При отмене заявки все `sent` → `rejected` (`application_cancelled`) |
+| `LockApplicationForLender` | `:one` | `FOR SHARE` на заявку при создании оффера; видимость заявки для `lender` (`published` или есть его оффер) |
+| `LockOfferForAccept` | `:one` | `SELECT … FOR UPDATE` оффера заблокированной заявки (`id` и `application_id`). Второй шаг принятия: статус и `valid_until` проверяются по заблокированной строке, условия не меняются до снапшота |
+| `AcceptOffer` | `:one` | `sent` → `accepted`, только оффер заблокированной заявки (`AND application_id = …`). 0 строк = оффер уже не активен (409). Снапшот сделки — из `RETURNING` |
+| `RejectOffer` | `:one` | Заёмщик отклоняет: → `rejected` (`rejected_by_borrower`) с комментарием; `borrower_org` — в `WHERE` |
+| `WithdrawOffer` | `:one` | Кредитор отзывает: → `withdrawn`; `lender_org` — в `WHERE` |
+| `RejectSentOffersByApplication` | `:many` | Все `sent`-офферы заявки → `rejected` с причиной (`application_cancelled`, `rejected_by_borrower`, `another_offer_accepted`); `RETURNING id, lender_organization_id` для уведомлений |
 
 Все переходы стоят с `AND status = 'sent'` в `WHERE`, поэтому повторное действие вернёт 0 строк, а не испортит данные.
 
-Порядок транзакции принятия: `GetApplicationForUpdate` → `AcceptOffer` → `RejectOtherOffers` → `AgreeApplication` → `CreateDeal` → `CreateStatusHistory` → `CreateNotification` → `CreateAuditLog`.
+Порядок транзакции принятия: `LockApplicationByOfferForBorrower` → `LockOfferForAccept` → `AcceptOffer` → `RejectSentOffersByApplication` (+ история и `offer_rejected` каждому) → `AgreeApplication` → `CreateDeal` → `CreateStatusHistory` → `CreateNotificationsForOrganization` (`offer_accepted`) → `CreateAuditLog` → `GetDealVisible`.
 
 Замечания:
-- `RejectOtherOffers` и `RejectAllOffersForApplication` — `:exec`, они не возвращают `id, lender_organization_id` отклонённых офферов. Чтобы отправить кредиторам уведомления, нужно сделать их `:many` с `RETURNING`.
-- `ListOffersByApplication` пока не фильтрует по организации: видимость (заёмщик-владелец и admin — все, кредитор — только свой) добавляет BE-08.
+- `statuses` — `text[]` с `CAST` в `offer_status[]` в SQL: pgx не кодирует массив enum без регистрации типа.

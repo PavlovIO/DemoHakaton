@@ -8,6 +8,9 @@ POSTGRES_USER ?= lp
 POSTGRES_DB   ?= liquidity_platform
 DATABASE_URL  ?= postgres://lp:lp_dev_password@localhost:5432/liquidity_platform?sslmode=disable
 PG_CONTAINER  ?= lp_postgres
+# Абсолютный путь: make run запускает сервер из backend/ (go -C backend), и относительный
+# storage/documents оказался бы в backend/storage — вне .gitignore.
+DOCUMENT_STORAGE_DIR ?= $(CURDIR)/storage/documents
 MIGRATIONS    := backend/migrations
 TESTDATA      := backend/migrations/testdata
 
@@ -23,10 +26,11 @@ VACUUM_NO_UPDATE_CHECK := true
 MSYS_NO_PATHCONV := 1
 PSQL          := docker exec -i $(PG_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -v ON_ERROR_STOP=1
 
-.PHONY: db db-reset up down logs ps migrate-up migrate-down migrate-reset migrate-status migrate-create seed-demo test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
+.PHONY: db db-reset up down logs ps backend-up backend-seed-files backend-logs migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
 
-# Полный цикл: postgres + миграции + проверка инвариантов + демо-данные.
-db: up migrate-up test-invariants seed-demo
+# Полный цикл: postgres + миграции + санкционный мок-список + проверка инвариантов + демо-данные.
+# load-sanctions — раньше seed-demo: сид ссылается на запись мок-списка (BE-16).
+db: up migrate-up load-sanctions test-invariants seed-demo
 
 # То же самое с чистой базы (удаляет volume).
 db-reset:
@@ -43,8 +47,27 @@ down:
 logs:
 	docker compose logs -f postgres
 
+# Бэкенд в контейнере (Dockerfile.backend) — после make db: схему и SQL-сид готовит он.
+# Сначала demo-PDF в volume документов, иначе документы сида не скачаются.
+backend-up: backend-seed-files
+	docker compose up -d --build --wait backend
+
+backend-seed-files:
+	docker compose run --rm --build seed-files
+
+backend-logs:
+	docker compose logs -f backend
+
 ps:
 	docker compose ps
+
+# Санкционный список (BE-13): по умолчанию — встроенный мок; UK Sanctions List —
+# make load-sanctions SANCTIONS_SOURCE=uk_fcdo SANCTIONS_FILE=<скачанный CSV>.
+# abspath обязателен: go -C backend меняет рабочий каталог.
+SANCTIONS_SOURCE ?= mock
+SANCTIONS_FILE   ?=
+load-sanctions:
+	go -C backend run ./cmd/loadsanctions -source=$(SANCTIONS_SOURCE) $(if $(SANCTIONS_FILE),-file=$(abspath $(SANCTIONS_FILE)))
 
 migrate-up:
 	$(GOOSE) -dir $(MIGRATIONS) postgres "$(DATABASE_URL)" up
@@ -62,10 +85,23 @@ migrate-create:
 	@echo "usage: make migrate-create name=<name>"
 	$(GOOSE) -dir $(MIGRATIONS) create $(name) sql
 
+# Демо-данные (BE-16). SEED=b (по умолчанию) — сделка «Альфа ↔ Beta Corp» сразу и история
+# для аналитики; SEED=a — KYC с нуля. Варианты несовместимы на одной БД: смена варианта —
+# make db-reset SEED=a. Неизвестный SEED — docker cp падает: файла нет.
 # docker cp + psql -f, а не pipe: иначе в PowerShell кириллица превращается в mojibake.
-seed-demo:
-	docker cp $(TESTDATA)/seed_demo.sql $(PG_CONTAINER):/tmp/seed_demo.sql
-	$(PSQL) -f /tmp/seed_demo.sql
+# --single-transaction: common, вариант и следы KYC применяются атомарно.
+SEED ?= b
+seed-demo: seed-files
+	docker cp $(TESTDATA)/seed_demo_common.sql $(PG_CONTAINER):/tmp/seed_demo_common.sql
+	docker cp $(TESTDATA)/seed_demo_$(SEED).sql $(PG_CONTAINER):/tmp/seed_demo_variant.sql
+	docker cp $(TESTDATA)/seed_demo_kyc.sql $(PG_CONTAINER):/tmp/seed_demo_kyc.sql
+	$(PSQL) --single-transaction -f /tmp/seed_demo_common.sql -f /tmp/seed_demo_variant.sql -f /tmp/seed_demo_kyc.sql
+
+seed: seed-demo
+
+# PDF документов сида — в хранилище BE-05 под их storage_key (Go, а не cp: работает в cmd.exe).
+seed-files:
+	go -C backend run ./cmd/seedfiles -manifest migrations/testdata/demo_files/manifest.txt -dst "$(DOCUMENT_STORAGE_DIR)"
 
 test-invariants:
 	docker cp $(TESTDATA)/invariants_test.sql $(PG_CONTAINER):/tmp/invariants_test.sql
@@ -135,7 +171,7 @@ test:
 
 # Все тесты, включая интеграционные с Postgres из DATABASE_URL (сначала make db).
 test-all:
-	go -C backend test -count=1 ./...
+	DATABASE_URL="$(DATABASE_URL)" go -C backend test -count=1 ./...
 
 lint:
 	cd backend && golangci-lint run ./...

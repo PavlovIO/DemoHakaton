@@ -107,9 +107,10 @@ func (q *Queries) CreateRegistryCheck(ctx context.Context, arg CreateRegistryChe
 	return i, err
 }
 
-const deleteKycDocument = `-- name: DeleteKycDocument :exec
+const deleteKycDocument = `-- name: DeleteKycDocument :one
 DELETE FROM kyc_documents
 WHERE id = $1 AND organization_id = $2
+RETURNING storage_key
 `
 
 type DeleteKycDocumentParams struct {
@@ -117,9 +118,45 @@ type DeleteKycDocumentParams struct {
 	OrganizationID uuid.UUID `json:"organization_id"`
 }
 
-func (q *Queries) DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) error {
-	_, err := q.db.Exec(ctx, deleteKycDocument, arg.ID, arg.OrganizationID)
-	return err
+// storage_key — чтобы после коммита удалить файл; нет строки (чужой, уже удалён) → 404.
+func (q *Queries) DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) (string, error) {
+	row := q.db.QueryRow(ctx, deleteKycDocument, arg.ID, arg.OrganizationID)
+	var storage_key string
+	err := row.Scan(&storage_key)
+	return storage_key, err
+}
+
+const getKycDocumentVisible = `-- name: GetKycDocumentVisible :one
+SELECT id, organization_id, doc_type, storage_key, file_name, mime_type, size_bytes, sha256, uploaded_by_user_id, uploaded_at FROM kyc_documents
+WHERE id = $1
+  AND ($2::user_role = 'admin'
+       OR organization_id = $3::uuid)
+`
+
+type GetKycDocumentVisibleParams struct {
+	ID         uuid.UUID `json:"id"`
+	ViewerRole UserRole  `json:"viewer_role"`
+	ViewerOrg  uuid.UUID `json:"viewer_org"`
+}
+
+// Документ, если пользователь его видит: admin — любой, остальные — своей организации.
+// Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR). Admin передаёт uuid.Nil.
+func (q *Queries) GetKycDocumentVisible(ctx context.Context, arg GetKycDocumentVisibleParams) (KycDocument, error) {
+	row := q.db.QueryRow(ctx, getKycDocumentVisible, arg.ID, arg.ViewerRole, arg.ViewerOrg)
+	var i KycDocument
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.DocType,
+		&i.StorageKey,
+		&i.FileName,
+		&i.MimeType,
+		&i.SizeBytes,
+		&i.Sha256,
+		&i.UploadedByUserID,
+		&i.UploadedAt,
+	)
+	return i, err
 }
 
 const getLatestRegistryCheck = `-- name: GetLatestRegistryCheck :one
@@ -151,6 +188,7 @@ func (q *Queries) GetLatestRegistryCheck(ctx context.Context, organizationID pgt
 const listKycDocumentsByOrg = `-- name: ListKycDocumentsByOrg :many
 SELECT id, organization_id, doc_type, storage_key, file_name, mime_type, size_bytes, sha256, uploaded_by_user_id, uploaded_at FROM kyc_documents
 WHERE organization_id = $1
+ORDER BY uploaded_at, id
 `
 
 func (q *Queries) ListKycDocumentsByOrg(ctx context.Context, organizationID uuid.UUID) ([]KycDocument, error) {

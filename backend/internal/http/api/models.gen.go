@@ -332,6 +332,7 @@ func (e RegisterRequestRole) Valid() bool {
 const (
 	RegistryLookupResultSourceEgrulDadata RegistryLookupResultSource = "egrul_dadata"
 	RegistryLookupResultSourceGleif       RegistryLookupResultSource = "gleif"
+	RegistryLookupResultSourceMock        RegistryLookupResultSource = "mock"
 )
 
 // Valid indicates whether the value is a known member of the RegistryLookupResultSource enum.
@@ -340,6 +341,8 @@ func (e RegistryLookupResultSource) Valid() bool {
 	case RegistryLookupResultSourceEgrulDadata:
 		return true
 	case RegistryLookupResultSourceGleif:
+		return true
+	case RegistryLookupResultSourceMock:
 		return true
 	default:
 		return false
@@ -393,19 +396,25 @@ func (e Role) Valid() bool {
 
 // Defines values for TransferMethod.
 const (
+	TransferMethodCips  TransferMethod = "cips"
 	TransferMethodOther TransferMethod = "other"
 	TransferMethodSEPA  TransferMethod = "sepa"
 	TransferMethodSWIFT TransferMethod = "swift"
+	TransferMethodSpfs  TransferMethod = "spfs"
 )
 
 // Valid indicates whether the value is a known member of the TransferMethod enum.
 func (e TransferMethod) Valid() bool {
 	switch e {
+	case TransferMethodCips:
+		return true
 	case TransferMethodOther:
 		return true
 	case TransferMethodSEPA:
 		return true
 	case TransferMethodSWIFT:
+		return true
+	case TransferMethodSpfs:
 		return true
 	default:
 		return false
@@ -450,12 +459,14 @@ func (e AdminResolveAMLFlagJSONBodyResolution) Valid() bool {
 
 // Defines values for ListApplicationsParamsSort.
 const (
-	ListApplicationsParamsSortAmountAsc     ListApplicationsParamsSort = "amount_asc"
-	ListApplicationsParamsSortAmountDesc    ListApplicationsParamsSort = "amount_desc"
-	ListApplicationsParamsSortCreatedAtAsc  ListApplicationsParamsSort = "created_at_asc"
-	ListApplicationsParamsSortCreatedAtDesc ListApplicationsParamsSort = "created_at_desc"
-	ListApplicationsParamsSortTermAsc       ListApplicationsParamsSort = "term_asc"
-	ListApplicationsParamsSortTermDesc      ListApplicationsParamsSort = "term_desc"
+	ListApplicationsParamsSortAmountAsc       ListApplicationsParamsSort = "amount_asc"
+	ListApplicationsParamsSortAmountDesc      ListApplicationsParamsSort = "amount_desc"
+	ListApplicationsParamsSortCreatedAtAsc    ListApplicationsParamsSort = "created_at_asc"
+	ListApplicationsParamsSortCreatedAtDesc   ListApplicationsParamsSort = "created_at_desc"
+	ListApplicationsParamsSortPublishedAtAsc  ListApplicationsParamsSort = "published_at_asc"
+	ListApplicationsParamsSortPublishedAtDesc ListApplicationsParamsSort = "published_at_desc"
+	ListApplicationsParamsSortTermAsc         ListApplicationsParamsSort = "term_asc"
+	ListApplicationsParamsSortTermDesc        ListApplicationsParamsSort = "term_desc"
 )
 
 // Valid indicates whether the value is a known member of the ListApplicationsParamsSort enum.
@@ -468,6 +479,10 @@ func (e ListApplicationsParamsSort) Valid() bool {
 	case ListApplicationsParamsSortCreatedAtAsc:
 		return true
 	case ListApplicationsParamsSortCreatedAtDesc:
+		return true
+	case ListApplicationsParamsSortPublishedAtAsc:
+		return true
+	case ListApplicationsParamsSortPublishedAtDesc:
 		return true
 	case ListApplicationsParamsSortTermAsc:
 		return true
@@ -564,7 +579,7 @@ type Application struct {
 	// Example: APP-000123
 	Number string `json:"number"`
 
-	// OffersCount Только для владельца и admin; для lender — null
+	// OffersCount Все офферы заявки в любом статусе; только для владельца и admin, для lender — null
 	OffersCount *int              `json:"offers_count,omitempty"`
 	PublishedAt *time.Time        `json:"published_at,omitempty"`
 	Purpose     string            `json:"purpose"`
@@ -615,10 +630,12 @@ type ApplicationUpdate struct {
 	Purpose  *string       `json:"purpose,omitempty"`
 
 	// TargetCountryCode Example: DE
-	TargetCountryCode     *CountryCode    `json:"target_country_code,omitempty"`
-	TermMonths            *int            `json:"term_months,omitempty"`
-	TransferMethod        *TransferMethod `json:"transfer_method,omitempty"`
-	TransferMethodComment *string         `json:"transfer_method_comment,omitempty"`
+	TargetCountryCode *CountryCode    `json:"target_country_code,omitempty"`
+	TermMonths        *int            `json:"term_months,omitempty"`
+	TransferMethod    *TransferMethod `json:"transfer_method,omitempty"`
+
+	// TransferMethodComment `""` очищает комментарий; отсутствие поля или `null` — оставить как есть
+	TransferMethodComment *string `json:"transfer_method_comment,omitempty"`
 }
 
 // AuditLogEntry defines model for AuditLogEntry.
@@ -1023,11 +1040,13 @@ type OrganizationType string
 
 // OrganizationUpdate defines model for OrganizationUpdate.
 type OrganizationUpdate struct {
-	Beneficiaries      []Beneficiary `json:"beneficiaries,omitempty"`
-	LegalAddress       *string       `json:"legal_address,omitempty"`
-	LEI                *string       `json:"lei,omitempty"`
-	Name               *string       `json:"name,omitempty"`
-	RegistrationNumber *string       `json:"registration_number,omitempty"`
+	Beneficiaries []Beneficiary `json:"beneficiaries,omitempty"`
+	LegalAddress  *string       `json:"legal_address,omitempty"`
+
+	// LEI `""` очищает LEI; отсутствие поля или `null` — оставить как есть.
+	LEI                *string `json:"lei,omitempty"`
+	Name               *string `json:"name,omitempty"`
+	RegistrationNumber *string `json:"registration_number,omitempty"`
 }
 
 // Percent Проценты, например "8.00" = 8%
@@ -1059,11 +1078,13 @@ type RegistryLookupResult struct {
 	RegistrationNumber *string    `json:"registration_number,omitempty"`
 
 	// RegistryStatus Статус в реестре (active, liquidating, liquidated, ...)
-	RegistryStatus *string                    `json:"registry_status,omitempty"`
-	Source         RegistryLookupResultSource `json:"source"`
+	RegistryStatus *string `json:"registry_status,omitempty"`
+
+	// Source Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний (в MVP реестр только мок).
+	Source RegistryLookupResultSource `json:"source"`
 }
 
-// RegistryLookupResultSource defines model for RegistryLookupResult.Source.
+// RegistryLookupResultSource Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний (в MVP реестр только мок).
 type RegistryLookupResultSource string
 
 // RepaymentSchedule bullet — всё в конце срока; annuity — равные платежи;
@@ -1165,8 +1186,11 @@ type AdminListAMLFlagsParams struct {
 	Status         *AMLFlagStatus      `form:"status,omitempty" json:"status,omitempty"`
 	Severity       *AMLSeverity        `form:"severity,omitempty" json:"severity,omitempty"`
 	OrganizationID *openapi_types.UUID `form:"organization_id,omitempty" json:"organization_id,omitempty"`
-	Page           *Page               `form:"page,omitempty" json:"page,omitempty"`
-	PageSize       *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
+
+	// ApplicationID Флаги конкретной заявки (экран модерации)
+	ApplicationID *openapi_types.UUID `form:"application_id,omitempty" json:"application_id,omitempty"`
+	Page          *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize      *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // AdminResolveAMLFlagJSONBody defines parameters for AdminResolveAMLFlag.
@@ -1222,11 +1246,20 @@ type AdminListUsersParams struct {
 
 // ListApplicationsParams defines parameters for ListApplications.
 type ListApplicationsParams struct {
-	Status        []ApplicationStatus `form:"status,omitempty" json:"status,omitempty"`
-	TargetCountry *CountryCode        `form:"target_country,omitempty" json:"target_country,omitempty"`
-	Currency      *CurrencyCode       `form:"currency,omitempty" json:"currency,omitempty"`
-	AmountMin     *string             `form:"amount_min,omitempty" json:"amount_min,omitempty"`
-	AmountMax     *string             `form:"amount_max,omitempty" json:"amount_max,omitempty"`
+	Status []ApplicationStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// TargetCountry Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ
+	TargetCountry []CountryCode `form:"target_country,omitempty" json:"target_country,omitempty"`
+
+	// TransferMethod Способ перевода; несколько значений — ИЛИ
+	TransferMethod []TransferMethod `form:"transfer_method,omitempty" json:"transfer_method,omitempty"`
+
+	// HasMyOffer Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
+	// `false` — только без моего оффера. Для других ролей игнорируется.
+	HasMyOffer *bool         `form:"has_my_offer,omitempty" json:"has_my_offer,omitempty"`
+	Currency   *CurrencyCode `form:"currency,omitempty" json:"currency,omitempty"`
+	AmountMin  *string       `form:"amount_min,omitempty" json:"amount_min,omitempty"`
+	AmountMax  *string       `form:"amount_max,omitempty" json:"amount_max,omitempty"`
 
 	// TermMin Минимальный срок, месяцев
 	TermMin *int `form:"term_min,omitempty" json:"term_min,omitempty"`
@@ -1251,10 +1284,15 @@ type ListApplicationOffersParams struct {
 
 // ListDealsParams defines parameters for ListDeals.
 type ListDealsParams struct {
-	CreatedFrom *CreatedFrom `form:"created_from,omitempty" json:"created_from,omitempty"`
-	CreatedTo   *CreatedTo   `form:"created_to,omitempty" json:"created_to,omitempty"`
-	Page        *Page        `form:"page,omitempty" json:"page,omitempty"`
-	PageSize    *PageSize    `form:"page_size,omitempty" json:"page_size,omitempty"`
+	// BorrowerOrganizationID Только для admin
+	BorrowerOrganizationID *openapi_types.UUID `form:"borrower_organization_id,omitempty" json:"borrower_organization_id,omitempty"`
+
+	// LenderOrganizationID Только для admin
+	LenderOrganizationID *openapi_types.UUID `form:"lender_organization_id,omitempty" json:"lender_organization_id,omitempty"`
+	CreatedFrom          *CreatedFrom        `form:"created_from,omitempty" json:"created_from,omitempty"`
+	CreatedTo            *CreatedTo          `form:"created_to,omitempty" json:"created_to,omitempty"`
+	Page                 *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize             *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // ListNotificationsParams defines parameters for ListNotifications.

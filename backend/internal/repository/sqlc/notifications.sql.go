@@ -12,16 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countUnreadNotifications = `-- name: CountUnreadNotifications :one
-SELECT count(*) FROM notifications
-WHERE user_id = $1 AND is_read = false
+const countNotifications = `-- name: CountNotifications :one
+SELECT count(*) AS total, count(*) FILTER (WHERE NOT is_read) AS unread
+FROM notifications
+WHERE user_id = $1
 `
 
-func (q *Queries) CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countUnreadNotifications, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+type CountNotificationsRow struct {
+	Total  int64 `json:"total"`
+	Unread int64 `json:"unread"`
+}
+
+// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
+// сервис берёт из total или unread в зависимости от unread_only.
+func (q *Queries) CountNotifications(ctx context.Context, userID uuid.UUID) (CountNotificationsRow, error) {
+	row := q.db.QueryRow(ctx, countNotifications, userID)
+	var i CountNotificationsRow
+	err := row.Scan(&i.Total, &i.Unread)
+	return i, err
 }
 
 const createNotification = `-- name: CreateNotification :one
@@ -60,11 +68,72 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	return i, err
 }
 
+const createNotificationsForAdmins = `-- name: CreateNotificationsForAdmins :execrows
+INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
+SELECT u.id, $1::notification_type, $2::text,
+       $3::entity_type, $4::text
+FROM users u
+WHERE u.role = 'admin' AND u.status = 'active'
+`
+
+type CreateNotificationsForAdminsParams struct {
+	Type       NotificationType `json:"type"`
+	Title      string           `json:"title"`
+	EntityType EntityType       `json:"entity_type"`
+	EntityID   string           `json:"entity_id"`
+}
+
+// Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
+// в INSERT … SELECT sqlc не выводит тип параметра из колонки.
+func (q *Queries) CreateNotificationsForAdmins(ctx context.Context, arg CreateNotificationsForAdminsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createNotificationsForAdmins,
+		arg.Type,
+		arg.Title,
+		arg.EntityType,
+		arg.EntityID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const createNotificationsForOrganization = `-- name: CreateNotificationsForOrganization :execrows
+INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
+SELECT u.id, $1::notification_type, $2::text,
+       $3::entity_type, $4::text
+FROM users u
+WHERE u.organization_id = $5::uuid AND u.status = 'active'
+`
+
+type CreateNotificationsForOrganizationParams struct {
+	Type           NotificationType `json:"type"`
+	Title          string           `json:"title"`
+	EntityType     EntityType       `json:"entity_type"`
+	EntityID       string           `json:"entity_id"`
+	OrganizationID uuid.UUID        `json:"organization_id"`
+}
+
+// Уведомление каждому активному пользователю компании (BE-11, шаг 1).
+func (q *Queries) CreateNotificationsForOrganization(ctx context.Context, arg CreateNotificationsForOrganizationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createNotificationsForOrganization,
+		arg.Type,
+		arg.Title,
+		arg.EntityType,
+		arg.EntityID,
+		arg.OrganizationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listNotifications = `-- name: ListNotifications :many
 SELECT id, user_id, type, title, entity_type, entity_id, is_read, created_at FROM notifications
 WHERE user_id = $1
   AND ($4::boolean IS NOT TRUE OR is_read = false)
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT $2 OFFSET $3
 `
 
@@ -75,6 +144,7 @@ type ListNotificationsParams struct {
 	UnreadOnly pgtype.Bool `json:"unread_only"`
 }
 
+// id DESC — тай-брейк: уведомления одной транзакции получают одинаковый now().
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error) {
 	rows, err := q.db.Query(ctx, listNotifications,
 		arg.UserID,
@@ -120,7 +190,7 @@ func (q *Queries) MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID
 	return err
 }
 
-const markNotificationRead = `-- name: MarkNotificationRead :exec
+const markNotificationRead = `-- name: MarkNotificationRead :execrows
 UPDATE notifications
 SET is_read = true
 WHERE id = $1 AND user_id = $2
@@ -131,7 +201,11 @@ type MarkNotificationReadParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
-func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error {
-	_, err := q.db.Exec(ctx, markNotificationRead, arg.ID, arg.UserID)
-	return err
+// 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).
+func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markNotificationRead, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

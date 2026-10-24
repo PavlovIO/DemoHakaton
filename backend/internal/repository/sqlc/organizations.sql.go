@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 const approveKyc = `-- name: ApproveKyc :one
@@ -18,32 +19,29 @@ UPDATE organizations SET
     verified_at = now(),
     kyc_reject_reason = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at
+WHERE id = $1 AND kyc_status = 'under_review'
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 `
 
-type ApproveKycRow struct {
-	ID              uuid.UUID          `json:"id"`
-	Type            OrganizationType   `json:"type"`
-	Name            string             `json:"name"`
-	KycStatus       KycStatus          `json:"kyc_status"`
-	KycRejectReason pgtype.Text        `json:"kyc_reject_reason"`
-	KycSubmittedAt  pgtype.Timestamptz `json:"kyc_submitted_at"`
-	VerifiedAt      pgtype.Timestamptz `json:"verified_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error) {
+// Решение админа (BE-12). Охрана статуса в WHERE — страховка к FOR UPDATE в сервисе:
+// 0 строк значит «уже не under_review» (409), а не «нет компании».
+func (q *Queries) ApproveKyc(ctx context.Context, id uuid.UUID) (Organization, error) {
 	row := q.db.QueryRow(ctx, approveKyc, id)
-	var i ApproveKycRow
+	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Type,
 		&i.Name,
+		&i.CountryCode,
+		&i.RegistrationNumber,
+		&i.Lei,
+		&i.LegalAddress,
 		&i.KycStatus,
 		&i.KycRejectReason,
 		&i.KycSubmittedAt,
 		&i.VerifiedAt,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -51,16 +49,16 @@ func (q *Queries) ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, 
 
 const countOrganizations = `-- name: CountOrganizations :one
 SELECT count(*) FROM organizations
-WHERE ($1::kyc_status IS NULL OR kyc_status = $1::kyc_status)
+WHERE ($1::text[] IS NULL OR kyc_status::text = ANY($1::text[]))
   AND ($2::organization_type IS NULL OR type = $2::organization_type)
   AND ($3::char(2) IS NULL OR country_code = $3::char(2))
   AND ($4::text IS NULL
-       OR name ILIKE '%' || $4::text || '%'
-       OR registration_number ILIKE '%' || $4::text || '%')
+       OR name ILIKE '%' || $4::text || '%' ESCAPE '\'
+       OR registration_number ILIKE '%' || $4::text || '%' ESCAPE '\')
 `
 
 type CountOrganizationsParams struct {
-	KycStatus   NullKycStatus        `json:"kyc_status"`
+	KycStatuses []string             `json:"kyc_statuses"`
 	Type        NullOrganizationType `json:"type"`
 	CountryCode pgtype.Text          `json:"country_code"`
 	Q           pgtype.Text          `json:"q"`
@@ -68,7 +66,7 @@ type CountOrganizationsParams struct {
 
 func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countOrganizations,
-		arg.KycStatus,
+		arg.KycStatuses,
 		arg.Type,
 		arg.CountryCode,
 		arg.Q,
@@ -76,6 +74,40 @@ func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizations
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createBeneficiary = `-- name: CreateBeneficiary :one
+INSERT INTO beneficiaries (organization_id, full_name, citizenship_country_code, ownership_percent, created_at)
+VALUES ($1, $2, $3, $4, clock_timestamp())
+RETURNING id, organization_id, full_name, citizenship_country_code, ownership_percent, created_at
+`
+
+type CreateBeneficiaryParams struct {
+	OrganizationID         uuid.UUID       `json:"organization_id"`
+	FullName               string          `json:"full_name"`
+	CitizenshipCountryCode string          `json:"citizenship_country_code"`
+	OwnershipPercent       decimal.Decimal `json:"ownership_percent"`
+}
+
+// clock_timestamp(), а не DEFAULT now(): список вставляется одной транзакцией, now() у всех
+// строк одинаковый, и ORDER BY created_at в ListBeneficiariesByOrg потерял бы порядок из PATCH.
+func (q *Queries) CreateBeneficiary(ctx context.Context, arg CreateBeneficiaryParams) (Beneficiary, error) {
+	row := q.db.QueryRow(ctx, createBeneficiary,
+		arg.OrganizationID,
+		arg.FullName,
+		arg.CitizenshipCountryCode,
+		arg.OwnershipPercent,
+	)
+	var i Beneficiary
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.FullName,
+		&i.CitizenshipCountryCode,
+		&i.OwnershipPercent,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createOrganization = `-- name: CreateOrganization :one
@@ -122,6 +154,17 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 	return i, err
 }
 
+const deleteBeneficiariesByOrg = `-- name: DeleteBeneficiariesByOrg :exec
+DELETE FROM beneficiaries
+WHERE organization_id = $1
+`
+
+// Список бенефициаров заменяется целиком: delete + insert в одной транзакции.
+func (q *Queries) DeleteBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBeneficiariesByOrg, organizationID)
+	return err
+}
+
 const getOrganizationByID = `-- name: GetOrganizationByID :one
 SELECT id, type, name, country_code, registration_number, lei, legal_address,
        kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
@@ -150,34 +193,136 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organi
 	return i, err
 }
 
+const getOrganizationForUpdate = `-- name: GetOrganizationForUpdate :one
+SELECT id, type, name, country_code, registration_number, lei, legal_address,
+       kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
+FROM organizations
+WHERE id = $1
+FOR UPDATE
+`
+
+// Блокирует строку организации до конца транзакции: правка профиля, загрузка и удаление
+// документа и submit KYC сериализуются, и проверка статуса в сервисе не устаревает.
+func (q *Queries) GetOrganizationForUpdate(ctx context.Context, id uuid.UUID) (Organization, error) {
+	row := q.db.QueryRow(ctx, getOrganizationForUpdate, id)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Name,
+		&i.CountryCode,
+		&i.RegistrationNumber,
+		&i.Lei,
+		&i.LegalAddress,
+		&i.KycStatus,
+		&i.KycRejectReason,
+		&i.KycSubmittedAt,
+		&i.VerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listBeneficiariesByOrg = `-- name: ListBeneficiariesByOrg :many
+SELECT id, organization_id, full_name, citizenship_country_code, ownership_percent, created_at FROM beneficiaries
+WHERE organization_id = $1
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]Beneficiary, error) {
+	rows, err := q.db.Query(ctx, listBeneficiariesByOrg, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Beneficiary{}
+	for rows.Next() {
+		var i Beneficiary
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.FullName,
+			&i.CitizenshipCountryCode,
+			&i.OwnershipPercent,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBeneficiariesByOrganizations = `-- name: ListBeneficiariesByOrganizations :many
+SELECT id, organization_id, full_name, citizenship_country_code, ownership_percent, created_at FROM beneficiaries
+WHERE organization_id = ANY($1::uuid[])
+ORDER BY organization_id, created_at, id
+`
+
+// Бенефициары страницы админского списка компаний (BE-12) одним запросом вместо N.
+func (q *Queries) ListBeneficiariesByOrganizations(ctx context.Context, organizationIds []uuid.UUID) ([]Beneficiary, error) {
+	rows, err := q.db.Query(ctx, listBeneficiariesByOrganizations, organizationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Beneficiary{}
+	for rows.Next() {
+		var i Beneficiary
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.FullName,
+			&i.CitizenshipCountryCode,
+			&i.OwnershipPercent,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizations = `-- name: ListOrganizations :many
 SELECT id, type, name, country_code, registration_number, lei, legal_address,
        kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 FROM organizations
-WHERE ($3::kyc_status IS NULL OR kyc_status = $3::kyc_status)
+WHERE ($3::text[] IS NULL OR kyc_status::text = ANY($3::text[]))
   AND ($4::organization_type IS NULL OR type = $4::organization_type)
   AND ($5::char(2) IS NULL OR country_code = $5::char(2))
   AND ($6::text IS NULL
-       OR name ILIKE '%' || $6::text || '%'
-       OR registration_number ILIKE '%' || $6::text || '%')
-ORDER BY created_at DESC
+       OR name ILIKE '%' || $6::text || '%' ESCAPE '\'
+       OR registration_number ILIKE '%' || $6::text || '%' ESCAPE '\')
+ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2
 `
 
 type ListOrganizationsParams struct {
 	Limit       int32                `json:"limit"`
 	Offset      int32                `json:"offset"`
-	KycStatus   NullKycStatus        `json:"kyc_status"`
+	KycStatuses []string             `json:"kyc_statuses"`
 	Type        NullOrganizationType `json:"type"`
 	CountryCode pgtype.Text          `json:"country_code"`
 	Q           pgtype.Text          `json:"q"`
 }
 
+// Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
+// массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
+// id DESC — тай-брейк: строки одной транзакции получают одинаковый now(), без него
+// LIMIT/OFFSET повторяет и теряет строки между страницами.
 func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error) {
 	rows, err := q.db.Query(ctx, listOrganizations,
 		arg.Limit,
 		arg.Offset,
-		arg.KycStatus,
+		arg.KycStatuses,
 		arg.Type,
 		arg.CountryCode,
 		arg.Q,
@@ -220,8 +365,9 @@ UPDATE organizations SET
     kyc_reject_reason = $2,
     verified_at = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at
+WHERE id = $1 AND kyc_status = 'under_review'
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 `
 
 type RejectKycParams struct {
@@ -229,28 +375,23 @@ type RejectKycParams struct {
 	KycRejectReason pgtype.Text `json:"kyc_reject_reason"`
 }
 
-type RejectKycRow struct {
-	ID              uuid.UUID          `json:"id"`
-	Type            OrganizationType   `json:"type"`
-	Name            string             `json:"name"`
-	KycStatus       KycStatus          `json:"kyc_status"`
-	KycRejectReason pgtype.Text        `json:"kyc_reject_reason"`
-	KycSubmittedAt  pgtype.Timestamptz `json:"kyc_submitted_at"`
-	VerifiedAt      pgtype.Timestamptz `json:"verified_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error) {
+// Причина видна компании: kyc_reject_reason отдаёт getMyOrganization и /auth/me.
+func (q *Queries) RejectKyc(ctx context.Context, arg RejectKycParams) (Organization, error) {
 	row := q.db.QueryRow(ctx, rejectKyc, arg.ID, arg.KycRejectReason)
-	var i RejectKycRow
+	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Type,
 		&i.Name,
+		&i.CountryCode,
+		&i.RegistrationNumber,
+		&i.Lei,
+		&i.LegalAddress,
 		&i.KycStatus,
 		&i.KycRejectReason,
 		&i.KycSubmittedAt,
 		&i.VerifiedAt,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -263,32 +404,27 @@ UPDATE organizations SET
     kyc_reject_reason = NULL,
     verified_at = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at
+WHERE id = $1 AND kyc_status IN ('draft', 'rejected')
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 `
 
-type SubmitKycForReviewRow struct {
-	ID              uuid.UUID          `json:"id"`
-	Type            OrganizationType   `json:"type"`
-	Name            string             `json:"name"`
-	KycStatus       KycStatus          `json:"kyc_status"`
-	KycRejectReason pgtype.Text        `json:"kyc_reject_reason"`
-	KycSubmittedAt  pgtype.Timestamptz `json:"kyc_submitted_at"`
-	VerifiedAt      pgtype.Timestamptz `json:"verified_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) SubmitKycForReview(ctx context.Context, id uuid.UUID) (SubmitKycForReviewRow, error) {
+func (q *Queries) SubmitKycForReview(ctx context.Context, id uuid.UUID) (Organization, error) {
 	row := q.db.QueryRow(ctx, submitKycForReview, id)
-	var i SubmitKycForReviewRow
+	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Type,
 		&i.Name,
+		&i.CountryCode,
+		&i.RegistrationNumber,
+		&i.Lei,
+		&i.LegalAddress,
 		&i.KycStatus,
 		&i.KycRejectReason,
 		&i.KycSubmittedAt,
 		&i.VerifiedAt,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -299,9 +435,10 @@ UPDATE organizations SET
     name = COALESCE($2::text, name),
     registration_number = COALESCE($3::text, registration_number),
     legal_address = COALESCE($4::text, legal_address),
-    lei = COALESCE($5::char(20), lei),
+    lei = CASE WHEN $5::text IS NULL THEN lei
+               ELSE NULLIF($5::text, '')::char(20) END,
     updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND kyc_status IN ('draft', 'rejected')
 RETURNING id, type, name, country_code, registration_number, lei, legal_address,
           kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 `
@@ -314,6 +451,8 @@ type UpdateOrganizationParams struct {
 	Lei                pgtype.Text `json:"lei"`
 }
 
+// lei: NULL — не трогать, пустая строка — очистить (DECISIONS п. 7), иначе — записать.
+// Охрана статуса в WHERE — вторая линия после блокировки и проверки в сервисе.
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error) {
 	row := q.db.QueryRow(ctx, updateOrganization,
 		arg.ID,

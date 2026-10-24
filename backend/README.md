@@ -3,7 +3,7 @@
 Go-сервер (net/http, PostgreSQL), который реализует контракт [`api/openapi.yaml`](../api/openapi.yaml). Контракт — источник правды: по нему генерируются Go-сервер (oapi-codegen) и TS-клиент фронта (openapi-typescript), а каждый входящий запрос валидируется по нему в рантайме. В этом файле — что за API, как им пользоваться и как устроен код. Поля и схемы целиком — в самой спеке.
 
 - Запуск локально, команды `make` — [корневой README](../README.md#запуск-бэкенда).
-- Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег).
+- Решения и их причины — [ADR-0001](../docs/adr/0001-architecture-and-api-contract.md) (архитектура), [ADR-0002](../docs/adr/0002-spec-layout-and-request-validation.md) (раскладка контракта, валидация), [ADR-0003](../docs/adr/0003-server-package-per-tag.md) (сервер по пакету на тег), [ADR-0004](../docs/adr/0004-authorization.md) (авторизация), [ADR-0005](../docs/adr/0005-service-packages-by-domain.md) (сервисный слой: ядро и пакеты доменов).
 - Схема БД — [`docs/db/schema.md`](../docs/db/schema.md).
 - Пишете код бэкенда — начните с [«Как устроен код»](#как-устроен-код): где пишем руками, а что генерируется.
 
@@ -24,13 +24,22 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 
 ## Статус реализации
 
-Контракт описывает **51 операцию**. Каждая уже маршрутизируется и валидируется по спеке, а ещё не реализованные отвечают `501 NOT_IMPLEMENTED` в общем формате ошибок. Поэтому фронт видит итоговую форму API с первого дня.
+Контракт описывает **51 операцию**, все реализованы. Операция, добавленная в контракт раньше кода, отвечает `501 NOT_IMPLEMENTED` в общем формате ошибок.
 
 | Работает | Операции |
 |---|---|
 | ✅ | `GET /healthz`, `GET /dictionaries/countries`, `GET /dictionaries/currencies`, `GET /dictionaries/transfer-methods` |
 | ✅ | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — вместе с сессией, CSRF и rate limit (ниже) |
-| ⏳ 501 | остальные 43 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET`/`PATCH /organizations/me`, `GET`/`POST /organizations/me/documents`, `DELETE /organizations/me/documents/{documentId}`, `GET /documents/{documentId}/file`, `POST /organizations/me/kyc/submit` — профиль, бенефициары, KYC-документы и отправка на проверку с AML-скринингом и сверкой с реестром |
+| ✅ | `GET /registry/lookup` — поиск компании в мок-реестре для автозаполнения |
+| ✅ | `GET`/`POST /applications`, `GET`/`PATCH /applications/{applicationId}`, `POST …/submit`, `POST …/cancel`, `POST …/reject-offers`, `GET …/history` — заявки: витрина с фильтрами, статусы, история, уведомления |
+| ✅ | `GET /offers`, `GET /offers/{offerId}`, `GET`/`POST /applications/{applicationId}/offers`, `POST /offers/{offerId}/reject`, `POST /offers/{offerId}/withdraw` — офферы: видимость по сторонам, `unread_messages`, история, уведомления |
+| ✅ | `POST /offers/{offerId}/accept`, `GET /deals`, `GET /deals/{dealId}` — принятие оффера в одной транзакции, сделка-снапшот с комиссией, видимость сделок сторонам и admin |
+| ✅ | `GET`/`POST /offers/{offerId}/messages` — чат сторон оффера: polling, отметка прочтения, уведомление другой стороне, лимит отправки |
+| ✅ | `GET /notifications`, `POST /notifications/{notificationId}/read`, `POST /notifications/read-all` — лента уведомлений с `unread_total` |
+| ✅ | `GET /admin/organizations`, `GET /admin/organizations/{organizationId}`, `POST …/kyc/approve`, `POST …/kyc/reject`, `POST /admin/applications/{applicationId}/approve`, `POST …/reject`, `GET /admin/users`, `POST /admin/users/{userId}/block`, `POST …/unblock` — очередь и карточка компании, решения по KYC, модерация заявок, блокировка |
+| ✅ | `GET /admin/aml/flags`, `POST /admin/aml/flags/{flagId}/resolve` — AML-флаги с фильтрами и решение по флагу |
+| ✅ | `GET /admin/audit-log`, `GET /admin/analytics/summary` — журнал аудита с фильтрами и сводка за период |
 
 ## Общие правила
 
@@ -38,6 +47,7 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 
 - Все пути — относительно **`/api/v1`** (`http://localhost:8080/api/v1` локально).
 - Тела запросов и ответов — `application/json; charset=utf-8`. Исключение — загрузка KYC-документа (`multipart/form-data`) и скачивание файла.
+- Каждый ответ несёт `X-Request-ID`: id из запроса клиента (`[A-Za-z0-9._-]`, до 64 символов) или сгенерированный. Тот же `request_id` — в каждой строке лога сервера по этому запросу; с сессией там же `user_id` и `org_id`.
 - Поля в JSON — `snake_case`. Идентификаторы — UUID (v7, сортируются по времени создания). Даты — RFC 3339 (`2026-10-22T12:00:00Z`).
 
 ### Аутентификация: сессия в cookie + CSRF
@@ -51,14 +61,27 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 3. Фронт ходит с `credentials: "include"`.
 4. Rate limit проверяется до хэширования пароля: `login` — 10 попыток на один email и 50 с одного IP за 15 минут (успешный вход сбрасывает счётчик email), `register` — 10 с одного IP за час. Превышение — `429 RATE_LIMITED` с заголовком `Retry-After`. Счётчики в памяти процесса.
 
-Без сессии доступны только: `POST /auth/register`, `POST /auth/login`, справочники `GET /dictionaries/*`, `GET /registry/lookup` и `GET /healthz`. Всё остальное без сессии — `401 UNAUTHORIZED`.
+Без сессии доступны операции с `security: []` в спеке: `POST /auth/register`, `POST /auth/login`, справочники `GET /dictionaries/*`, `GET /registry/lookup` и `GET /healthz`. Всё остальное без сессии — `401 UNAUTHORIZED`.
 
 ### Роли и доступ
 
-- **Роль** пользователя — `borrower` (заёмщик, РФ), `lender` (кредитор, не РФ) или `admin` — определяет, какие операции ему доступны.
-- **Владение** проверяется на каждой сущности: запрос в SQL всегда содержит `AND org_id = <моя организация>`. Чужая сущность отвечает **`404`**, а не `403`: так нельзя перебором узнать, что объект существует (защита от IDOR).
+- **Роль** пользователя — `borrower` (заёмщик, РФ), `lender` (кредитор, не РФ) или `admin` — определяет, какие операции ему доступны. Роли операции записаны в спеке расширением `x-roles`, требование KYC — `x-kyc-required: true`; их проверяет `middleware.Authorize`, а сервис повторяет проверку роли ([ADR-0004](../docs/adr/0004-authorization.md)).
+- **Владение** проверяется на каждой сущности в SQL: заявки, офферы и сделки читаются только запросами `*Visible` с обязательными `viewer_role`/`viewer_org`. Чужая сущность отвечает **`404`**, а не `403`: так нельзя перебором узнать, что объект существует (защита от IDOR).
 - **Списки** `GET /applications`, `GET /offers`, `GET /deals` зависят от роли: один и тот же эндпоинт отдаёт заёмщику его заявки, кредитору — витрину опубликованных и т.д.
-- Пока компания не прошла KYC (`kyc_status != verified`), она не может создавать заявки и офферы — `403 KYC_NOT_VERIFIED`.
+- Пока компания не прошла KYC (`kyc_status != verified`), она не может создавать заявки и офферы и принимать офферы — `403 KYC_NOT_VERIFIED`.
+
+Порядок проверок на каждый запрос:
+
+| # | Ситуация | Ответ | Где |
+|---|---|---|---|
+| 1 | путь или метод не из спеки | `404 NOT_FOUND` | валидатор |
+| 2 | операция публичная (`security: []`) | пропускается с сессией и без | `middleware.Authorize` |
+| 3 | нет сессии, она истекла или пользователь заблокирован | `401 UNAUTHORIZED` | `middleware.Authorize` |
+| 4 | роли нет в `x-roles` операции | `403 FORBIDDEN` | `middleware.Authorize` |
+| 5 | `x-kyc-required`, а компания не `verified` | `403 KYC_NOT_VERIFIED` | `middleware.Authorize` |
+| 6 | мутирующий запрос без `X-CSRF-Token` или с чужим | `403 CSRF_INVALID` | `middleware.CSRF` |
+| 7 | запрос не соответствует схеме | `400 VALIDATION_ERROR` | валидатор |
+| 8 | сущность чужая **или** не существует | `404 NOT_FOUND` | SQL `*Visible` |
 
 ### Деньги, проценты, коды
 
@@ -90,14 +113,16 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | `UNAUTHORIZED` | 401 | нет сессии или она истекла |
 | `FORBIDDEN` | 403 | роль не позволяет операцию |
 | `CSRF_INVALID` | 403 | нет `X-CSRF-Token` или он не совпадает с cookie |
-| `KYC_NOT_VERIFIED` | 403 | компания не верифицирована (заявки, офферы) |
+| `KYC_NOT_VERIFIED` | 403 | компания не верифицирована (создание заявок и офферов, принятие оффера) |
 | `NOT_FOUND` | 404 | нет такой сущности **или она чужая**; неизвестный путь |
-| `CONFLICT` | 409 | конфликт данных (например, email уже занят) |
+| `CONFLICT` | 409 | конфликт данных (например, email уже занят; реквизиты компании изменились во время `kyc/submit`) |
 | `INVALID_STATUS_TRANSITION` | 409 | переход статуса не разрешён (см. «Статусы») |
-| `RATE_LIMITED` | 429 | слишком много попыток (`login`, `register`); заголовок `Retry-After` — через сколько секунд повторить |
+| `FILE_TOO_LARGE` | 413 | загружаемый документ больше 10 МБ |
+| `RATE_LIMITED` | 429 | слишком много попыток (`login`, `register`, `registry/lookup`, отправка сообщений в чат); заголовок `Retry-After` — через сколько секунд повторить |
 | `INTERNAL` | 500 | непредвиденная ошибка; подробности только в логе сервера |
 | `NOT_IMPLEMENTED` | 501 | операция есть в контракте, но ещё не реализована |
 | `UNAVAILABLE` | 503 | нет соединения с БД (`/healthz`) |
+| `UPSTREAM_UNAVAILABLE` | 502 | внешний реестр не ответил (`registry/lookup`) — реквизиты заполняются вручную |
 
 ### Пагинация и polling
 
@@ -106,8 +131,18 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 ### Лимиты
 
-- Тело запроса — до **1 МБ** (JSON), загрузка документа — до **10 МБ**. Больше — `400 VALIDATION_ERROR` с `field: "body"`.
+- Тело запроса — до **1 МБ** (JSON), больше — `400 VALIDATION_ERROR` с `field: "body"`. Файл документа — до **10 МБ**, больше — `413 FILE_TOO_LARGE`.
 - Таймауты сервера: заголовки — 5 с, чтение — 15 с, запись — 30 с.
+
+### Безопасность
+
+- **Заголовки каждого ответа API** (`middleware.SecurityHeaders`): `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`. По HTTPS (TLS напрямую или `X-Forwarded-Proto: https` от прокси) — ещё `Strict-Transport-Security: max-age=31536000; includeSubDomains`. CSP для HTML фронта отдаёт nginx frontend-контейнера (INF-01).
+- **CORS по умолчанию выключен**: фронт и API живут на одном origin (Vite proxy в dev, reverse-proxy в проде). Если фронт на другом хосте — перечислите его origin в `CORS_ALLOWED_ORIGINS` (`scheme://host[:port]` через запятую). Origin сравнивается точно, ответ — с `Access-Control-Allow-Credentials: true`; `*` не поддерживается. Preflight (`OPTIONS`) от разрешённого origin — `204` без сессии. Ограничение: cookie `session`/`csrf_token` — host-only с `SameSite=Lax`, поэтому изменяющие запросы (CSRF double-submit) работают только с фронтом на том же хосте, но другом порту (cookie не привязаны к порту). Фронт на другом поддомене или сайте не прочитает `csrf_token` и получит `403 CSRF_INVALID` на любой POST/PATCH/DELETE — для него нужен reverse-proxy на общий origin.
+- **CSRF** — double-submit, см. «Аутентификация», п. 2; исключение — только `register` и `login`.
+- **IDOR** — чужой id любого ресурса отвечает `404 NOT_FOUND`, неотличимо от несуществующего (`TestIDOR` в `cmd/server`, проверяет все пути с id из спеки, кроме `/admin/*`: администратор видит все организации, чужой роли там отвечает `403` — это `TestAccessOrder`).
+- **Логи** не содержат паролей и токенов даже на `LOG_LEVEL=debug`: ошибки валидатора пишутся без значений полей (`TestLogsDoNotContainSecrets`).
+- **IP клиента** — `RemoteAddr`; `X-Forwarded-For` не читается, пока нет списка доверенных прокси.
+- Права ролей БД (`lp_app`/`lp_migrator`, `audit_log` только `INSERT`) — отдельная задача DB-SEC (ветка `feat/db-roles`).
 
 ## Эндпоинты
 
@@ -133,7 +168,12 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | DELETE | `/organizations/me/documents/{documentId}` | Удалить свой документ (только `draft` / `rejected`) → `204` | B, L |
 | POST | `/organizations/me/kyc/submit` | Отправить компанию на верификацию (`draft` / `rejected` → `under_review`) | B, L |
 | GET | `/documents/{documentId}/file` | Скачать файл документа | владелец, A |
-| GET | `/registry/lookup` | Автозаполнение по реестру: ЕГРЮЛ для RU, GLEIF по LEI для остальных. **В MVP — мок** (ADR-0001, п. 6) | все |
+| GET | `/registry/lookup` | Автозаполнение по реестру: ИНН/ОГРН для RU, LEI для остальных. **В MVP — мок** (ADR-0001, п. 6) | все |
+
+- **Загрузка документа:** в `multipart/form-data` поле `doc_type` должно идти **до** `file` — сервер читает файл потоком и без типа не знает, куда его отнести; иначе `400 VALIDATION_ERROR`. Файл больше 10 МБ — `413 FILE_TOO_LARGE`.
+- **Скачивание** `GET /documents/{documentId}/file`: только владелец документа или admin (чужой — `404`); ответ с `Content-Disposition: attachment`, чтобы браузер не исполнял файл в контексте сайта.
+- **Отправка на проверку:** нужны обязательные документы и хотя бы один бенефициар (`400` с `details` по каждому недостающему). Сверка с реестром не блокирует отправку: при сбое реестра компания всё равно уходит в `under_review`, админ сверяет вручную. Если реквизиты изменились параллельно со сверкой — `409 CONFLICT`, повторить.
+- **Поиск в реестре** `GET /registry/lookup` (без логина): реестр — мок на фикстурах демо-компаний, `source: "mock"`. Номер: для RU — ИНН (10 цифр) или ОГРН (13), для остальных стран — LEI (20 символов, регистр не важен); другой формат — `400` с `field: number`. Не нашли — `200` с `found: false`. Лимит — 10 запросов в минуту с IP и 60 в минуту всего, сверх — `429` с `Retry-After`. Реестр не ответил — `502 UPSTREAM_UNAVAILABLE` (в моке — номер `RU`/`0000000000`). Lookup в БД не пишет: снапшот в `registry_checks` сохраняет только `kyc/submit`.
 
 ### dictionaries — справочники
 
@@ -141,39 +181,43 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 |---|---|---|---|
 | GET | `/dictionaries/countries` | Страны (ISO 3166-1) с флагом `fatf_high_risk` | все |
 | GET | `/dictionaries/currencies` | Валюты (ISO 4217) | все |
-| GET | `/dictionaries/transfer-methods` | Способы передачи средств (`swift`, `sepa`, `other`) | все |
+| GET | `/dictionaries/transfer-methods` | Способы передачи средств (`swift`, `sepa`, `spfs`, `cips`, `other`) | все |
 
 ### applications — заявки заёмщиков
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/applications` | Список (по роли): заёмщику — свои в любом статусе, кредитору — витрина `published` и заявки с его офферами (архив), admin — все. Фильтры `status`, `currency`, `amount_min`/`amount_max` (только вместе с `currency`), пагинация | авториз. |
+| GET | `/applications` | Список (по роли): заёмщику — свои в любом статусе, кредитору — витрина `published` и заявки с его офферами (архив), admin — все. Фильтры: `status`, `target_country` и `transfer_method` (несколько значений — ИЛИ), `currency`, `amount_min`/`amount_max` (только вместе с `currency`), `term_min`/`term_max`, `created_from`/`created_to`; кредитору — `has_my_offer` (архив откликов), admin — `borrower_organization_id`. Сортировка `sort` (по дате создания или публикации, сумме, сроку), пагинация | авториз. |
 | POST | `/applications` | Создать заявку в статусе `draft` (KYC verified) → `201` | B |
 | GET | `/applications/{applicationId}` | Карточка заявки | авториз. |
 | PATCH | `/applications/{applicationId}` | Редактировать (владелец, `draft` / `rejected`) | B |
 | POST | `/applications/{applicationId}/submit` | На модерацию (`draft` / `rejected` → `moderation`) | B |
-| POST | `/applications/{applicationId}/cancel` | Отменить (любой статус, кроме `agreed` / `cancelled`) | B |
-| POST | `/applications/{applicationId}/reject-offers` | Отклонить все текущие офферы; заявка остаётся `published` | B |
-| GET | `/applications/{applicationId}/history` | История смены статусов заявки и её офферов | авториз. |
+| POST | `/applications/{applicationId}/cancel` | Отменить (любой статус, кроме `agreed` / `cancelled`); все `sent`-офферы → `rejected` с причиной `application_cancelled`, их кредиторам — `offer_rejected` | B |
+| POST | `/applications/{applicationId}/reject-offers` | Отклонить все `sent`-офферы (причина `rejected_by_borrower`) → `{"rejected_count": n}`, `0` — тоже `200`; заявка остаётся `published` | B |
+| GET | `/applications/{applicationId}/history` | История смены статусов заявки и её офферов; кредитор видит только свои офферы и без комментариев модерации | авториз. |
+
+Ошибки заявок: `amount_min`/`amount_max` без `currency` → `400 VALIDATION_ERROR` (поле в `details`); чужая или невидимая заявка → `404 NOT_FOUND`; `PATCH` вне `draft`/`rejected`, `submit`/`cancel` из недопустимого статуса, `reject-offers` вне `published` → `409 INVALID_STATUS_TRANSITION`. `offers_count` — все офферы заявки в любом статусе (только владельцу и admin); `transfer_method_comment: ""` в `PATCH` очищает комментарий.
 
 ### offers — предложения кредиторов
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/offers` | Список (по роли): кредитору — его предложения, заёмщику — входящие; архив | авториз. |
-| GET | `/applications/{applicationId}/offers` | Офферы по заявке | авториз. |
-| POST | `/applications/{applicationId}/offers` | Сделать оффер (KYC verified, заявка `published`, сумма ≤ суммы заявки) → `201` | L |
+| GET | `/offers` | Список (по роли): кредитору — его предложения, заёмщику — входящие по его заявкам, admin — все. Фильтры: `status` (несколько — ИЛИ), `application_id`, `created_from`/`created_to`; admin — `lender_organization_id`, `borrower_organization_id`; пагинация | авториз. |
+| GET | `/applications/{applicationId}/offers` | Офферы по заявке: владельцу и admin — все, кредитору — только свой (суммы конкурентов скрыты); фильтр `status` | авториз. |
+| POST | `/applications/{applicationId}/offers` | Сделать оффер (KYC verified, заявка `published`, сумма ≤ суммы заявки, валюта — всегда валюта заявки) → `201`; заёмщику — `offer_received` | L |
 | GET | `/offers/{offerId}` | Карточка оффера (автор-кредитор, заёмщик-владелец заявки, admin) | авториз. |
-| POST | `/offers/{offerId}/accept` | **Принять оффер → создаётся сделка** (`200`, тело — `Deal`); остальные офферы заявки отклоняются; повторный вызов → `409` | B |
-| POST | `/offers/{offerId}/reject` | Отклонить оффер | B |
-| POST | `/offers/{offerId}/withdraw` | Отозвать свой оффер (только из `sent`) | L |
+| POST | `/offers/{offerId}/accept` | **Принять оффер → создаётся сделка** (`200`, тело — `Deal`); остальные `sent`-офферы заявки отклоняются (`another_offer_accepted`); кредитору — `offer_accepted`, отклонённым — `offer_rejected`; повторный вызов → `409` | B |
+| POST | `/offers/{offerId}/reject` | Отклонить оффер (только из `sent`; тело `{"comment"}` необязательно) → `rejected_by_borrower`; кредитору — `offer_rejected` | B |
+| POST | `/offers/{offerId}/withdraw` | Отозвать свой оффер (только из `sent`); заёмщику — `offer_withdrawn` | L |
+
+Ошибки офферов: сумма больше суммы заявки или `valid_until` в прошлом → `400 VALIDATION_ERROR` (поле в `details`); невидимые оффер или заявка → `404 NOT_FOUND`; заявка не в `published` → `409 CONFLICT` («Заявка не принимает офферы»); второй `sent`-оффер компании по той же заявке → `409 CONFLICT` (после `withdrawn`/`rejected` можно сделать новый); `reject`/`withdraw`/`accept` не из `sent` → `409 INVALID_STATUS_TRANSITION`. `accept`: чужой оффер → `404`; заявка не `published` (уже `agreed`, `cancelled`…) или `valid_until` в прошлом («Срок действия оффера истёк», статус оффера не меняется) → `409 INVALID_STATUS_TRANSITION`; admin и кредитор → `403`, заёмщик без `verified` KYC → `403 KYC_NOT_VERIFIED`. `403 FORBIDDEN` на `reject` получают admin и кредитор (видят оффер, но решает заёмщик), на `withdraw` — admin и заёмщик. `unread_messages` — чужие непрочитанные сообщения чата текущего пользователя; admin его не получает.
 
 ### deals — сделки
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/deals` | Сделки: стороны сделки или admin | авториз. |
-| GET | `/deals/{dealId}` | Карточка сделки | стороны, A |
+| GET | `/deals` | Сделки: стороны сделки или admin. Период `created_from`/`created_to` — по `agreed_at`; admin — `borrower_organization_id`, `lender_organization_id`; пагинация | авториз. |
+| GET | `/deals/{dealId}` | Карточка сделки; чужая → `404` | стороны, A |
 
 ### chat — переписка по офферу
 
@@ -181,6 +225,10 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 |---|---|---|---|
 | GET | `/offers/{offerId}/messages` | Сообщения (`after_id`, `limit` ≤ 200); чтение помечает прочитанными | стороны оффера; A — только чтение |
 | POST | `/offers/{offerId}/messages` | Написать (оффер в статусе `sent` или `accepted`) → `201` | стороны оффера |
+
+- **Доступ:** стороны оффера (кредитор-автор и заёмщик-владелец заявки) читают и пишут; admin только читает — `POST` от admin → `403 FORBIDDEN`; остальным — `404`.
+- **Polling:** сообщения с `id > after_id` по возрастанию `id`; `after_id` по умолчанию `0`, `limit` — `50` (максимум 200). Первая загрузка отдаёт **самые старые** `limit` сообщений: фронт дочитывает, пока приходит ровно `limit`. `GET` сдвигает указатель «прочитано» текущего пользователя (`unread_messages` у оффера); у admin указателя нет.
+- **Отправка:** текст 1–4000 символов хранится как есть (без trim и HTML-санитизации, фронт выводит только как текст), вне диапазона — `400`. Оффер не `sent`/`accepted` — `409 INVALID_STATUS_TRANSITION`. Другой стороне — уведомление `message_received` на каждое сообщение. Лимит — 20 сообщений в минуту на пользователя, сверх — `429 RATE_LIMITED` с `Retry-After`; отказы `404` и `409` лимит не расходуют.
 
 ### notifications — уведомления
 
@@ -190,23 +238,65 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | POST | `/notifications/{notificationId}/read` | Отметить прочитанным → `204` | авториз. |
 | POST | `/notifications/read-all` | Отметить все прочитанными → `204` | авториз. |
 
+- **Лента** — только свои уведомления, новые сверху (`created_at DESC, id DESC`); `unread_only=true` — только непрочитанные; пагинация `page`/`page_size` (1/20). `total` считается с тем же фильтром, что и `items`; `unread_total` — все непрочитанные пользователя, от `unread_only` не зависит (счётчик в шапке).
+- **Отметка:** повторная отметка своего уведомления — снова `204`; чужое или несуществующее — `404 NOT_FOUND`; `notificationId` не число — `400 VALIDATION_ERROR`.
+- **Откуда берутся:** бизнес-событие пишет уведомление в той же транзакции, что и смену статуса (`service.Notifier`): откат события откатывает и уведомление. «Организации» — каждому активному пользователю компании, «админам» — каждому активному admin. `title` — снимок на момент события. Старые уведомления не удаляются.
+
+| Тип | Событие | Кому |
+|---|---|---|
+| `kyc_submitted` | `submitKyc` | админам |
+| `kyc_approved`, `kyc_rejected` | `adminApproveKyc`, `adminRejectKyc` | компании |
+| `application_submitted` | `submitApplication` | админам |
+| `application_published`, `application_rejected` | `adminApproveApplication`, `adminRejectApplication` | компании-заёмщику |
+| `offer_received` | `createOffer` | компании-заёмщику |
+| `offer_accepted` | `acceptOffer` | кредитору принятого оффера |
+| `offer_rejected` | `rejectOffer`; `acceptOffer`, `cancelApplication`, `rejectAllOffers` — каждому кредитору автоматически отклонённого `sent`-оффера | кредитору |
+| `offer_withdrawn` | `withdrawOffer` | компании-заёмщику |
+| `message_received` | `sendMessage` — на каждое сообщение | другой стороне оффера (admin не получает) |
+| `aml_flag_created` | AML-скрининг в `submitKyc`/`submitApplication` нашёл флаги — одно на прогон | админам |
+
+Не уведомляем: заёмщика о сделке (она в ответе `acceptOffer`), админов о новом оффере и об отмене заявки.
+
 ### admin — модерация, KYC, AML, аналитика
 
 | Метод | Путь | Что делает | Кто |
 |---|---|---|---|
-| GET | `/admin/organizations` | Компании; очередь верификации — `kyc_status=under_review` | A |
-| GET | `/admin/organizations/{organizationId}` | Полная карточка: документы, бенефициары, AML-флаги, пользователи | A |
+| GET | `/admin/organizations` | Компании; очередь верификации — `kyc_status=under_review`. Фильтры `kyc_status` (несколько — ИЛИ), `type`, `country_code`, `q` (подстрока названия или рег. номера); пагинация | A |
+| GET | `/admin/organizations/{organizationId}` | Полная карточка: документы, бенефициары, AML-флаги (открытые сверху), пользователи, последняя сверка с реестром (`registry_check: null`, если сверки не было) | A |
 | POST | `/admin/organizations/{organizationId}/kyc/approve` | Верифицировать (`under_review` → `verified`) | A |
 | POST | `/admin/organizations/{organizationId}/kyc/reject` | Отклонить с причиной (`under_review` → `rejected`) | A |
 | POST | `/admin/applications/{applicationId}/approve` | Опубликовать заявку (`moderation` → `published`) | A |
 | POST | `/admin/applications/{applicationId}/reject` | Вернуть на доработку с причиной (`moderation` → `rejected`) | A |
-| GET | `/admin/aml/flags` | AML-флаги rule-based скрининга (санкции, FATF, порог суммы) | A |
-| POST | `/admin/aml/flags/{flagId}/resolve` | Закрыть AML-флаг | A |
-| GET | `/admin/users` | Пользователи | A |
+| GET | `/admin/aml/flags` | AML-флаги rule-based скрининга (санкции, FATF, порог суммы). Фильтры `status`, `severity`, `organization_id`, `application_id`; пагинация | A |
+| POST | `/admin/aml/flags/{flagId}/resolve` | Закрыть AML-флаг: `open` → `false_positive` или `confirmed`, `comment` 3–2000 символов | A |
+| GET | `/admin/users` | Пользователи. Фильтры `role`, `status`, `q` (подстрока email); пагинация | A |
 | POST | `/admin/users/{userId}/block` | Заблокировать (удаляет все его сессии) | A |
 | POST | `/admin/users/{userId}/unblock` | Разблокировать | A |
-| GET | `/admin/audit-log` | Журнал действий пользователей | A |
-| GET | `/admin/analytics/summary` | Аналитика: число заявок, средний размер, топ-страны | A |
+| GET | `/admin/audit-log` | Журнал действий пользователей, новые сверху. Фильтры `user_id`, `action`, `entity_type`, `entity_id`, `created_from`, `created_to`; пагинация и `total` | A |
+| GET | `/admin/analytics/summary` | Сводка за период: заявки всего и по статусам, офферы, сделки, суммы и средние по валютам, топ-`top_n` стран спроса и предложения | A |
+
+Ошибки и правила решений админа:
+- **KYC approve:** компания не в `under_review` → `409 INVALID_STATUS_TRANSITION`; у компании есть открытый AML-флаг `severity=high` → `409 CONFLICT` («У компании есть открытые AML-флаги высокой серьёзности»), состояние не меняется. Переход проверяется раньше флагов. Флаг, закрытый как `false_positive` или `confirmed`, approve не блокирует.
+- **Публикацию заявки** открытые флаги не блокируют: они видны на экране модерации (`GET /admin/aml/flags?application_id=`), решение за админом.
+- **Причина отказа видна компании:** KYC — `kyc_reject_reason` в `GET /organizations/me` и `GET /auth/me`; заявка — `moderation_comment` (владельцу и admin, кредиторам — нет). `reason` обязателен, не короче 3 символов (иначе `400 VALIDATION_ERROR`); необязательный `comment` при approve пишется только в историю статусов.
+- **Блокировка:** администратора (в том числе себя) заблокировать нельзя → `403 FORBIDDEN`. Блокировка удаляет все сессии пользователя; доступ теряется и без этого — сессия заблокированного не проходит проверку (`401`), вход отклоняется. Повторный block и unblock уже активного → `200` без новых записей. Разблокировка сессии не восстанавливает: пользователь входит заново.
+- Каждое решение пишет `status_history` (`actor_role = admin`) и `audit_log` (`kyc.approve`, `kyc.reject`, `application.approve`, `application.reject`, `user.block`, `user.unblock` — с IP и User-Agent), решения по KYC и заявкам — ещё и уведомление компании. Два параллельных решения по одной сущности сериализуются блокировкой строки: второе получает `409 INVALID_STATUS_TRANSITION`.
+- **AML-флаг:** нет флага → `404 NOT_FOUND`; флаг уже закрыт → `409 INVALID_STATUS_TRANSITION` (решение не меняется, флаг не переоткрывается). Решение пишет `audit_log` `aml_flag.resolve`.
+- **Период** `created_from`/`created_to` (журнал и сводка) — полуинтервал `[from, to)`, без границ — всё время; в сводке `created_from > created_to` → `400 VALIDATION_ERROR`, `field: created_to`. Сводка считает заявки по `created_at`, офферы — по `created_at` оффера, сделки — по `agreed_at`. `amounts_by_currency` — все заявки, кроме `draft`, по каждой валюте отдельно (без конвертации); `top_demand_countries` — только `published` и `agreed`; `top_n` 1–50, по умолчанию 10.
+- **Журнал аудита** (`action` — `<сущность>.<глагол>`): `auth.login`, `auth.login_failed` (`meta.reason`: `unknown_email` / `bad_password` / `blocked`, email не пишется), `auth.register`, `document.upload`, `document.download` (только админом), `kyc.submit`, `kyc.approve`, `kyc.reject`, `application.create`, `application.submit`, `application.cancel`, `application.approve`, `application.reject`, `offer.create`, `offer.accept`, `offer.reject`, `offer.withdraw`, `user.block`, `user.unblock`, `aml_flag.resolve`. Каждая запись — с IP и User-Agent; запись пишется в транзакции действия, и её сбой откатывает действие (кроме `auth.login_failed` — best-effort).
+- **Поиск `q`** ищет подстроку буквально: `%`, `_` и `\` экранируются, `q=a_b` не найдёт `axb`.
+
+Правила AML-скрининга (`submitKyc` — компания и каждый бенефициар; `submitApplication` — заявка). Пороги и обоснования — в [`internal/aml/rules.go`](internal/aml/rules.go):
+
+| Правило | `rule` | `severity` |
+|---|---|---|
+| Совпадение с санкционным списком, Jaro-Winkler ≥ 0.90 / 0.85–0.90 | `sanctions_match` | `high` / `medium` |
+| Страна регистрации, гражданство бенефициара, страна назначения — FATF black / grey | `high_risk_jurisdiction` | `high` / `medium` |
+| Сумма заявки выше порога (RUB 100 млн, USD/EUR 1 млн, CNY 7 млн) | `amount_threshold` | `medium` |
+| Реестр: компания ликвидирована / не найдена, иной статус, название не совпало | `registry_mismatch` | `high` / `medium` |
+| Реестр не ответил или нет идентификатора — нужна ручная сверка | `other` | `low` |
+
+Флаг — один на субъект по лучшему кандидату; находка с тем же `rule` и ключом `match_key`, уже открытая или закрытая как `false_positive`, не дублируется. Ключ — `details` без того, что меняется при обновлении данных: даты FATF, score и имени алиаса (у санкций в ключе запись списка и severity, поэтому рост до `high` даёт новый флаг). Ошибка скрининга откатывает операцию (fail-closed).
 
 ### system
 
@@ -216,7 +306,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 
 ## Статусы
 
-Переходы реализуются в `internal/service` таблицей разрешённых переходов; недопустимый переход — `409 INVALID_STATUS_TRANSITION`.
+Переходы реализуются в пакете домена (`internal/service/lending`, `internal/service/kyc`) таблицей разрешённых переходов; недопустимый переход — `409 INVALID_STATUS_TRANSITION`.
 
 ```
 Организация (KYC):  draft ─submit→ under_review ─approve→ verified
@@ -231,7 +321,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
                          ─withdraw→ withdrawn
 ```
 
-Принятие оффера — одна транзакция БД с блокировкой строки заявки: оффер → `accepted`, остальные `sent`-офферы заявки → `rejected` (`another_offer_accepted`), заявка → `agreed`, создаётся сделка со снапшотом условий. Повторный или параллельный `accept` по той же заявке отвечает `409`, вторая сделка не появится.
+Принятие оффера — одна транзакция БД с блокировкой строки заявки: оффер → `accepted`, остальные `sent`-офферы заявки → `rejected` (`another_offer_accepted`), заявка → `agreed`, создаётся сделка со снапшотом условий. Сумма сделки — сумма **оффера** (может быть меньше суммы заявки); `fee_amount = amount × fee_percent / 100`, округляется до копеек половиной от нуля (`500000.00 × 1 % = 5000.00`), без `fee_percent` — `null`. Повторный или параллельный `accept` по той же заявке отвечает `409 INVALID_STATUS_TRANSITION`, вторая сделка не появится.
 
 ## Сквозной сценарий: от регистрации до сделки
 
@@ -284,9 +374,11 @@ curl -b b.txt $API/deals
 cmd/server/main.go            сборка зависимостей вручную, http.Server, graceful shutdown
 internal/
   http/                       СЛОЙ 1 — транспорт
-    middleware/               RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta, Authenticate, CSRF
+    middleware/               RequestID, RequestLog, Recover, SecurityHeaders, MaxBody, WithRequestMeta,
+                              Authenticate (сессия → principal), Authorize (x-roles, x-kyc-required),
+                              CSRF
     handler/                  пишем руками: *Handler реализует контракт
-      <tag>.go                операции тега: auth.go, offers.go, … (заглушки → 501)
+      <tag>.go                операции тега: auth.go, offers.go, … (нереализованные → 501)
       router.go               цепочка middleware + роутинг всех тегов
       errors.go               apperr.Code → HTTP-статус: одно место на весь API
       validate.go             валидация запроса по спеке → VALIDATION_ERROR с полями
@@ -314,17 +406,17 @@ queries/                      SQL для sqlc
 
 К ним ведёт F12 из `handler/<tag>.go`. Модели (`Offer`, `Error`, enum'ы) — в `internal/http/api/models.gen.go`.
 
-Путь запроса `GET /api/v1/dictionaries/countries`: `RequestLog → Recover → MaxBody → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
+Путь запроса `GET /api/v1/dictionaries/countries`: `RequestID → RequestLog → Recover → SecurityHeaders → MaxBody → WithRequestMeta → Authenticate → Authorize → CSRF → валидатор по спеке → роутинг dictionariesapi → Handler.ListCountries → service.Dictionaries → sqlc → Postgres`. Ошибка с любого уровня возвращается как значение и превращается в ответ в `errors.go`.
 
 Почему модели — один пакет, а сервер — пакет на тег: схемы ссылаются друг на друга по кругу (`organizations` ↔ `auth` ↔ `aml`), а Go запрещает циклы импортов. Операции же независимы, поэтому каждый тег — свой пакет со своим интерфейсом на 1–13 методов ([ADR-0003](../docs/adr/0003-server-package-per-tag.md)). sqlc устроен так же: запросы по доменам, `models.go` общий.
 
 ### Как добавить операцию
 
-Пошаговая инструкция — в комментарии пакета [`internal/http/handler/handler.go`](internal/http/handler/handler.go). Образец — справочники: [`handler/dictionaries.go`](internal/http/handler/dictionaries.go) + [`dictionaries_test.go`](internal/http/handler/dictionaries_test.go) + [`service/dictionaries.go`](internal/service/dictionaries.go). Коротко:
+Пошаговая инструкция — в комментарии пакета [`internal/http/handler/handler.go`](internal/http/handler/handler.go). Образец — справочники: [`handler/dictionaries.go`](internal/http/handler/dictionaries.go) + [`dictionaries_test.go`](internal/http/handler/dictionaries_test.go) + [`service/dictionaries/dictionaries.go`](internal/service/dictionaries/dictionaries.go). Коротко:
 
-1. Изменить контракт (если нужно) в `api/paths/<tag>.yaml` / `api/schemas/*.yaml` → `make gen`.
+1. Изменить контракт (если нужно) в `api/paths/<tag>.yaml` / `api/schemas/*.yaml` → `make gen`. У новой операции указать `x-roles` (и `x-kyc-required`, если нужен KYC) и ответ `403` — без них не пройдут тесты.
 2. SQL — в `queries/<домен>.sql` → `make gen`.
-3. Логика — в `internal/service`, с табличными тестами.
+3. Логика — в пакете домена `internal/service/<домен>` (ADR-0005: домены не импортируют друг друга, общее — в ядро `internal/service`), с табличными тестами. Principal — через `currentPrincipal(ctx)`; роль и KYC повторить в сервисе (`p.RequireRole(...)`, `p.RequireKYCVerified()`); сущность читать через `*Visible` с `p.ViewerRole()`, `p.ViewerOrg()`.
 4. В `handler/<tag>.go` заменить тело заглушки: вызвать сервис, перевести типы. Ошибки — `return nil, apperr.X(...)`, статус выберет `errors.go`.
 
 ### Тесты
