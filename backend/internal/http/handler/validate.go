@@ -15,6 +15,11 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/openapi"
 )
 
+// SchemaError.Error() по умолчанию печатает схему и значение поля, а WriteError пишет текст
+// ошибки в лог (debug для 4xx): короткий пароль в register попал бы в лог как есть.
+// Без деталей остаются путь и правило; details ответа строит fieldErrors — их это не меняет.
+func init() { openapi3.SchemaErrorDetailsDisabled = true }
+
 // Лимиты тела запроса: валидатор читает тело целиком в память (см. middleware.MaxBody).
 const (
 	maxBodyDefault int64 = 1 << 20 // 1 МБ — JSON-тела
