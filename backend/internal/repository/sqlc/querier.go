@@ -22,6 +22,8 @@ type Querier interface {
 	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
+	// Тот же WHERE, что у ListNotifications: total страницы.
+	CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
@@ -115,6 +117,7 @@ type Querier interface {
 	// всё равно сначала зовёт GetOfferVisible, чтобы отличить 404 от пустого чата.
 	// JOIN organizations внутренний: автор — всегда borrower или lender (admin не пишет).
 	ListMessagesVisible(ctx context.Context, arg ListMessagesVisibleParams) ([]ListMessagesVisibleRow, error)
+	// id DESC — тай-брейк: уведомления одной транзакции получают одинаковый now().
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error)
@@ -147,7 +150,8 @@ type Querier interface {
 	// Только после GetOfferVisible: запрос не проверяет, что читатель — сторона оффера.
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
-	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
+	// 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).
+	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error)
 	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
 	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
 	// 0 строк после проверки статуса в сервисе — гонка с другим решением → 409.
