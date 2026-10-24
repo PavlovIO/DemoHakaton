@@ -28,6 +28,7 @@ curl localhost:8080/api/v1/healthz
 ```
 
 Переменные окружения — в `.env.example`. Для входа важны две: `SESSION_TTL` — срок жизни сессии (по умолчанию `24h`, не продлевается) и `COOKIE_SECURE` — флаг `Secure` у cookie (по умолчанию `true`; в `.env.example` — `false`, иначе браузер не сохранит cookie на `http://localhost`).
+`CORS_ALLOWED_ORIGINS` — origin фронта на другом хосте через запятую; по умолчанию пусто, CORS выключен: фронт ходит в API через тот же origin (Vite proxy).
 
 | Команда | Что делает |
 |---|---|

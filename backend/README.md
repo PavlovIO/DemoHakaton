@@ -134,6 +134,16 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 - Тело запроса — до **1 МБ** (JSON), больше — `400 VALIDATION_ERROR` с `field: "body"`. Файл документа — до **10 МБ**, больше — `413 FILE_TOO_LARGE`.
 - Таймауты сервера: заголовки — 5 с, чтение — 15 с, запись — 30 с.
 
+### Безопасность
+
+- **Заголовки каждого ответа API** (`middleware.SecurityHeaders`): `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`. По HTTPS (TLS напрямую или `X-Forwarded-Proto: https` от прокси) — ещё `Strict-Transport-Security: max-age=31536000; includeSubDomains`. CSP для HTML фронта отдаёт nginx frontend-контейнера (INF-01).
+- **CORS по умолчанию выключен**: фронт и API живут на одном origin (Vite proxy в dev, reverse-proxy в проде). Если фронт на другом хосте — перечислите его origin в `CORS_ALLOWED_ORIGINS` (`scheme://host[:port]` через запятую). Origin сравнивается точно, ответ — с `Access-Control-Allow-Credentials: true`; `*` не поддерживается. Preflight (`OPTIONS`) от разрешённого origin — `204` без сессии.
+- **CSRF** — double-submit, см. «Аутентификация», п. 2; исключение — только `register` и `login`.
+- **IDOR** — чужой id любого ресурса отвечает `404 NOT_FOUND`, неотличимо от несуществующего (`TestIDOR` в `cmd/server`, проверяет все пути с id из спеки).
+- **Логи** не содержат паролей и токенов даже на `LOG_LEVEL=debug`: ошибки валидатора пишутся без значений полей (`TestLogsDoNotContainSecrets`).
+- **IP клиента** — `RemoteAddr`; `X-Forwarded-For` не читается, пока нет списка доверенных прокси.
+- Права ролей БД (`lp_app`/`lp_migrator`, `audit_log` только `INSERT`) — отдельная задача DB-SEC (ветка `feat/db-roles`).
+
 ## Эндпоинты
 
 Кто может вызвать операцию: **все** — без сессии; **авториз.** — любой пользователь с сессией (данные по его роли и владению); **B** — borrower, **L** — lender, **A** — admin.

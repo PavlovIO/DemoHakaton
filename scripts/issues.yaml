@@ -377,6 +377,7 @@ issues:
       - [ ] Миграции применяются при старте backend (или отдельным `make migrate`).
       - [ ] `Makefile`: `up`, `down`, `gen`, `migrate`, `seed`, `test`, `lint`.
       - [ ] Volume для загружаемых KYC-файлов вне статики фронта.
+      - [ ] nginx frontend-контейнера отдаёт prod-сборку с CSP (BE-15): `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`. Dev-сервер Vite — без CSP (inline-скрипты HMR).
 
   - key: INF-02
     title: "CI: линтеры, тесты, проверка контракта и миграций"
