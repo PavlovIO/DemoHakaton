@@ -42,7 +42,7 @@ curl localhost:8080/api/v1/healthz
 
 Загруженные KYC-документы сервер хранит в каталоге `DOCUMENT_STORAGE_DIR` (по умолчанию `storage/documents` в корне репо, в `.gitignore`; права `0700`, файлы `0600` под случайными именами). Каталог должен переживать перезапуски: когда появится контейнер бэкенда — named volume на этот путь. Сервер не стартует, если в каталог нельзя писать.
 
-Как добавить реализацию операции API — см. комментарий в [`backend/internal/http/handler/handler.go`](backend/internal/http/handler/handler.go); образец — справочники (`dictionaries.go` + `dictionaries_test.go`). Сервер сгенерирован по пакету на тег (`backend/internal/http/api/<tag>api`), модели — общий пакет `api`, реализации — `backend/internal/http/handler/<tag>.go` ([ADR-0003](docs/adr/0003-server-package-per-tag.md)).
+Как добавить реализацию операции API — см. комментарий в [`backend/internal/http/handler/handler.go`](backend/internal/http/handler/handler.go); образец — справочники (`dictionaries.go` + `dictionaries_test.go`). Сервер сгенерирован по пакету на тег (`backend/internal/http/api/<tag>api`), модели — общий пакет `api`, реализации — `backend/internal/http/handler/<tag>.go` ([ADR-0003](docs/adr/0003-server-package-per-tag.md)). Бизнес-логика — ядро `backend/internal/service` и пакеты доменов `auth`, `kyc`, `lending`, `notifications`, `dictionaries` ([ADR-0005](docs/adr/0005-service-packages-by-domain.md)).
 
 ## Для разработчиков
 
