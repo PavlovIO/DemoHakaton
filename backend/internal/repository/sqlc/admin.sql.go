@@ -41,6 +41,40 @@ func (q *Queries) CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (i
 	return count, err
 }
 
+const countAuditLog = `-- name: CountAuditLog :one
+SELECT count(*) FROM audit_log
+WHERE ($1::uuid IS NULL OR user_id = $1::uuid)
+  AND ($2::text IS NULL OR action = $2::text)
+  AND ($3::entity_type IS NULL OR entity_type = $3::entity_type)
+  AND ($4::text IS NULL OR entity_id = $4::text)
+  AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR created_at < $6::timestamptz)
+`
+
+type CountAuditLogParams struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Action      pgtype.Text        `json:"action"`
+	EntityType  NullEntityType     `json:"entity_type"`
+	EntityID    pgtype.Text        `json:"entity_id"`
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+}
+
+// Счётчик для ListAuditLog: те же фильтры.
+func (q *Queries) CountAuditLog(ctx context.Context, arg CountAuditLogParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditLog,
+		arg.UserID,
+		arg.Action,
+		arg.EntityType,
+		arg.EntityID,
+		arg.CreatedFrom,
+		arg.CreatedTo,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOpenHighAmlFlags = `-- name: CountOpenHighAmlFlags :one
 SELECT count(*) FROM aml_flags
 WHERE organization_id = $1 AND status = 'open' AND severity = 'high'
@@ -441,17 +475,40 @@ func (q *Queries) ListAmlFlagsByOrganization(ctx context.Context, organizationID
 
 const listAuditLog = `-- name: ListAuditLog :many
 SELECT id, user_id, action, entity_type, entity_id, ip, user_agent, meta, created_at FROM audit_log
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
+WHERE ($1::uuid IS NULL OR user_id = $1::uuid)
+  AND ($2::text IS NULL OR action = $2::text)
+  AND ($3::entity_type IS NULL OR entity_type = $3::entity_type)
+  AND ($4::text IS NULL OR entity_id = $4::text)
+  AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR created_at < $6::timestamptz)
+ORDER BY created_at DESC, id DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListAuditLogParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Action      pgtype.Text        `json:"action"`
+	EntityType  NullEntityType     `json:"entity_type"`
+	EntityID    pgtype.Text        `json:"entity_id"`
+	CreatedFrom pgtype.Timestamptz `json:"created_from"`
+	CreatedTo   pgtype.Timestamptz `json:"created_to"`
+	Offset      int32              `json:"offset"`
+	Limit       int32              `json:"limit"`
 }
 
+// Журнал для админа (BE-14): фильтры через narg — «нет значения → всё», период —
+// полуинтервал [created_from, created_to). id — тай-брейк для записей одной транзакции.
 func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error) {
-	rows, err := q.db.Query(ctx, listAuditLog, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listAuditLog,
+		arg.UserID,
+		arg.Action,
+		arg.EntityType,
+		arg.EntityID,
+		arg.CreatedFrom,
+		arg.CreatedTo,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

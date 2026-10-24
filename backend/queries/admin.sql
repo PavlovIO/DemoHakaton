@@ -84,9 +84,27 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: ListAuditLog :many
+-- Журнал для админа (BE-14): фильтры через narg — «нет значения → всё», период —
+-- полуинтервал [created_from, created_to). id — тай-брейк для записей одной транзакции.
 SELECT * FROM audit_log
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2;
+WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
+  AND (sqlc.narg('action')::text IS NULL OR action = sqlc.narg('action')::text)
+  AND (sqlc.narg('entity_type')::entity_type IS NULL OR entity_type = sqlc.narg('entity_type')::entity_type)
+  AND (sqlc.narg('entity_id')::text IS NULL OR entity_id = sqlc.narg('entity_id')::text)
+  AND (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz)
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountAuditLog :one
+-- Счётчик для ListAuditLog: те же фильтры.
+SELECT count(*) FROM audit_log
+WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
+  AND (sqlc.narg('action')::text IS NULL OR action = sqlc.narg('action')::text)
+  AND (sqlc.narg('entity_type')::entity_type IS NULL OR entity_type = sqlc.narg('entity_type')::entity_type)
+  AND (sqlc.narg('entity_id')::text IS NULL OR entity_id = sqlc.narg('entity_id')::text)
+  AND (sqlc.narg('created_from')::timestamptz IS NULL OR created_at >= sqlc.narg('created_from')::timestamptz)
+  AND (sqlc.narg('created_to')::timestamptz IS NULL OR created_at < sqlc.narg('created_to')::timestamptz);
 
 -- name: GetAnalyticsSummaryByCurrency :many
 SELECT currency, count(*) as count, sum(amount) as total_amount, round(avg(amount), 2) as average_amount

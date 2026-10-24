@@ -25,6 +25,8 @@ type Querier interface {
 	// Счётчик для ListAmlFlags: те же фильтры.
 	CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (int64, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
+	// Счётчик для ListAuditLog: те же фильтры.
+	CountAuditLog(ctx context.Context, arg CountAuditLogParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
 	// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
 	// сервис берёт из total или unread в зависимости от unread_only.
@@ -123,6 +125,8 @@ type Querier interface {
 	// Видимость — на обязательных arg (как в GetApplicationVisible); бизнес-фильтры — narg:
 	// они только сужают выборку и не могут её открыть.
 	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]ListApplicationsVisibleRow, error)
+	// Журнал для админа (BE-14): фильтры через narg — «нет значения → всё», период —
+	// полуинтервал [created_from, created_to). id — тай-брейк для записей одной транзакции.
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]Beneficiary, error)
 	// Бенефициары страницы админского списка компаний (BE-12) одним запросом вместо N.
