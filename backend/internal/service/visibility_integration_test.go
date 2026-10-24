@@ -107,13 +107,13 @@ var dealsVisible = visibleEntity{
 		row, err := q.GetDealVisible(ctx, repository.GetDealVisibleParams{
 			ID: id, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return row.ID, err
+		return row.Deal.ID, err
 	},
 	list: func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error) {
 		rows, err := q.ListDealsVisible(ctx, repository.ListDealsVisibleParams{
-			Limit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
+			PageLimit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return rowIDs(rows, func(r repository.Deal) uuid.UUID { return r.ID }), err
+		return rowIDs(rows, func(r repository.ListDealsVisibleRow) uuid.UUID { return r.Deal.ID }), err
 	},
 	count: func(ctx context.Context, q *repository.Queries, v viewer) (int64, error) {
 		return q.CountDealsVisible(ctx, repository.CountDealsVisibleParams{

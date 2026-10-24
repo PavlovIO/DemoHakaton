@@ -138,12 +138,21 @@ WHERE a.id = sqlc.arg('id')
                      AND f.lender_organization_id = sqlc.arg('lender_org')::uuid))
 FOR SHARE OF a;
 
+-- name: LockOfferForAccept :one
+-- Второй шаг acceptOffer, после LockApplicationByOfferForBorrower: блокирует принимаемый
+-- оффер, чтобы его статус, valid_until и условия не поменялись до UPDATE и снапшота сделки.
+-- Видимость не нужна: владельца уже проверила блокировка заявки, application_id — та же заявка.
+SELECT * FROM offers
+WHERE id = sqlc.arg('id') AND application_id = sqlc.arg('application_id')
+FOR UPDATE;
+
 -- name: AcceptOffer :one
--- Вызывать внутри транзакции после GetApplicationForUpdate
+-- Вызывать внутри транзакции после LockApplicationByOfferForBorrower. 0 строк — оффер
+-- уже не sent (гонка) или не из заблокированной заявки → 409.
 UPDATE offers SET
     status = 'accepted',
     decided_at = now()
-WHERE id = $1 AND status = 'sent'
+WHERE id = sqlc.arg('id') AND status = 'sent' AND application_id = sqlc.arg('application_id')
 RETURNING *;
 
 -- name: RejectOffer :one
@@ -168,7 +177,8 @@ RETURNING *;
 
 -- name: RejectSentOffersByApplication :many
 -- Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
--- Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
+-- Вызывать после LockApplicationForBorrower (cancel, reject-offers) или LockApplicationByOfferForBorrower
+-- (accept) в той же транзакции: сначала заявка, потом офферы.
 -- RETURNING — для истории офферов и уведомлений их кредиторам.
 UPDATE offers SET
     status = 'rejected',
