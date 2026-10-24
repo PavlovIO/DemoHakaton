@@ -291,3 +291,15 @@ func wantDocsMissing(t *testing.T, err error, docTypes ...string) {
 		t.Errorf("details = %d записей, want %d", len(e.Details), len(docTypes))
 	}
 }
+
+func TestNewKycRequiresScreener(t *testing.T) {
+	// Без скринера submitKyc не может пройти AML; ошибка конфигурации должна всплыть при
+	// старте, а не паникой на первом submit.
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewKyc без Screener не паникует")
+		}
+	}()
+	store := newFakeKycStore(repository.KycStatusDraft)
+	service.NewKyc(service.KycDeps{Store: store, Tx: fakeKycTx{store: store}, Files: newFakeFiles()})
+}

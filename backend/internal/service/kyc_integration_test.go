@@ -72,7 +72,7 @@ func TestKycIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("storage: %v", err)
 	}
-	f := newKycFixture(t, service.KycDeps{Files: files})
+	f := newKycFixture(t, service.KycDeps{Files: files, Screener: aml.NoopScreener{}})
 	ctx := context.Background()
 
 	t.Run("загрузка PNG и удаление", func(t *testing.T) {
