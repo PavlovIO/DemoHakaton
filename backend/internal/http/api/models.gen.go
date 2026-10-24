@@ -573,7 +573,7 @@ type Application struct {
 	// Example: APP-000123
 	Number string `json:"number"`
 
-	// OffersCount Только для владельца и admin; для lender — null
+	// OffersCount Все офферы заявки в любом статусе; только для владельца и admin, для lender — null
 	OffersCount *int              `json:"offers_count,omitempty"`
 	PublishedAt *time.Time        `json:"published_at,omitempty"`
 	Purpose     string            `json:"purpose"`
@@ -624,10 +624,12 @@ type ApplicationUpdate struct {
 	Purpose  *string       `json:"purpose,omitempty"`
 
 	// TargetCountryCode Example: DE
-	TargetCountryCode     *CountryCode    `json:"target_country_code,omitempty"`
-	TermMonths            *int            `json:"term_months,omitempty"`
-	TransferMethod        *TransferMethod `json:"transfer_method,omitempty"`
-	TransferMethodComment *string         `json:"transfer_method_comment,omitempty"`
+	TargetCountryCode *CountryCode    `json:"target_country_code,omitempty"`
+	TermMonths        *int            `json:"term_months,omitempty"`
+	TransferMethod    *TransferMethod `json:"transfer_method,omitempty"`
+
+	// TransferMethodComment `""` очищает комментарий; отсутствие поля или `null` — оставить как есть
+	TransferMethodComment *string `json:"transfer_method_comment,omitempty"`
 }
 
 // AuditLogEntry defines model for AuditLogEntry.
@@ -1242,6 +1244,9 @@ type ListApplicationsParams struct {
 
 	// TargetCountry Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ
 	TargetCountry []CountryCode `form:"target_country,omitempty" json:"target_country,omitempty"`
+
+	// TransferMethod Способ перевода; несколько значений — ИЛИ
+	TransferMethod []TransferMethod `form:"transfer_method,omitempty" json:"transfer_method,omitempty"`
 
 	// HasMyOffer Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
 	// `false` — только без моего оффера. Для других ролей игнорируется.

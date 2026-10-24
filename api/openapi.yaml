@@ -558,6 +558,15 @@ paths:
               $ref: '#/components/schemas/CountryCode'
             type: array
           style: form
+        - description: Способ перевода; несколько значений — ИЛИ
+          explode: true
+          in: query
+          name: transfer_method
+          schema:
+            items:
+              $ref: '#/components/schemas/TransferMethod'
+            type: array
+          style: form
         - description: |
             Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
             `false` — только без моего оффера. Для других ролей игнорируется.
@@ -1999,7 +2008,7 @@ components:
           example: APP-000123
           type: string
         offers_count:
-          description: Только для владельца и admin; для lender — null
+          description: Все офферы заявки в любом статусе; только для владельца и admin, для lender — null
           nullable: true
           type: integer
         published_at:
@@ -2111,6 +2120,7 @@ components:
         transfer_method:
           $ref: '#/components/schemas/TransferMethod'
         transfer_method_comment:
+          description: '`""` очищает комментарий; отсутствие поля или `null` — оставить как есть'
           maxLength: 500
           nullable: true
           type: string

@@ -28,6 +28,14 @@ paths:
           schema:
             type: array
             items: { $ref: '../schemas/primitives.yaml#/components/schemas/CountryCode' }
+        - name: transfer_method
+          in: query
+          description: Способ перевода; несколько значений — ИЛИ
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '../schemas/enums.yaml#/components/schemas/TransferMethod' }
         - name: has_my_offer
           in: query
           description: |
