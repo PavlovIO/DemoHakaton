@@ -66,17 +66,24 @@ func TestNotifierIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("NotifyOrganization — пользователю компании, другой компании нет", func(t *testing.T) {
+	t.Run("NotifyOrganization — активному пользователю компании; заблокированному и другой компании нет", func(t *testing.T) {
 		org := insertDealsOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Org")
+		blocked := insertDealsOrg(ctx, t, tx, repository.UserRoleBorrower, "Notifier Blocked")
+		if _, err := q.BlockUser(ctx, repository.BlockUserParams{ID: blocked.UserID, BlockedReason: pgtype.Text{String: "тест", Valid: true}}); err != nil {
+			t.Fatal(err)
+		}
 		other := insertDealsOrg(ctx, t, tx, repository.UserRoleLender, "Notifier Other")
 		n := notification()
 
-		if err := notifier.NotifyOrganization(ctx, q, *org.OrgID, n); err != nil {
-			t.Fatal(err)
+		for _, p := range []service.Principal{org, blocked} {
+			if err := notifier.NotifyOrganization(ctx, q, *p.OrgID, n); err != nil {
+				t.Fatal(err)
+			}
 		}
 
-		if got, otherGot := countFor(t, org.UserID, n.EntityID), countFor(t, other.UserID, n.EntityID); got != 1 || otherGot != 0 {
-			t.Fatalf("org user %d, other %d", got, otherGot)
+		got, blockedGot, otherGot := countFor(t, org.UserID, n.EntityID), countFor(t, blocked.UserID, n.EntityID), countFor(t, other.UserID, n.EntityID)
+		if got != 1 || blockedGot != 0 || otherGot != 0 {
+			t.Fatalf("org user %d, blocked %d, other %d", got, blockedGot, otherGot)
 		}
 	})
 
