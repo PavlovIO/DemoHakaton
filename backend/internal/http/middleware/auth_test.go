@@ -38,6 +38,7 @@ func TestAuthenticateMiddleware(t *testing.T) {
 		wantNext   bool
 	}{
 		{name: "public without cookie", path: "/api/v1/healthz", wantStatus: http.StatusNoContent, wantNext: true},
+		{name: "public HEAD without cookie", method: http.MethodHead, path: "/api/v1/healthz", wantStatus: http.StatusNoContent, wantNext: true},
 		{name: "registry lookup GET without cookie", method: http.MethodGet, path: "/api/v1/registry/lookup", wantStatus: http.StatusNoContent, wantNext: true},
 		{name: "registry lookup POST without cookie", method: http.MethodPost, path: "/api/v1/registry/lookup", wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
 		{name: "protected without cookie", path: "/api/v1/users/me", wantStatus: http.StatusUnauthorized, wantCode: string(apperr.CodeUnauthorized)},
@@ -67,7 +68,7 @@ func TestAuthenticateMiddleware(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusNoContent)
 			})
-			handler := Authenticate(authenticator)(next)
+			handler := Authenticate(authenticator, testWriteError)(next)
 			method := tc.method
 			if method == "" {
 				method = http.MethodGet

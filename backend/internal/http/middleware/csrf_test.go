@@ -31,7 +31,7 @@ func TestCSRFMiddleware(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			nextCalled := false
-			handler := CSRF()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			handler := CSRF(testWriteError)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				nextCalled = true
 				w.WriteHeader(http.StatusNoContent)
 			}))

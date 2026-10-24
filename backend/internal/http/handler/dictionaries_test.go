@@ -39,6 +39,9 @@ func (f fakeDicts) TransferMethods(context.Context) ([]repository.TransferMethod
 // newTestServer — общий хелпер: роутер с фейковыми зависимостями.
 func newTestServer(t *testing.T, deps handler.Deps) *httptest.Server {
 	t.Helper()
+	if deps.Auth == nil { // без Auth NewRouter паникует
+		deps.Auth = testAuthService()
+	}
 	srv := httptest.NewServer(handler.NewRouter(handler.New(deps)))
 	t.Cleanup(srv.Close)
 	return srv

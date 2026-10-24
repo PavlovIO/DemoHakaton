@@ -15,15 +15,3 @@ func SecurityHeaders() func(http.Handler) http.Handler {
 		})
 	}
 }
-
-// LimitBody ограничивает максимальный размер тела запроса.
-func LimitBody(maxBytes int64) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Body != nil && r.Body != http.NoBody {
-				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}

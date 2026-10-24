@@ -15,7 +15,7 @@ const (
 )
 
 // CSRF проверяет совпадение CSRF-токена cookie и заголовка для изменяющих запросов.
-func CSRF() func(http.Handler) http.Handler {
+func CSRF(writeErr ErrorWriter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if isPublic(r) || isSafeMethod(r.Method) {
@@ -27,7 +27,7 @@ func CSRF() func(http.Handler) http.Handler {
 			headerToken := r.Header.Get(CSRFHeaderName)
 			if err != nil || cookie.Value == "" || headerToken == "" ||
 				subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(headerToken)) != 1 {
-				writeMiddlewareError(w, r, apperr.CSRFInvalid())
+				writeErr(w, r, apperr.CSRFInvalid())
 				return
 			}
 			next.ServeHTTP(w, r)

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
@@ -16,7 +15,6 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/organizationsapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/systemapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 )
 
 // BaseURL — префикс API (servers[0].url в api/openapi.yaml).
@@ -25,9 +23,9 @@ const BaseURL = "/api/v1"
 // NewRouter собирает http.Handler всего API: сгенерированный роутинг каждого тега (routes)
 // + strict-обёртка + единый формат ошибок на всех уровнях + общие middleware.
 func NewRouter(h *Handler) http.Handler {
-	authenticator, ok := h.auth.(middleware.Authenticator)
-	if !ok || authenticator == nil {
-		authenticator = unavailableAuthenticator{}
+	// Без сервиса аутентификации все защищённые ручки молча отвечали бы 401 — лучше не стартовать.
+	if h.auth == nil {
+		panic("handler: Deps.Auth is nil")
 	}
 
 	return middleware.Chain(routes(h),
@@ -38,8 +36,8 @@ func NewRouter(h *Handler) http.Handler {
 		middleware.SecurityHeaders(),
 		middleware.MaxBody(bodyLimit), // до валидатора: он читает тело целиком в память
 		middleware.WithRequestMeta(),
-		middleware.Authenticate(authenticator),
-		middleware.CSRF(),
+		middleware.Authenticate(h.auth, WriteError),
+		middleware.CSRF(WriteError),
 		validateRequests(), // внутри Recover, снаружи роутинга спеки
 	)
 }
@@ -69,12 +67,4 @@ func routes(h *Handler) *http.ServeMux {
 	systemapi.Register(mux, h, BaseURL, requestError, WriteError)
 
 	return mux
-}
-
-// unavailableAuthenticator — заглушка, если Deps.Auth не реализует middleware.Authenticator:
-// любая сессия считается недействительной.
-type unavailableAuthenticator struct{}
-
-func (unavailableAuthenticator) Authenticate(context.Context, string) (*service.Principal, error) {
-	return nil, apperr.Unauthorized("Сессия недействительна")
 }

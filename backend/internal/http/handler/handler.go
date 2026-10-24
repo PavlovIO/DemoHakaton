@@ -56,6 +56,8 @@ type AuthService interface {
 	Login(ctx context.Context, email, password string, meta service.ClientMeta) (*service.Session, error)
 	Logout(ctx context.Context, token string) error
 	Me(ctx context.Context, principal service.Principal) (*service.Me, error)
+	// Authenticate — проверка сессии для middleware.Authenticate.
+	Authenticate(ctx context.Context, token string) (*service.Principal, error)
 }
 
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
