@@ -96,9 +96,13 @@ UPDATE offers SET
 WHERE id = $1 AND status = 'sent'
 RETURNING *;
 
--- name: RejectAllOffersForApplication :exec
+-- name: RejectSentOffersByApplication :many
+-- Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
+-- Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
+-- RETURNING — для истории офферов и уведомлений их кредиторам.
 UPDATE offers SET
     status = 'rejected',
-    reject_reason = 'application_cancelled',
+    reject_reason = sqlc.arg('reason')::offer_reject_reason,
     decided_at = now()
-WHERE application_id = $1 AND status = 'sent';
+WHERE application_id = sqlc.arg('application_id') AND status = 'sent'
+RETURNING id, lender_organization_id;

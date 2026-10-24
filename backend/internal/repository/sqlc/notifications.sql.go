@@ -90,6 +90,37 @@ func (q *Queries) CreateNotificationsForAdmins(ctx context.Context, arg CreateNo
 	return result.RowsAffected(), nil
 }
 
+const createNotificationsForOrganization = `-- name: CreateNotificationsForOrganization :execrows
+INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
+SELECT u.id, $1::notification_type, $2::text,
+       $3::entity_type, $4::text
+FROM users u
+WHERE u.organization_id = $5::uuid AND u.status = 'active'
+`
+
+type CreateNotificationsForOrganizationParams struct {
+	Type           NotificationType `json:"type"`
+	Title          string           `json:"title"`
+	EntityType     EntityType       `json:"entity_type"`
+	EntityID       string           `json:"entity_id"`
+	OrganizationID uuid.UUID        `json:"organization_id"`
+}
+
+// Уведомление каждому активному пользователю компании (BE-11, шаг 1).
+func (q *Queries) CreateNotificationsForOrganization(ctx context.Context, arg CreateNotificationsForOrganizationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createNotificationsForOrganization,
+		arg.Type,
+		arg.Title,
+		arg.EntityType,
+		arg.EntityID,
+		arg.OrganizationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listNotifications = `-- name: ListNotifications :many
 SELECT id, user_id, type, title, entity_type, entity_id, is_read, created_at FROM notifications
 WHERE user_id = $1

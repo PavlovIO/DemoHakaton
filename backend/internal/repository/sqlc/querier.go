@@ -15,10 +15,10 @@ type Querier interface {
 	// Вызывать внутри транзакции после GetApplicationForUpdate
 	AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error)
 	AgreeApplication(ctx context.Context, arg AgreeApplicationParams) (Application, error)
-	ApproveApplication(ctx context.Context, id uuid.UUID) (Application, error)
+	ApproveApplication(ctx context.Context, arg ApproveApplicationParams) (Application, error)
 	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
 	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
-	CancelApplication(ctx context.Context, id uuid.UUID) (Application, error)
+	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
@@ -39,6 +39,8 @@ type Querier interface {
 	// Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
 	// в INSERT … SELECT sqlc не выводит тип параметра из колонки.
 	CreateNotificationsForAdmins(ctx context.Context, arg CreateNotificationsForAdminsParams) (int64, error)
+	// Уведомление каждому активному пользователю компании (BE-11, шаг 1).
+	CreateNotificationsForOrganization(ctx context.Context, arg CreateNotificationsForOrganizationParams) (int64, error)
 	CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateRegistryCheck(ctx context.Context, arg CreateRegistryCheckParams) (RegistryCheck, error)
@@ -58,7 +60,7 @@ type Querier interface {
 	// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
 	// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
 	// Неизвестная роль не попадает ни в одну ветку; у admin viewer_org = uuid.Nil.
-	GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (Application, error)
+	GetApplicationVisible(ctx context.Context, arg GetApplicationVisibleParams) (GetApplicationVisibleRow, error)
 	// Сделка, если пользователь (viewer_role, viewer_org) — её сторона или admin. Чужая и
 	// несуществующая одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListDealsVisible.
 	GetDealVisible(ctx context.Context, arg GetDealVisibleParams) (Deal, error)
@@ -86,8 +88,12 @@ type Querier interface {
 	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
 	HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error)
 	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
-	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
-	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]Application, error)
+	// История заявки и её офферов. Доступ к заявке проверяется до вызова (GetApplicationVisible);
+	// фильтр по офферам не даёт кредитору увидеть историю чужих офферов.
+	ListApplicationHistory(ctx context.Context, arg ListApplicationHistoryParams) ([]StatusHistory, error)
+	// Видимость — на обязательных arg (как в GetApplicationVisible); бизнес-фильтры — narg:
+	// они только сужают выборку и не могут её открыть.
+	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]ListApplicationsVisibleRow, error)
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	ListBeneficiariesByOrg(ctx context.Context, organizationID uuid.UUID) ([]Beneficiary, error)
 	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
@@ -105,20 +111,27 @@ type Querier interface {
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	// Блокировка заявки заёмщиком-владельцем для мутаций (PATCH, submit, cancel, reject-offers).
+	// Чужая и несуществующая — 0 строк → 404. Порядок блокировок: сначала заявка, потом её
+	// офферы — так же в acceptOffer (BE-09), иначе cancel и accept ловят deadlock.
+	LockApplicationForBorrower(ctx context.Context, arg LockApplicationForBorrowerParams) (Application, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
-	RejectAllOffersForApplication(ctx context.Context, applicationID uuid.UUID) error
 	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
 	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
 	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
 	// Вызывать внутри транзакции после AcceptOffer
 	RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error
+	// Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
+	// Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
+	// RETURNING — для истории офферов и уведомлений их кредиторам.
+	RejectSentOffersByApplication(ctx context.Context, arg RejectSentOffersByApplicationParams) ([]RejectSentOffersByApplicationRow, error)
 	ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) (AmlFlag, error)
 	// Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
 	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SanctionsEntry, error)
-	SubmitApplication(ctx context.Context, id uuid.UUID) (Application, error)
+	SubmitApplication(ctx context.Context, arg SubmitApplicationParams) (Application, error)
 	SubmitKycForReview(ctx context.Context, id uuid.UUID) (Organization, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error
 	UnblockUser(ctx context.Context, id uuid.UUID) (UnblockUserRow, error)

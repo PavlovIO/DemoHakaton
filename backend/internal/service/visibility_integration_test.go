@@ -65,13 +65,13 @@ var applicationsVisible = visibleEntity{
 		row, err := q.GetApplicationVisible(ctx, repository.GetApplicationVisibleParams{
 			ID: id, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return row.ID, err
+		return row.Application.ID, err
 	},
 	list: func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error) {
 		rows, err := q.ListApplicationsVisible(ctx, repository.ListApplicationsVisibleParams{
-			Limit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
+			PageLimit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return rowIDs(rows, func(r repository.Application) uuid.UUID { return r.ID }), err
+		return rowIDs(rows, func(r repository.ListApplicationsVisibleRow) uuid.UUID { return r.Application.ID }), err
 	},
 	count: func(ctx context.Context, q *repository.Queries, v viewer) (int64, error) {
 		return q.CountApplicationsVisible(ctx, repository.CountApplicationsVisibleParams{

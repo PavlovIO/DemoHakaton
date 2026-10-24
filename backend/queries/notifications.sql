@@ -12,6 +12,14 @@ SELECT u.id, sqlc.arg('type')::notification_type, sqlc.arg('title')::text,
 FROM users u
 WHERE u.role = 'admin' AND u.status = 'active';
 
+-- name: CreateNotificationsForOrganization :execrows
+-- Уведомление каждому активному пользователю компании (BE-11, шаг 1).
+INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
+SELECT u.id, sqlc.arg('type')::notification_type, sqlc.arg('title')::text,
+       sqlc.arg('entity_type')::entity_type, sqlc.arg('entity_id')::text
+FROM users u
+WHERE u.organization_id = sqlc.arg('organization_id')::uuid AND u.status = 'active';
+
 -- name: ListNotifications :many
 SELECT * FROM notifications
 WHERE user_id = $1

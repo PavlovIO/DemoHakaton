@@ -316,19 +316,6 @@ func (q *Queries) ListOffersVisible(ctx context.Context, arg ListOffersVisiblePa
 	return items, nil
 }
 
-const rejectAllOffersForApplication = `-- name: RejectAllOffersForApplication :exec
-UPDATE offers SET
-    status = 'rejected',
-    reject_reason = 'application_cancelled',
-    decided_at = now()
-WHERE application_id = $1 AND status = 'sent'
-`
-
-func (q *Queries) RejectAllOffersForApplication(ctx context.Context, applicationID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, rejectAllOffersForApplication, applicationID)
-	return err
-}
-
 const rejectOffer = `-- name: RejectOffer :one
 UPDATE offers SET
     status = 'rejected',
@@ -386,6 +373,48 @@ type RejectOtherOffersParams struct {
 func (q *Queries) RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error {
 	_, err := q.db.Exec(ctx, rejectOtherOffers, arg.ApplicationID, arg.ID)
 	return err
+}
+
+const rejectSentOffersByApplication = `-- name: RejectSentOffersByApplication :many
+UPDATE offers SET
+    status = 'rejected',
+    reject_reason = $1::offer_reject_reason,
+    decided_at = now()
+WHERE application_id = $2 AND status = 'sent'
+RETURNING id, lender_organization_id
+`
+
+type RejectSentOffersByApplicationParams struct {
+	Reason        OfferRejectReason `json:"reason"`
+	ApplicationID uuid.UUID         `json:"application_id"`
+}
+
+type RejectSentOffersByApplicationRow struct {
+	ID                   uuid.UUID `json:"id"`
+	LenderOrganizationID uuid.UUID `json:"lender_organization_id"`
+}
+
+// Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
+// Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
+// RETURNING — для истории офферов и уведомлений их кредиторам.
+func (q *Queries) RejectSentOffersByApplication(ctx context.Context, arg RejectSentOffersByApplicationParams) ([]RejectSentOffersByApplicationRow, error) {
+	rows, err := q.db.Query(ctx, rejectSentOffersByApplication, arg.Reason, arg.ApplicationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RejectSentOffersByApplicationRow{}
+	for rows.Next() {
+		var i RejectSentOffersByApplicationRow
+		if err := rows.Scan(&i.ID, &i.LenderOrganizationID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const withdrawOffer = `-- name: WithdrawOffer :one
