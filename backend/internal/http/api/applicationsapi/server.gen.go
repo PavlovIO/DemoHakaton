@@ -89,6 +89,19 @@ func (siw *ServerInterfaceWrapper) ListApplications(w http.ResponseWriter, r *ht
 		return
 	}
 
+	// ------------- Optional query parameter "transfer_method" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "transfer_method", r.URL.Query(), &params.TransferMethod, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "transfer_method"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "transfer_method", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "has_my_offer" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "has_my_offer", r.URL.Query(), &params.HasMyOffer, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})

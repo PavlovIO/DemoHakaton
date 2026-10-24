@@ -21,7 +21,11 @@ components:
         purpose: { type: string, minLength: 10, maxLength: 2000 }
         term_months: { type: integer, minimum: 1, maximum: 120 }
         transfer_method: { $ref: './enums.yaml#/components/schemas/TransferMethod' }
-        transfer_method_comment: { type: string, maxLength: 500, nullable: true }
+        transfer_method_comment:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: '`""` очищает комментарий; отсутствие поля или `null` — оставить как есть'
     Application:
       type: object
       required:
@@ -59,7 +63,7 @@ components:
         offers_count:
           type: integer
           nullable: true
-          description: Только для владельца и admin; для lender — null
+          description: Все офферы заявки в любом статусе; только для владельца и admin, для lender — null
         my_offer_id:
           type: string
           format: uuid
