@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 )
 
-// Минимальная версия Notifier из BE-11, шаг 1: только NotifyAdmins, нужный submitKyc.
-// NotifyUser и NotifyOrganization добавляет BE-11.
+// Минимальная версия Notifier из BE-11, шаг 1: NotifyAdmins (submitKyc, submit заявки) и
+// NotifyOrganization (offer_rejected кредитору, BE-07). NotifyUser добавляет BE-11.
 
 // Notification — одно уведомление; получателей выбирает метод Notifier.
 type Notification struct {
@@ -21,6 +23,7 @@ type Notification struct {
 // NotificationWriter — часть repository.Querier, которая нужна Notifier.
 type NotificationWriter interface {
 	CreateNotificationsForAdmins(ctx context.Context, arg repository.CreateNotificationsForAdminsParams) (int64, error)
+	CreateNotificationsForOrganization(ctx context.Context, arg repository.CreateNotificationsForOrganizationParams) (int64, error)
 }
 
 // Notifier пишет уведомления querier'ом транзакции бизнес-события: вызывать только
@@ -34,6 +37,17 @@ func (Notifier) NotifyAdmins(ctx context.Context, q NotificationWriter, n Notifi
 	})
 	if err != nil {
 		return fmt.Errorf("notify admins %s: %w", n.Type, err)
+	}
+	return nil
+}
+
+// NotifyOrganization — уведомление каждому активному пользователю компании.
+func (Notifier) NotifyOrganization(ctx context.Context, q NotificationWriter, orgID uuid.UUID, n Notification) error {
+	_, err := q.CreateNotificationsForOrganization(ctx, repository.CreateNotificationsForOrganizationParams{
+		Type: n.Type, Title: n.Title, EntityType: n.EntityType, EntityID: n.EntityID, OrganizationID: orgID,
+	})
+	if err != nil {
+		return fmt.Errorf("notify organization %s %s: %w", orgID, n.Type, err)
 	}
 	return nil
 }
