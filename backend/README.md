@@ -30,7 +30,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 |---|---|
 | ✅ | `GET /healthz`, `GET /dictionaries/countries`, `GET /dictionaries/currencies`, `GET /dictionaries/transfer-methods` |
 | ✅ | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — вместе с сессией, CSRF и rate limit (ниже) |
-| ⏳ 501 | остальные 43 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET`/`PATCH /organizations/me`, `GET`/`POST /organizations/me/documents`, `DELETE /organizations/me/documents/{documentId}`, `GET /documents/{documentId}/file`, `POST /organizations/me/kyc/submit` — профиль, бенефициары, KYC-документы и отправка на проверку с AML-скринингом |
+| ⏳ 501 | остальные 36 (в т.ч. `GET /registry/lookup`) — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -105,7 +106,7 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | `CSRF_INVALID` | 403 | нет `X-CSRF-Token` или он не совпадает с cookie |
 | `KYC_NOT_VERIFIED` | 403 | компания не верифицирована (заявки, офферы) |
 | `NOT_FOUND` | 404 | нет такой сущности **или она чужая**; неизвестный путь |
-| `CONFLICT` | 409 | конфликт данных (например, email уже занят) |
+| `CONFLICT` | 409 | конфликт данных (например, email уже занят; реквизиты компании изменились во время `kyc/submit`) |
 | `INVALID_STATUS_TRANSITION` | 409 | переход статуса не разрешён (см. «Статусы») |
 | `FILE_TOO_LARGE` | 413 | загружаемый документ больше 10 МБ |
 | `RATE_LIMITED` | 429 | слишком много попыток (`login`, `register`); заголовок `Retry-After` — через сколько секунд повторить |
@@ -148,6 +149,10 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | POST | `/organizations/me/kyc/submit` | Отправить компанию на верификацию (`draft` / `rejected` → `under_review`) | B, L |
 | GET | `/documents/{documentId}/file` | Скачать файл документа | владелец, A |
 | GET | `/registry/lookup` | Автозаполнение по реестру: ЕГРЮЛ для RU, GLEIF по LEI для остальных. **В MVP — мок** (ADR-0001, п. 6) | все |
+
+- **Загрузка документа:** в `multipart/form-data` поле `doc_type` должно идти **до** `file` — сервер читает файл потоком и без типа не знает, куда его отнести; иначе `400 VALIDATION_ERROR`. Файл больше 10 МБ — `413 FILE_TOO_LARGE`.
+- **Скачивание** `GET /documents/{documentId}/file`: только владелец документа или admin (чужой — `404`); ответ с `Content-Disposition: attachment`, чтобы браузер не исполнял файл в контексте сайта.
+- **Отправка на проверку:** нужны обязательные документы и хотя бы один бенефициар (`400` с `details` по каждому недостающему). Сверка с реестром не блокирует отправку: при сбое реестра компания всё равно уходит в `under_review`, админ сверяет вручную. Если реквизиты изменились параллельно со сверкой — `409 CONFLICT`, повторить.
 
 ### dictionaries — справочники
 
