@@ -45,44 +45,51 @@ RETURNING id, type, name, country_code, registration_number, lei, legal_address,
           kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at;
 
 -- name: ApproveKyc :one
+-- Решение админа (BE-12). Охрана статуса в WHERE — страховка к FOR UPDATE в сервисе:
+-- 0 строк значит «уже не under_review» (409), а не «нет компании».
 UPDATE organizations SET
     kyc_status = 'verified',
     verified_at = now(),
     kyc_reject_reason = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at;
+WHERE id = $1 AND kyc_status = 'under_review'
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at;
 
 -- name: RejectKyc :one
+-- Причина видна компании: kyc_reject_reason отдаёт getMyOrganization и /auth/me.
 UPDATE organizations SET
     kyc_status = 'rejected',
     kyc_reject_reason = $2,
     verified_at = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at;
+WHERE id = $1 AND kyc_status = 'under_review'
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at;
 
 -- name: ListOrganizations :many
+-- Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
+-- массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
 SELECT id, type, name, country_code, registration_number, lei, legal_address,
        kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 FROM organizations
-WHERE (sqlc.narg('kyc_status')::kyc_status IS NULL OR kyc_status = sqlc.narg('kyc_status')::kyc_status)
+WHERE (sqlc.narg('kyc_statuses')::text[] IS NULL OR kyc_status::text = ANY(sqlc.narg('kyc_statuses')::text[]))
   AND (sqlc.narg('type')::organization_type IS NULL OR type = sqlc.narg('type')::organization_type)
   AND (sqlc.narg('country_code')::char(2) IS NULL OR country_code = sqlc.narg('country_code')::char(2))
   AND (sqlc.narg('q')::text IS NULL
-       OR name ILIKE '%' || sqlc.narg('q')::text || '%'
-       OR registration_number ILIKE '%' || sqlc.narg('q')::text || '%')
+       OR name ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\'
+       OR registration_number ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\')
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
 -- name: CountOrganizations :one
 SELECT count(*) FROM organizations
-WHERE (sqlc.narg('kyc_status')::kyc_status IS NULL OR kyc_status = sqlc.narg('kyc_status')::kyc_status)
+WHERE (sqlc.narg('kyc_statuses')::text[] IS NULL OR kyc_status::text = ANY(sqlc.narg('kyc_statuses')::text[]))
   AND (sqlc.narg('type')::organization_type IS NULL OR type = sqlc.narg('type')::organization_type)
   AND (sqlc.narg('country_code')::char(2) IS NULL OR country_code = sqlc.narg('country_code')::char(2))
   AND (sqlc.narg('q')::text IS NULL
-       OR name ILIKE '%' || sqlc.narg('q')::text || '%'
-       OR registration_number ILIKE '%' || sqlc.narg('q')::text || '%');
+       OR name ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\'
+       OR registration_number ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\');
 
 -- name: ListBeneficiariesByOrg :many
 SELECT * FROM beneficiaries

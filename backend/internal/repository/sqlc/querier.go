@@ -17,7 +17,9 @@ type Querier interface {
 	AcceptOffer(ctx context.Context, arg AcceptOfferParams) (Offer, error)
 	AgreeApplication(ctx context.Context, arg AgreeApplicationParams) (Application, error)
 	ApproveApplication(ctx context.Context, arg ApproveApplicationParams) (Application, error)
-	ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error)
+	// Решение админа (BE-12). Охрана статуса в WHERE — страховка к FOR UPDATE в сервисе:
+	// 0 строк значит «уже не under_review» (409), а не «нет компании».
+	ApproveKyc(ctx context.Context, id uuid.UUID) (Organization, error)
 	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
 	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
@@ -26,6 +28,8 @@ type Querier interface {
 	// сервис берёт из total или unread в зависимости от unread_only.
 	CountNotifications(ctx context.Context, userID uuid.UUID) (CountNotificationsRow, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
+	// Открытые high-флаги блокируют approve KYC (409 CONFLICT, BE-12).
+	CountOpenHighAmlFlags(ctx context.Context, organizationID uuid.UUID) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
@@ -92,6 +96,9 @@ type Querier interface {
 	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
 	HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error)
 	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
+	// Флаги компании в карточке админа (BE-12): без пагинации, открытые сверху. Название и
+	// страна — для AmlFlag.organization (OrganizationShort), aml_flags их не хранит.
+	ListAmlFlagsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]ListAmlFlagsByOrganizationRow, error)
 	// История заявки и её офферов. Доступ к заявке проверяется до вызова (GetApplicationVisible);
 	// фильтр по офферам не даёт кредитору увидеть историю чужих офферов.
 	ListApplicationHistory(ctx context.Context, arg ListApplicationHistoryParams) ([]StatusHistory, error)
@@ -121,9 +128,16 @@ type Querier interface {
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
 	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error)
+	// Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
+	// массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	// Пользователи компании для карточки админа (BE-12): колонки ListUsers, без password_hash.
+	ListUsersByOrganization(ctx context.Context, organizationID pgtype.UUID) ([]ListUsersByOrganizationRow, error)
+	// Блокировка заявки админом для модерации (BE-12): аналог LockApplicationForBorrower без
+	// фильтра по владельцу — у админа нет организации. Порядок блокировок тот же: заявка первой.
+	LockApplicationByID(ctx context.Context, id uuid.UUID) (Application, error)
 	// Первый шаг acceptOffer: блокирует заявку оффера, если она принадлежит заёмщику.
 	// Статус намеренно не фильтруется: сервис отличает 404 (чужая) от 409 (уже agreed/cancelled).
 	LockApplicationByOfferForBorrower(ctx context.Context, arg LockApplicationByOfferForBorrowerParams) (Application, error)
@@ -153,7 +167,8 @@ type Querier interface {
 	// 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error)
 	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
-	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
+	// Причина видна компании: kyc_reject_reason отдаёт getMyOrganization и /auth/me.
+	RejectKyc(ctx context.Context, arg RejectKycParams) (Organization, error)
 	// 0 строк после проверки статуса в сервисе — гонка с другим решением → 409.
 	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
 	// Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).

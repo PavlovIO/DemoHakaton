@@ -485,6 +485,40 @@ func (q *Queries) ListApplicationsVisible(ctx context.Context, arg ListApplicati
 	return items, nil
 }
 
+const lockApplicationByID = `-- name: LockApplicationByID :one
+SELECT id, number, borrower_organization_id, created_by_user_id, status, amount, currency, target_country_code, purpose, term_months, transfer_method, transfer_method_comment, moderation_comment, accepted_offer_id, submitted_at, published_at, created_at, updated_at FROM applications
+WHERE id = $1
+FOR UPDATE
+`
+
+// Блокировка заявки админом для модерации (BE-12): аналог LockApplicationForBorrower без
+// фильтра по владельцу — у админа нет организации. Порядок блокировок тот же: заявка первой.
+func (q *Queries) LockApplicationByID(ctx context.Context, id uuid.UUID) (Application, error) {
+	row := q.db.QueryRow(ctx, lockApplicationByID, id)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.Number,
+		&i.BorrowerOrganizationID,
+		&i.CreatedByUserID,
+		&i.Status,
+		&i.Amount,
+		&i.Currency,
+		&i.TargetCountryCode,
+		&i.Purpose,
+		&i.TermMonths,
+		&i.TransferMethod,
+		&i.TransferMethodComment,
+		&i.ModerationComment,
+		&i.AcceptedOfferID,
+		&i.SubmittedAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const lockApplicationByOfferForBorrower = `-- name: LockApplicationByOfferForBorrower :one
 SELECT a.id, a.number, a.borrower_organization_id, a.created_by_user_id, a.status, a.amount, a.currency, a.target_country_code, a.purpose, a.term_months, a.transfer_method, a.transfer_method_comment, a.moderation_comment, a.accepted_offer_id, a.submitted_at, a.published_at, a.created_at, a.updated_at FROM applications a
   JOIN offers o ON o.application_id = a.id

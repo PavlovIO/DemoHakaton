@@ -196,3 +196,10 @@ WHERE true
 SELECT * FROM applications
 WHERE id = $1 AND borrower_organization_id = $2
 FOR UPDATE;
+
+-- name: LockApplicationByID :one
+-- Блокировка заявки админом для модерации (BE-12): аналог LockApplicationForBorrower без
+-- фильтра по владельцу — у админа нет организации. Порядок блокировок тот же: заявка первой.
+SELECT * FROM applications
+WHERE id = $1
+FOR UPDATE;

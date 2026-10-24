@@ -13,6 +13,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOpenHighAmlFlags = `-- name: CountOpenHighAmlFlags :one
+SELECT count(*) FROM aml_flags
+WHERE organization_id = $1 AND status = 'open' AND severity = 'high'
+`
+
+// Открытые high-флаги блокируют approve KYC (409 CONFLICT, BE-12).
+func (q *Queries) CountOpenHighAmlFlags(ctx context.Context, organizationID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenHighAmlFlags, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAmlFlag = `-- name: CreateAmlFlag :one
 INSERT INTO aml_flags (
     organization_id, application_id, rule, severity, details
@@ -279,6 +292,56 @@ func (q *Queries) ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]A
 			&i.ResolutionComment,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAmlFlagsByOrganization = `-- name: ListAmlFlagsByOrganization :many
+SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, o.name AS organization_name, o.country_code AS organization_country_code
+FROM aml_flags f
+JOIN organizations o ON o.id = f.organization_id
+WHERE f.organization_id = $1
+ORDER BY (f.status = 'open') DESC, f.created_at DESC, f.id DESC
+`
+
+type ListAmlFlagsByOrganizationRow struct {
+	AmlFlag                 AmlFlag `json:"aml_flag"`
+	OrganizationName        string  `json:"organization_name"`
+	OrganizationCountryCode string  `json:"organization_country_code"`
+}
+
+// Флаги компании в карточке админа (BE-12): без пагинации, открытые сверху. Название и
+// страна — для AmlFlag.organization (OrganizationShort), aml_flags их не хранит.
+func (q *Queries) ListAmlFlagsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]ListAmlFlagsByOrganizationRow, error) {
+	rows, err := q.db.Query(ctx, listAmlFlagsByOrganization, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAmlFlagsByOrganizationRow{}
+	for rows.Next() {
+		var i ListAmlFlagsByOrganizationRow
+		if err := rows.Scan(
+			&i.AmlFlag.ID,
+			&i.AmlFlag.OrganizationID,
+			&i.AmlFlag.ApplicationID,
+			&i.AmlFlag.Rule,
+			&i.AmlFlag.Severity,
+			&i.AmlFlag.Details,
+			&i.AmlFlag.Status,
+			&i.AmlFlag.ResolvedByUserID,
+			&i.AmlFlag.ResolutionComment,
+			&i.AmlFlag.CreatedAt,
+			&i.AmlFlag.ResolvedAt,
+			&i.OrganizationName,
+			&i.OrganizationCountryCode,
 		); err != nil {
 			return nil, err
 		}

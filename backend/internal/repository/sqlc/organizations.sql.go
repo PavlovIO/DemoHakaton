@@ -19,32 +19,29 @@ UPDATE organizations SET
     verified_at = now(),
     kyc_reject_reason = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at
+WHERE id = $1 AND kyc_status = 'under_review'
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 `
 
-type ApproveKycRow struct {
-	ID              uuid.UUID          `json:"id"`
-	Type            OrganizationType   `json:"type"`
-	Name            string             `json:"name"`
-	KycStatus       KycStatus          `json:"kyc_status"`
-	KycRejectReason pgtype.Text        `json:"kyc_reject_reason"`
-	KycSubmittedAt  pgtype.Timestamptz `json:"kyc_submitted_at"`
-	VerifiedAt      pgtype.Timestamptz `json:"verified_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, error) {
+// Решение админа (BE-12). Охрана статуса в WHERE — страховка к FOR UPDATE в сервисе:
+// 0 строк значит «уже не under_review» (409), а не «нет компании».
+func (q *Queries) ApproveKyc(ctx context.Context, id uuid.UUID) (Organization, error) {
 	row := q.db.QueryRow(ctx, approveKyc, id)
-	var i ApproveKycRow
+	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Type,
 		&i.Name,
+		&i.CountryCode,
+		&i.RegistrationNumber,
+		&i.Lei,
+		&i.LegalAddress,
 		&i.KycStatus,
 		&i.KycRejectReason,
 		&i.KycSubmittedAt,
 		&i.VerifiedAt,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -52,16 +49,16 @@ func (q *Queries) ApproveKyc(ctx context.Context, id uuid.UUID) (ApproveKycRow, 
 
 const countOrganizations = `-- name: CountOrganizations :one
 SELECT count(*) FROM organizations
-WHERE ($1::kyc_status IS NULL OR kyc_status = $1::kyc_status)
+WHERE ($1::text[] IS NULL OR kyc_status::text = ANY($1::text[]))
   AND ($2::organization_type IS NULL OR type = $2::organization_type)
   AND ($3::char(2) IS NULL OR country_code = $3::char(2))
   AND ($4::text IS NULL
-       OR name ILIKE '%' || $4::text || '%'
-       OR registration_number ILIKE '%' || $4::text || '%')
+       OR name ILIKE '%' || $4::text || '%' ESCAPE '\'
+       OR registration_number ILIKE '%' || $4::text || '%' ESCAPE '\')
 `
 
 type CountOrganizationsParams struct {
-	KycStatus   NullKycStatus        `json:"kyc_status"`
+	KycStatuses []string             `json:"kyc_statuses"`
 	Type        NullOrganizationType `json:"type"`
 	CountryCode pgtype.Text          `json:"country_code"`
 	Q           pgtype.Text          `json:"q"`
@@ -69,7 +66,7 @@ type CountOrganizationsParams struct {
 
 func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countOrganizations,
-		arg.KycStatus,
+		arg.KycStatuses,
 		arg.Type,
 		arg.CountryCode,
 		arg.Q,
@@ -264,12 +261,12 @@ const listOrganizations = `-- name: ListOrganizations :many
 SELECT id, type, name, country_code, registration_number, lei, legal_address,
        kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 FROM organizations
-WHERE ($3::kyc_status IS NULL OR kyc_status = $3::kyc_status)
+WHERE ($3::text[] IS NULL OR kyc_status::text = ANY($3::text[]))
   AND ($4::organization_type IS NULL OR type = $4::organization_type)
   AND ($5::char(2) IS NULL OR country_code = $5::char(2))
   AND ($6::text IS NULL
-       OR name ILIKE '%' || $6::text || '%'
-       OR registration_number ILIKE '%' || $6::text || '%')
+       OR name ILIKE '%' || $6::text || '%' ESCAPE '\'
+       OR registration_number ILIKE '%' || $6::text || '%' ESCAPE '\')
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -277,17 +274,19 @@ LIMIT $1 OFFSET $2
 type ListOrganizationsParams struct {
 	Limit       int32                `json:"limit"`
 	Offset      int32                `json:"offset"`
-	KycStatus   NullKycStatus        `json:"kyc_status"`
+	KycStatuses []string             `json:"kyc_statuses"`
 	Type        NullOrganizationType `json:"type"`
 	CountryCode pgtype.Text          `json:"country_code"`
 	Q           pgtype.Text          `json:"q"`
 }
 
+// Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
+// массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
 func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error) {
 	rows, err := q.db.Query(ctx, listOrganizations,
 		arg.Limit,
 		arg.Offset,
-		arg.KycStatus,
+		arg.KycStatuses,
 		arg.Type,
 		arg.CountryCode,
 		arg.Q,
@@ -330,8 +329,9 @@ UPDATE organizations SET
     kyc_reject_reason = $2,
     verified_at = NULL,
     updated_at = now()
-WHERE id = $1
-RETURNING id, type, name, kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, updated_at
+WHERE id = $1 AND kyc_status = 'under_review'
+RETURNING id, type, name, country_code, registration_number, lei, legal_address,
+          kyc_status, kyc_reject_reason, kyc_submitted_at, verified_at, created_at, updated_at
 `
 
 type RejectKycParams struct {
@@ -339,28 +339,23 @@ type RejectKycParams struct {
 	KycRejectReason pgtype.Text `json:"kyc_reject_reason"`
 }
 
-type RejectKycRow struct {
-	ID              uuid.UUID          `json:"id"`
-	Type            OrganizationType   `json:"type"`
-	Name            string             `json:"name"`
-	KycStatus       KycStatus          `json:"kyc_status"`
-	KycRejectReason pgtype.Text        `json:"kyc_reject_reason"`
-	KycSubmittedAt  pgtype.Timestamptz `json:"kyc_submitted_at"`
-	VerifiedAt      pgtype.Timestamptz `json:"verified_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error) {
+// Причина видна компании: kyc_reject_reason отдаёт getMyOrganization и /auth/me.
+func (q *Queries) RejectKyc(ctx context.Context, arg RejectKycParams) (Organization, error) {
 	row := q.db.QueryRow(ctx, rejectKyc, arg.ID, arg.KycRejectReason)
-	var i RejectKycRow
+	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Type,
 		&i.Name,
+		&i.CountryCode,
+		&i.RegistrationNumber,
+		&i.Lei,
+		&i.LegalAddress,
 		&i.KycStatus,
 		&i.KycRejectReason,
 		&i.KycSubmittedAt,
 		&i.VerifiedAt,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
