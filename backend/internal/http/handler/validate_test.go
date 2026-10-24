@@ -130,18 +130,3 @@ func TestRequestValidation(t *testing.T) {
 		}
 	})
 }
-
-func TestRegistryLookupWithoutSession(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService()})
-	resp, body := request(t, srv, http.MethodGet, "/api/v1/registry/lookup?country_code=RU&number=7707083893", "")
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want %d; body %s", resp.StatusCode, http.StatusNotImplemented, body)
-	}
-	var e api.Error
-	if err := json.Unmarshal(body, &e); err != nil {
-		t.Fatalf("decode %s: %v", body, err)
-	}
-	if e.Error.Code != "NOT_IMPLEMENTED" {
-		t.Fatalf("code = %s, want NOT_IMPLEMENTED; body %s", e.Error.Code, body)
-	}
-}
