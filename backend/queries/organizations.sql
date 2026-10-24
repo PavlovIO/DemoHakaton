@@ -79,7 +79,9 @@ WHERE (sqlc.narg('kyc_statuses')::text[] IS NULL OR kyc_status::text = ANY(sqlc.
   AND (sqlc.narg('q')::text IS NULL
        OR name ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\'
        OR registration_number ILIKE '%' || sqlc.narg('q')::text || '%' ESCAPE '\')
-ORDER BY created_at DESC
+-- id DESC — тай-брейк: строки одной транзакции получают одинаковый now(), без него
+-- LIMIT/OFFSET повторяет и теряет строки между страницами.
+ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2;
 
 -- name: CountOrganizations :one

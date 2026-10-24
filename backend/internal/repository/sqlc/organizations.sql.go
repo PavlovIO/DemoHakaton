@@ -301,7 +301,7 @@ WHERE ($3::text[] IS NULL OR kyc_status::text = ANY($3::text[]))
   AND ($6::text IS NULL
        OR name ILIKE '%' || $6::text || '%' ESCAPE '\'
        OR registration_number ILIKE '%' || $6::text || '%' ESCAPE '\')
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -316,6 +316,8 @@ type ListOrganizationsParams struct {
 
 // Админский список (BE-12). kyc_statuses — text[], а не kyc_status[]: pgx v5 не кодирует
 // массив незарегистрированного enum. q экранирует сервис (service.EscapeLike, DECISIONS п. 40).
+// id DESC — тай-брейк: строки одной транзакции получают одинаковый now(), без него
+// LIMIT/OFFSET повторяет и теряет строки между страницами.
 func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error) {
 	rows, err := q.db.Query(ctx, listOrganizations,
 		arg.Limit,

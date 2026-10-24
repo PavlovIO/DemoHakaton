@@ -193,7 +193,7 @@ FROM users
 WHERE ($3::user_role IS NULL OR role = $3::user_role)
   AND ($4::user_status IS NULL OR status = $4::user_status)
   AND ($5::text IS NULL OR email ILIKE '%' || $5::text || '%' ESCAPE '\')
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -214,6 +214,7 @@ type ListUsersRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+// id DESC — тай-брейк, как в ListOrganizations.
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers,
 		arg.Limit,
