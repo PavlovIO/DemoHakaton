@@ -74,7 +74,11 @@ func run(ctx context.Context) error {
 			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
 			Verifier: companyRegistry,
 		}),
-		Registry:     service.NewRegistry(companyRegistry, limiter),
+		Registry: service.NewRegistry(companyRegistry, limiter),
+		Applications: service.NewApplications(service.ApplicationsDeps{
+			Store: queries, Tx: txManager,
+			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
+		}),
 		CookieSecure: cfg.CookieSecure,
 	})
 

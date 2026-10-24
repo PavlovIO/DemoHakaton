@@ -13,9 +13,13 @@ import (
 
 // Валидация запросов по спеке (nethttp-middleware) стоит перед роутингом: мусор
 // получает 400 с полем в details ещё до хендлера, а для нереализованных операций
-// корректный запрос доходит до заглушки (501).
+// корректный запрос доходит до хендлера.
 func TestRequestValidation(t *testing.T) {
-	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService()})
+	srv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: testAuthService(), Applications: &fakeApplications{app: testApplication()}})
+	// Админские операции Authorize пускает только admin: иначе 403 раньше валидатора.
+	adminAuth := testAuthService()
+	adminAuth.principal.Role = "admin"
+	adminSrv := newTestServer(t, handler.Deps{Dicts: fakeDicts{}, Auth: adminAuth})
 
 	tests := []struct {
 		name       string
@@ -27,15 +31,16 @@ func TestRequestValidation(t *testing.T) {
 		wantCode   string
 		wantField  string // первое поле в details; "" — не проверять
 		wantFields int    // число записей в details; 0 — не проверять
+		admin      bool   // запрос от admin
 	}{
 		// Позитивные: путь / query / тело — доходят до хендлера или заглушки.
 		{name: "ok путь", method: "GET", path: "/api/v1/dictionaries/countries", wantStatus: 200},
 		{name: "registry lookup без сессии", method: "GET", path: "/api/v1/registry/lookup", wantStatus: 400, wantCode: "VALIDATION_ERROR"},
-		{name: "ok query -> заглушка", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
-		{name: "ok тело -> заглушка", method: "PATCH", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", body: `{"term_months":12}`, ctype: "application/json", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
-		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 501},
-		{name: "ok несколько target_country", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=TR", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
-		{name: "ok витрина и архив откликов", method: "GET", path: "/api/v1/applications?status=published&sort=published_at_desc&has_my_offer=true", wantStatus: 501, wantCode: "NOT_IMPLEMENTED"},
+		{name: "ok query -> хендлер", method: "GET", path: "/api/v1/applications?page=1&page_size=20", wantStatus: 200},
+		{name: "ok тело -> хендлер", method: "PATCH", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", body: `{"term_months":12}`, ctype: "application/json", wantStatus: 200},
+		{name: "ok uuid v7 в пути", method: "GET", path: "/api/v1/applications/019245a0-1b2c-7def-8000-000000000001", wantStatus: 200},
+		{name: "ok несколько target_country", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=TR", wantStatus: 200},
+		{name: "ok витрина и архив откликов", method: "GET", path: "/api/v1/applications?status=published&sort=published_at_desc&has_my_offer=true", wantStatus: 200},
 		// HEAD: ServeMux сопоставляет его с GET-паттернами, валидатор (gorillamux) — нет; раньше было 200.
 		{name: "HEAD как GET", method: "HEAD", path: "/api/v1/dictionaries/countries", wantStatus: 200},
 
@@ -47,7 +52,7 @@ func TestRequestValidation(t *testing.T) {
 		{name: "target_country не ISO-код", method: "GET", path: "/api/v1/applications?target_country=DE&target_country=Germany", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "target_country"},
 		{name: "has_my_offer не boolean", method: "GET", path: "/api/v1/applications?has_my_offer=yes", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "has_my_offer"},
 		{name: "deals: организация не uuid", method: "GET", path: "/api/v1/deals?lender_organization_id=acme", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "lender_organization_id"},
-		{name: "aml: заявка не uuid", method: "GET", path: "/api/v1/admin/aml/flags?application_id=APP-1", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "application_id"},
+		{name: "aml: заявка не uuid", method: "GET", path: "/api/v1/admin/aml/flags?application_id=APP-1", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "application_id", admin: true},
 
 		// Путь.
 		{name: "не uuid в пути", method: "GET", path: "/api/v1/applications/not-a-uuid", wantStatus: 400, wantCode: "VALIDATION_ERROR", wantField: "applicationId"},
@@ -74,7 +79,11 @@ func TestRequestValidation(t *testing.T) {
 			if tt.body != "" {
 				body = strings.NewReader(tt.body)
 			}
-			req, err := http.NewRequest(tt.method, srv.URL+tt.path, body)
+			baseURL := srv.URL
+			if tt.admin {
+				baseURL = adminSrv.URL
+			}
+			req, err := http.NewRequest(tt.method, baseURL+tt.path, body)
 			if err != nil {
 				t.Fatal(err)
 			}

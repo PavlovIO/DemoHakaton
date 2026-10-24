@@ -84,6 +84,18 @@ type KycService interface {
 	SubmitKyc(ctx context.Context, p service.Principal, meta service.ClientMeta) (service.OrganizationProfile, error)
 }
 
+// ApplicationService — заявки: CRUD, витрина, статусы, история (service.Applications).
+type ApplicationService interface {
+	List(ctx context.Context, p service.Principal, f service.ApplicationFilter) (service.ApplicationPage, error)
+	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Application, error)
+	Create(ctx context.Context, p service.Principal, meta service.ClientMeta, in service.CreateApplicationInput) (service.Application, error)
+	Update(ctx context.Context, p service.Principal, id uuid.UUID, in service.UpdateApplicationInput) (service.Application, error)
+	Submit(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Application, error)
+	Cancel(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Application, error)
+	RejectAllOffers(ctx context.Context, p service.Principal, id uuid.UUID) (int, error)
+	History(ctx context.Context, p service.Principal, id uuid.UUID) ([]service.StatusHistoryEntry, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
 	DB           Pinger
@@ -91,6 +103,7 @@ type Deps struct {
 	Auth         AuthService
 	Kyc          KycService
 	Registry     RegistryService
+	Applications ApplicationService
 	CookieSecure bool
 }
 
@@ -101,6 +114,7 @@ type Handler struct {
 	auth         AuthService
 	kyc          KycService
 	registry     RegistryService
+	applications ApplicationService
 	cookieSecure bool
 }
 
@@ -119,5 +133,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, cookieSecure: d.CookieSecure}
 }
