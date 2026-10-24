@@ -13,6 +13,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAmlFlags = `-- name: CountAmlFlags :one
+SELECT count(*) FROM aml_flags f
+WHERE ($1::aml_flag_status IS NULL OR f.status = $1::aml_flag_status)
+  AND ($2::aml_severity IS NULL OR f.severity = $2::aml_severity)
+  AND ($3::uuid IS NULL OR f.organization_id = $3::uuid)
+  AND ($4::uuid IS NULL OR f.application_id = $4::uuid)
+`
+
+type CountAmlFlagsParams struct {
+	Status         NullAmlFlagStatus `json:"status"`
+	Severity       NullAmlSeverity   `json:"severity"`
+	OrganizationID pgtype.UUID       `json:"organization_id"`
+	ApplicationID  pgtype.UUID       `json:"application_id"`
+}
+
+// Счётчик для ListAmlFlags: те же фильтры.
+func (q *Queries) CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAmlFlags,
+		arg.Status,
+		arg.Severity,
+		arg.OrganizationID,
+		arg.ApplicationID,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOpenHighAmlFlags = `-- name: CountOpenHighAmlFlags :one
 SELECT count(*) FROM aml_flags
 WHERE organization_id = $1 AND status = 'open' AND severity = 'high'
@@ -104,6 +132,42 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 		&i.UserAgent,
 		&i.Meta,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAmlFlagByID = `-- name: GetAmlFlagByID :one
+SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, o.name AS organization_name, o.country_code AS organization_country_code
+FROM aml_flags f
+JOIN organizations o ON o.id = f.organization_id
+WHERE f.id = $1
+`
+
+type GetAmlFlagByIDRow struct {
+	AmlFlag                 AmlFlag `json:"aml_flag"`
+	OrganizationName        string  `json:"organization_name"`
+	OrganizationCountryCode string  `json:"organization_country_code"`
+}
+
+// Флаг с организацией — ответ resolve и различение 404/409, когда ResolveAmlFlag не нашёл
+// открытый флаг.
+func (q *Queries) GetAmlFlagByID(ctx context.Context, id int64) (GetAmlFlagByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAmlFlagByID, id)
+	var i GetAmlFlagByIDRow
+	err := row.Scan(
+		&i.AmlFlag.ID,
+		&i.AmlFlag.OrganizationID,
+		&i.AmlFlag.ApplicationID,
+		&i.AmlFlag.Rule,
+		&i.AmlFlag.Severity,
+		&i.AmlFlag.Details,
+		&i.AmlFlag.Status,
+		&i.AmlFlag.ResolvedByUserID,
+		&i.AmlFlag.ResolutionComment,
+		&i.AmlFlag.CreatedAt,
+		&i.AmlFlag.ResolvedAt,
+		&i.OrganizationName,
+		&i.OrganizationCountryCode,
 	)
 	return i, err
 }
@@ -249,49 +313,64 @@ func (q *Queries) HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagPa
 }
 
 const listAmlFlags = `-- name: ListAmlFlags :many
-SELECT id, organization_id, application_id, rule, severity, details, status, resolved_by_user_id, resolution_comment, created_at, resolved_at FROM aml_flags
-WHERE ($3::aml_flag_status IS NULL OR status = $3::aml_flag_status)
-  AND ($4::aml_severity IS NULL OR severity = $4::aml_severity)
-  AND ($5::uuid IS NULL OR organization_id = $5::uuid)
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
+SELECT f.id, f.organization_id, f.application_id, f.rule, f.severity, f.details, f.status, f.resolved_by_user_id, f.resolution_comment, f.created_at, f.resolved_at, o.name AS organization_name, o.country_code AS organization_country_code
+FROM aml_flags f
+JOIN organizations o ON o.id = f.organization_id
+WHERE ($1::aml_flag_status IS NULL OR f.status = $1::aml_flag_status)
+  AND ($2::aml_severity IS NULL OR f.severity = $2::aml_severity)
+  AND ($3::uuid IS NULL OR f.organization_id = $3::uuid)
+  AND ($4::uuid IS NULL OR f.application_id = $4::uuid)
+ORDER BY f.created_at DESC, f.id DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListAmlFlagsParams struct {
-	Limit          int32             `json:"limit"`
-	Offset         int32             `json:"offset"`
 	Status         NullAmlFlagStatus `json:"status"`
 	Severity       NullAmlSeverity   `json:"severity"`
 	OrganizationID pgtype.UUID       `json:"organization_id"`
+	ApplicationID  pgtype.UUID       `json:"application_id"`
+	Offset         int32             `json:"offset"`
+	Limit          int32             `json:"limit"`
 }
 
-func (q *Queries) ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error) {
+type ListAmlFlagsRow struct {
+	AmlFlag                 AmlFlag `json:"aml_flag"`
+	OrganizationName        string  `json:"organization_name"`
+	OrganizationCountryCode string  `json:"organization_country_code"`
+}
+
+// Админский список флагов (BE-13): фильтры через narg — «нет значения → всё». Название и
+// страна — для AmlFlag.organization (OrganizationShort).
+func (q *Queries) ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]ListAmlFlagsRow, error) {
 	rows, err := q.db.Query(ctx, listAmlFlags,
-		arg.Limit,
-		arg.Offset,
 		arg.Status,
 		arg.Severity,
 		arg.OrganizationID,
+		arg.ApplicationID,
+		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AmlFlag{}
+	items := []ListAmlFlagsRow{}
 	for rows.Next() {
-		var i AmlFlag
+		var i ListAmlFlagsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.OrganizationID,
-			&i.ApplicationID,
-			&i.Rule,
-			&i.Severity,
-			&i.Details,
-			&i.Status,
-			&i.ResolvedByUserID,
-			&i.ResolutionComment,
-			&i.CreatedAt,
-			&i.ResolvedAt,
+			&i.AmlFlag.ID,
+			&i.AmlFlag.OrganizationID,
+			&i.AmlFlag.ApplicationID,
+			&i.AmlFlag.Rule,
+			&i.AmlFlag.Severity,
+			&i.AmlFlag.Details,
+			&i.AmlFlag.Status,
+			&i.AmlFlag.ResolvedByUserID,
+			&i.AmlFlag.ResolutionComment,
+			&i.AmlFlag.CreatedAt,
+			&i.AmlFlag.ResolvedAt,
+			&i.OrganizationName,
+			&i.OrganizationCountryCode,
 		); err != nil {
 			return nil, err
 		}
@@ -394,6 +473,38 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]A
 	return items, nil
 }
 
+const listCountriesFatf = `-- name: ListCountriesFatf :many
+SELECT code, fatf_list, fatf_as_of FROM countries
+WHERE code = ANY($1::text[]) AND fatf_list IS NOT NULL
+`
+
+type ListCountriesFatfRow struct {
+	Code     string       `json:"code"`
+	FatfList NullFatfList `json:"fatf_list"`
+	FatfAsOf pgtype.Date  `json:"fatf_as_of"`
+}
+
+// Страны из списков FATF среди codes: скрининг компании и бенефициаров одним запросом.
+func (q *Queries) ListCountriesFatf(ctx context.Context, codes []string) ([]ListCountriesFatfRow, error) {
+	rows, err := q.db.Query(ctx, listCountriesFatf, codes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCountriesFatfRow{}
+	for rows.Next() {
+		var i ListCountriesFatfRow
+		if err := rows.Scan(&i.Code, &i.FatfList, &i.FatfAsOf); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resolveAmlFlag = `-- name: ResolveAmlFlag :one
 UPDATE aml_flags SET
     status = $2,
@@ -436,27 +547,45 @@ func (q *Queries) ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) 
 }
 
 const searchSanctions = `-- name: SearchSanctions :many
-SELECT id, source, external_id, entity_kind, name, name_normalized, country_code, raw, loaded_at FROM sanctions_entries
-WHERE name_normalized % $1
-ORDER BY similarity(name_normalized, $1) DESC
-LIMIT $2
+SELECT id, source, external_id, entity_kind, name, name_normalized,
+       similarity(name_normalized, $1::text)::real AS trgm_score
+FROM sanctions_entries
+WHERE name_normalized % $1::text
+  AND similarity(name_normalized, $1::text) >= $2::real
+ORDER BY trgm_score DESC, id
+LIMIT $3
 `
 
 type SearchSanctionsParams struct {
-	NameNormalized string `json:"name_normalized"`
-	Limit          int32  `json:"limit"`
+	Query         string  `json:"query"`
+	MinSimilarity float32 `json:"min_similarity"`
+	MaxCandidates int32   `json:"max_candidates"`
 }
 
-// Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
-func (q *Queries) SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SanctionsEntry, error) {
-	rows, err := q.db.Query(ctx, searchSanctions, arg.NameNormalized, arg.Limit)
+type SearchSanctionsRow struct {
+	ID             int64   `json:"id"`
+	Source         string  `json:"source"`
+	ExternalID     string  `json:"external_id"`
+	EntityKind     string  `json:"entity_kind"`
+	Name           string  `json:"name"`
+	NameNormalized string  `json:"name_normalized"`
+	TrgmScore      float32 `json:"trgm_score"`
+}
+
+// Кандидаты санкционного скрининга (BE-13). «%» — ради GIN-индекса, он отбирает строки с
+// similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
+// результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
+// ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
+// утекает в чужие запросы.
+func (q *Queries) SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SearchSanctionsRow, error) {
+	rows, err := q.db.Query(ctx, searchSanctions, arg.Query, arg.MinSimilarity, arg.MaxCandidates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SanctionsEntry{}
+	items := []SearchSanctionsRow{}
 	for rows.Next() {
-		var i SanctionsEntry
+		var i SearchSanctionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Source,
@@ -464,9 +593,7 @@ func (q *Queries) SearchSanctions(ctx context.Context, arg SearchSanctionsParams
 			&i.EntityKind,
 			&i.Name,
 			&i.NameNormalized,
-			&i.CountryCode,
-			&i.Raw,
-			&i.LoadedAt,
+			&i.TrgmScore,
 		); err != nil {
 			return nil, err
 		}

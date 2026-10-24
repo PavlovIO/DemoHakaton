@@ -22,6 +22,8 @@ type Querier interface {
 	ApproveKyc(ctx context.Context, id uuid.UUID) (Organization, error)
 	BlockUser(ctx context.Context, arg BlockUserParams) (BlockUserRow, error)
 	CancelApplication(ctx context.Context, arg CancelApplicationParams) (Application, error)
+	// Счётчик для ListAmlFlags: те же фильтры.
+	CountAmlFlags(ctx context.Context, arg CountAmlFlagsParams) (int64, error)
 	CountApplicationsVisible(ctx context.Context, arg CountApplicationsVisibleParams) (int64, error)
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
 	// Оба счётчика одним запросом, чтобы они не расходились между собой: total страницы
@@ -61,8 +63,14 @@ type Querier interface {
 	DeleteExpiredSessions(ctx context.Context) error
 	// storage_key — чтобы после коммита удалить файл; нет строки (чужой, уже удалён) → 404.
 	DeleteKycDocument(ctx context.Context, arg DeleteKycDocumentParams) (string, error)
+	// Загрузчик санкционных списков (cmd/loadsanctions, BE-13): источник заменяется атомарно —
+	// DELETE и COPY в одной транзакции. Под lp_app (только SELECT) запросы падают с 42501.
+	DeleteSanctionsBySource(ctx context.Context, source string) (int64, error)
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
+	// Флаг с организацией — ответ resolve и различение 404/409, когда ResolveAmlFlag не нашёл
+	// открытый флаг.
+	GetAmlFlagByID(ctx context.Context, id int64) (GetAmlFlagByIDRow, error)
 	GetAnalyticsSummaryByCurrency(ctx context.Context) ([]GetAnalyticsSummaryByCurrencyRow, error)
 	// Заявка, если пользователь (viewer_role, viewer_org) её видит. Чужая и несуществующая
 	// одинаково дают 0 строк → 404 (IDOR). Правило совпадает с ListApplicationsVisible.
@@ -98,7 +106,10 @@ type Querier interface {
 	// и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
 	// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
 	HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error)
-	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]AmlFlag, error)
+	InsertSanctionsEntries(ctx context.Context, arg []InsertSanctionsEntriesParams) (int64, error)
+	// Админский список флагов (BE-13): фильтры через narg — «нет значения → всё». Название и
+	// страна — для AmlFlag.organization (OrganizationShort).
+	ListAmlFlags(ctx context.Context, arg ListAmlFlagsParams) ([]ListAmlFlagsRow, error)
 	// Флаги компании в карточке админа (BE-12): без пагинации, открытые сверху. Название и
 	// страна — для AmlFlag.organization (OrganizationShort), aml_flags их не хранит.
 	ListAmlFlagsByOrganization(ctx context.Context, organizationID uuid.UUID) ([]ListAmlFlagsByOrganizationRow, error)
@@ -118,6 +129,8 @@ type Querier interface {
 	// Справочники для фронта (GET /dictionaries/*): публичные, без проверки владения.
 	// fatf_high_risk: страна в чёрном или сером списке FATF.
 	ListCountries(ctx context.Context) ([]ListCountriesRow, error)
+	// Страны из списков FATF среди codes: скрининг компании и бенефициаров одним запросом.
+	ListCountriesFatf(ctx context.Context, codes []string) ([]ListCountriesFatfRow, error)
 	ListCurrencies(ctx context.Context) ([]ListCurrenciesRow, error)
 	// Видимость — на обязательных arg (как в GetDealVisible); бизнес-фильтры — narg:
 	// они только сужают выборку и не могут её открыть.
@@ -185,8 +198,12 @@ type Querier interface {
 	// RETURNING — для истории офферов и уведомлений их кредиторам.
 	RejectSentOffersByApplication(ctx context.Context, arg RejectSentOffersByApplicationParams) ([]RejectSentOffersByApplicationRow, error)
 	ResolveAmlFlag(ctx context.Context, arg ResolveAmlFlagParams) (AmlFlag, error)
-	// Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
-	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SanctionsEntry, error)
+	// Кандидаты санкционного скрининга (BE-13). «%» — ради GIN-индекса, он отбирает строки с
+	// similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
+	// результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
+	// ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
+	// утекает в чужие запросы.
+	SearchSanctions(ctx context.Context, arg SearchSanctionsParams) ([]SearchSanctionsRow, error)
 	SubmitApplication(ctx context.Context, arg SubmitApplicationParams) (Application, error)
 	SubmitKycForReview(ctx context.Context, id uuid.UUID) (Organization, error)
 	TouchSession(ctx context.Context, tokenHash []byte) error

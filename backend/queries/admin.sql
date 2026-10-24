@@ -19,12 +19,33 @@ SELECT EXISTS (
 );
 
 -- name: ListAmlFlags :many
-SELECT * FROM aml_flags
-WHERE (sqlc.narg('status')::aml_flag_status IS NULL OR status = sqlc.narg('status')::aml_flag_status)
-  AND (sqlc.narg('severity')::aml_severity IS NULL OR severity = sqlc.narg('severity')::aml_severity)
-  AND (sqlc.narg('organization_id')::uuid IS NULL OR organization_id = sqlc.narg('organization_id')::uuid)
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2;
+-- Админский список флагов (BE-13): фильтры через narg — «нет значения → всё». Название и
+-- страна — для AmlFlag.organization (OrganizationShort).
+SELECT sqlc.embed(f), o.name AS organization_name, o.country_code AS organization_country_code
+FROM aml_flags f
+JOIN organizations o ON o.id = f.organization_id
+WHERE (sqlc.narg('status')::aml_flag_status IS NULL OR f.status = sqlc.narg('status')::aml_flag_status)
+  AND (sqlc.narg('severity')::aml_severity IS NULL OR f.severity = sqlc.narg('severity')::aml_severity)
+  AND (sqlc.narg('organization_id')::uuid IS NULL OR f.organization_id = sqlc.narg('organization_id')::uuid)
+  AND (sqlc.narg('application_id')::uuid IS NULL OR f.application_id = sqlc.narg('application_id')::uuid)
+ORDER BY f.created_at DESC, f.id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountAmlFlags :one
+-- Счётчик для ListAmlFlags: те же фильтры.
+SELECT count(*) FROM aml_flags f
+WHERE (sqlc.narg('status')::aml_flag_status IS NULL OR f.status = sqlc.narg('status')::aml_flag_status)
+  AND (sqlc.narg('severity')::aml_severity IS NULL OR f.severity = sqlc.narg('severity')::aml_severity)
+  AND (sqlc.narg('organization_id')::uuid IS NULL OR f.organization_id = sqlc.narg('organization_id')::uuid)
+  AND (sqlc.narg('application_id')::uuid IS NULL OR f.application_id = sqlc.narg('application_id')::uuid);
+
+-- name: GetAmlFlagByID :one
+-- Флаг с организацией — ответ resolve и различение 404/409, когда ResolveAmlFlag не нашёл
+-- открытый флаг.
+SELECT sqlc.embed(f), o.name AS organization_name, o.country_code AS organization_country_code
+FROM aml_flags f
+JOIN organizations o ON o.id = f.organization_id
+WHERE f.id = $1;
 
 -- name: ResolveAmlFlag :one
 UPDATE aml_flags SET
@@ -36,11 +57,23 @@ WHERE id = $1 AND status = 'open'
 RETURNING *;
 
 -- name: SearchSanctions :many
--- Использует pg_trgm (оператор %). Требует установки pg_trgm.similarity_threshold = 0.4
-SELECT * FROM sanctions_entries
-WHERE name_normalized % $1
-ORDER BY similarity(name_normalized, $1) DESC
-LIMIT $2;
+-- Кандидаты санкционного скрининга (BE-13). «%» — ради GIN-индекса, он отбирает строки с
+-- similarity ≥ GUC pg_trgm.similarity_threshold; явное условие с @min_similarity делает
+-- результат независимым от GUC. Инвариант: GUC роли (0.4 после DB-SEC, 0.3 по умолчанию)
+-- ≤ aml.candidateMinSimilarity. SET/SET LOCAL не используем: на соединении из пула он
+-- утекает в чужие запросы.
+SELECT id, source, external_id, entity_kind, name, name_normalized,
+       similarity(name_normalized, @query::text)::real AS trgm_score
+FROM sanctions_entries
+WHERE name_normalized % @query::text
+  AND similarity(name_normalized, @query::text) >= @min_similarity::real
+ORDER BY trgm_score DESC, id
+LIMIT @max_candidates;
+
+-- name: ListCountriesFatf :many
+-- Страны из списков FATF среди codes: скрининг компании и бенефициаров одним запросом.
+SELECT code, fatf_list, fatf_as_of FROM countries
+WHERE code = ANY(@codes::text[]) AND fatf_list IS NOT NULL;
 
 -- name: CreateAuditLog :one
 INSERT INTO audit_log (user_id, action, entity_type, entity_id, ip, user_agent, meta)
