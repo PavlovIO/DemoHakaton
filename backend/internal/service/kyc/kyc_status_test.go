@@ -42,7 +42,7 @@ func TestNextKycStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.from)+"+"+string(tt.action), func(t *testing.T) {
-			got, err := nextKycStatus(tt.from, tt.action)
+			got, err := NextKycStatus(tt.from, tt.action)
 			if tt.want == denied {
 				e, ok := apperr.As(err)
 				if !ok || e.Code != apperr.CodeInvalidTransition {

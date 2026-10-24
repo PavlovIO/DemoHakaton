@@ -112,7 +112,7 @@ func (k *Kyc) UploadDocument(ctx context.Context, p service.Principal, meta serv
 	if err != nil {
 		return repository.KycDocument{}, pgerr.Map(err, "Организация не найдена")
 	}
-	if _, err := nextKycStatus(org.KycStatus, KycEdit); err != nil {
+	if _, err := NextKycStatus(org.KycStatus, KycEdit); err != nil {
 		return repository.KycDocument{}, err
 	}
 
@@ -149,7 +149,7 @@ func (k *Kyc) storeDocument(ctx context.Context, p service.Principal, meta servi
 		if err != nil {
 			return pgerr.Map(err, "Организация не найдена")
 		}
-		if _, err := nextKycStatus(org.KycStatus, KycEdit); err != nil {
+		if _, err := NextKycStatus(org.KycStatus, KycEdit); err != nil {
 			return err
 		}
 		doc, err = q.CreateKycDocument(ctx, repository.CreateKycDocumentParams{
@@ -209,7 +209,7 @@ func (k *Kyc) DeleteDocument(ctx context.Context, p service.Principal, id uuid.U
 		if err != nil {
 			return pgerr.Map(err, "Организация не найдена")
 		}
-		if _, err := nextKycStatus(org.KycStatus, KycEdit); err != nil {
+		if _, err := NextKycStatus(org.KycStatus, KycEdit); err != nil {
 			return err
 		}
 		// organization_id в WHERE: чужой документ неотличим от несуществующего → 404.

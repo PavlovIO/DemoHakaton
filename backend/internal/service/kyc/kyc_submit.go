@@ -58,7 +58,7 @@ func (k *Kyc) SubmitKyc(ctx context.Context, p service.Principal, meta service.C
 	if err != nil {
 		return OrganizationProfile{}, pgerr.Map(err, "Организация не найдена")
 	}
-	if _, err := nextKycStatus(org.KycStatus, KycSubmit); err != nil {
+	if _, err := NextKycStatus(org.KycStatus, KycSubmit); err != nil {
 		return OrganizationProfile{}, err
 	}
 	registryCheck, snapshot := k.checkRegistry(ctx, org)
@@ -74,7 +74,7 @@ func (k *Kyc) SubmitKyc(ctx context.Context, p service.Principal, meta service.C
 		if registryCheck != nil && !sameRegistryIdentity(checked, org) {
 			return apperr.Conflict("Реквизиты компании изменились во время проверки — отправьте повторно")
 		}
-		to, err := nextKycStatus(org.KycStatus, KycSubmit)
+		to, err := NextKycStatus(org.KycStatus, KycSubmit)
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func (k *Kyc) SubmitKyc(ctx context.Context, p service.Principal, meta service.C
 	if err != nil {
 		return OrganizationProfile{}, err
 	}
-	return k.profile(ctx, k.store, orgID)
+	return LoadProfile(ctx, k.store, orgID)
 }
 
 // checkRegistry сверяет компанию с реестром, если verifier подключён (BE-06). Сбой
