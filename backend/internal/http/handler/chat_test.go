@@ -16,11 +16,12 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 // fakeChat запоминает аргументы и отдаёт заданные сообщения или ошибку.
 type fakeChat struct {
-	messages []service.Message
+	messages []lending.Message
 	err      error
 	gotOffer uuid.UUID
 	gotAfter int64
@@ -28,25 +29,25 @@ type fakeChat struct {
 	gotText  *string
 }
 
-func (f *fakeChat) List(_ context.Context, _ service.Principal, offerID uuid.UUID, afterID int64, limit int32) ([]service.Message, error) {
+func (f *fakeChat) List(_ context.Context, _ service.Principal, offerID uuid.UUID, afterID int64, limit int32) ([]lending.Message, error) {
 	f.gotOffer, f.gotAfter, f.gotLimit = offerID, afterID, limit
 	return f.messages, f.err
 }
 
-func (f *fakeChat) Send(_ context.Context, _ service.Principal, offerID uuid.UUID, text string) (service.Message, error) {
+func (f *fakeChat) Send(_ context.Context, _ service.Principal, offerID uuid.UUID, text string) (lending.Message, error) {
 	f.gotOffer, f.gotText = offerID, &text
 	if f.err != nil {
-		return service.Message{}, f.err
+		return lending.Message{}, f.err
 	}
 	m := testMessage()
 	m.Text, m.OfferID = text, offerID
 	return m, nil
 }
 
-func testMessage() service.Message {
-	return service.Message{
+func testMessage() lending.Message {
+	return lending.Message{
 		ID: 7, OfferID: uuid.New(), AuthorUserID: uuid.New(), AuthorRole: repository.UserRoleBorrower,
-		AuthorOrg: service.OrgShort{ID: uuid.New(), Name: "ООО «Альфа»", CountryCode: "RU"},
+		AuthorOrg: lending.OrgShort{ID: uuid.New(), Name: "ООО «Альфа»", CountryCode: "RU"},
 		Text:      "Здравствуйте", IsMine: true, CreatedAt: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC),
 	}
 }
@@ -65,7 +66,7 @@ func messagesPath(offerID uuid.UUID) string {
 
 func TestListMessages(t *testing.T) {
 	t.Run("без параметров — after_id 0, limit 50", func(t *testing.T) {
-		chat := &fakeChat{messages: []service.Message{testMessage()}}
+		chat := &fakeChat{messages: []lending.Message{testMessage()}}
 		srv := newChatServer(t, chat)
 		offerID := uuid.New()
 		resp, body := sessionRequest(t, srv, "lender-verified", "GET", messagesPath(offerID), "", nil)

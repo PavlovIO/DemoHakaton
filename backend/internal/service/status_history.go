@@ -27,9 +27,9 @@ type StatusHistoryWriter interface {
 	CreateStatusHistory(ctx context.Context, arg repository.CreateStatusHistoryParams) (repository.StatusHistory, error)
 }
 
-// recordStatusChange пишет переход. Вызывать только внутри InTx с тем же q, что и сам
+// RecordStatusChange пишет переход. Вызывать только внутри InTx с тем же q, что и сам
 // переход: история атомарна со сменой статуса.
-func recordStatusChange(ctx context.Context, q StatusHistoryWriter, c StatusChange) error {
+func RecordStatusChange(ctx context.Context, q StatusHistoryWriter, c StatusChange) error {
 	arg := repository.CreateStatusHistoryParams{
 		EntityType: c.EntityType,
 		EntityID:   c.EntityID,

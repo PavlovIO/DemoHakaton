@@ -18,12 +18,13 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
 	"github.com/google/uuid"
 )
 
 type fakeAuth struct {
-	session     *service.Session
-	me          *service.Me
+	session     *auth.Session
+	me          *auth.Me
 	principal   *service.Principal
 	registerErr error
 	loginErr    error
@@ -33,11 +34,11 @@ type fakeAuth struct {
 	logoutCalls int
 }
 
-func (f *fakeAuth) Register(context.Context, service.RegisterInput, service.ClientMeta) (*service.Session, error) {
+func (f *fakeAuth) Register(context.Context, auth.RegisterInput, service.ClientMeta) (*auth.Session, error) {
 	return f.session, f.registerErr
 }
 
-func (f *fakeAuth) Login(context.Context, string, string, service.ClientMeta) (*service.Session, error) {
+func (f *fakeAuth) Login(context.Context, string, string, service.ClientMeta) (*auth.Session, error) {
 	f.loginCalls++
 	return f.session, f.loginErr
 }
@@ -47,7 +48,7 @@ func (f *fakeAuth) Logout(context.Context, string) error {
 	return f.logoutErr
 }
 
-func (f *fakeAuth) Me(context.Context, service.Principal) (*service.Me, error) {
+func (f *fakeAuth) Me(context.Context, service.Principal) (*auth.Me, error) {
 	return f.me, f.meErr
 }
 
@@ -70,8 +71,8 @@ func testAuthService() *fakeAuth {
 func authFixture() (*fakeAuth, handler.Deps) {
 	userID := uuid.New()
 	orgID := uuid.New()
-	me := &service.Me{
-		User: service.User{
+	me := &auth.Me{
+		User: auth.User{
 			ID: userID, Email: "user@example.com", Role: "lender",
 			Status: "active", OrganizationID: &orgID, CreatedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 		},
@@ -80,14 +81,14 @@ func authFixture() (*fakeAuth, handler.Deps) {
 			RegistrationNumber: "REG-1", LegalAddress: "Address", KycStatus: "draft",
 		},
 	}
-	auth := &fakeAuth{
+	fake := &fakeAuth{
 		me:        me,
 		principal: &service.Principal{UserID: userID, OrgID: &orgID, Role: "lender"},
-		session: &service.Session{
+		session: &auth.Session{
 			Token: "session-value", CSRFToken: "csrf-value", ExpiresAt: time.Now().Add(time.Hour), Me: me,
 		},
 	}
-	return auth, handler.Deps{Auth: auth, CookieSecure: false}
+	return fake, handler.Deps{Auth: fake, CookieSecure: false}
 }
 
 func request(t *testing.T, server *httptest.Server, method, path, body string, cookies ...*http.Cookie) (*http.Response, []byte) {
@@ -130,7 +131,7 @@ func TestRegisterAndLoginSetSessionCookies(t *testing.T) {
 		{name: "login", method: http.MethodPost, path: "/api/v1/auth/login", body: loginBody, wantStatus: http.StatusOK, wantCalls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			auth, deps := authFixture()
+			fake, deps := authFixture()
 			server := newTestServer(t, deps)
 			resp, body := request(t, server, tc.method, tc.path, tc.body)
 			if resp.StatusCode != tc.wantStatus {
@@ -155,8 +156,8 @@ func TestRegisterAndLoginSetSessionCookies(t *testing.T) {
 			if sessionCookie.Path != "/" || csrfCookie.Path != "/" || sessionCookie.Expires.IsZero() || csrfCookie.Expires.IsZero() {
 				t.Fatalf("cookie attributes: session=%#v csrf=%#v", sessionCookie, csrfCookie)
 			}
-			if auth.loginCalls != tc.wantCalls {
-				t.Fatalf("Login calls = %d, want %d", auth.loginCalls, tc.wantCalls)
+			if fake.loginCalls != tc.wantCalls {
+				t.Fatalf("Login calls = %d, want %d", fake.loginCalls, tc.wantCalls)
 			}
 			var gotMe api.Me
 			if err := json.Unmarshal(body, &gotMe); err != nil {
@@ -171,8 +172,8 @@ func TestRegisterAndLoginSetSessionCookies(t *testing.T) {
 
 func TestAuthErrorsAreMapped(t *testing.T) {
 	t.Run("login unauthorized", func(t *testing.T) {
-		auth, deps := authFixture()
-		auth.loginErr = apperr.Unauthorized("Неверный email или пароль")
+		fake, deps := authFixture()
+		fake.loginErr = apperr.Unauthorized("Неверный email или пароль")
 		server := newTestServer(t, deps)
 		resp, body := request(t, server, http.MethodPost, "/api/v1/auth/login", loginBody)
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -185,8 +186,8 @@ func TestAuthErrorsAreMapped(t *testing.T) {
 	})
 
 	t.Run("login rate limited", func(t *testing.T) {
-		auth, deps := authFixture()
-		auth.loginErr = apperr.RateLimitedAfter(30 * time.Second)
+		fake, deps := authFixture()
+		fake.loginErr = apperr.RateLimitedAfter(30 * time.Second)
 		server := newTestServer(t, deps)
 		resp, body := request(t, server, http.MethodPost, "/api/v1/auth/login", loginBody)
 		if resp.StatusCode != http.StatusTooManyRequests {
@@ -202,8 +203,8 @@ func TestAuthErrorsAreMapped(t *testing.T) {
 	})
 
 	t.Run("register conflict", func(t *testing.T) {
-		auth, deps := authFixture()
-		auth.registerErr = apperr.Conflict("Уже существует")
+		fake, deps := authFixture()
+		fake.registerErr = apperr.Conflict("Уже существует")
 		server := newTestServer(t, deps)
 		resp, body := request(t, server, http.MethodPost, "/api/v1/auth/register", registerBody)
 		if resp.StatusCode != http.StatusConflict {
@@ -216,7 +217,7 @@ func TestAuthErrorsAreMapped(t *testing.T) {
 }
 
 func TestLogoutClearsCookies(t *testing.T) {
-	auth, deps := authFixture()
+	fake, deps := authFixture()
 	server := newTestServer(t, deps)
 	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/logout", nil)
 	if err != nil {
@@ -246,13 +247,13 @@ func TestLogoutClearsCookies(t *testing.T) {
 			t.Errorf("cookie %q MaxAge = %d, want negative", cookie.Name, cookie.MaxAge)
 		}
 	}
-	if auth.logoutCalls != 1 {
-		t.Fatalf("Logout calls = %d, want 1", auth.logoutCalls)
+	if fake.logoutCalls != 1 {
+		t.Fatalf("Logout calls = %d, want 1", fake.logoutCalls)
 	}
 }
 
 func TestGetMeRequiresPrincipalAndMapsAdmin(t *testing.T) {
-	auth, deps := authFixture()
+	fake, deps := authFixture()
 	h := handler.New(deps)
 	_, err := h.GetMe(context.Background(), authapi.GetMeRequestObject{})
 	appErr, ok := apperr.As(err)
@@ -261,8 +262,8 @@ func TestGetMeRequiresPrincipalAndMapsAdmin(t *testing.T) {
 	}
 
 	adminID := uuid.New()
-	auth.principal = &service.Principal{UserID: adminID, Role: "admin"}
-	auth.me = &service.Me{User: service.User{ID: adminID, Email: "admin@example.com", Role: "admin", Status: "active"}}
+	fake.principal = &service.Principal{UserID: adminID, Role: "admin"}
+	fake.me = &auth.Me{User: auth.User{ID: adminID, Email: "admin@example.com", Role: "admin", Status: "active"}}
 	server := newTestServer(t, deps)
 	resp, body := request(t, server, http.MethodGet, "/api/v1/auth/me", "",
 		&http.Cookie{Name: middleware.SessionCookieName, Value: "session-value"},
@@ -276,15 +277,15 @@ func TestGetMeRequiresPrincipalAndMapsAdmin(t *testing.T) {
 }
 
 func TestRouterAuthAndCSRFOrder(t *testing.T) {
-	auth, deps := authFixture()
+	fake, deps := authFixture()
 	server := newTestServer(t, deps)
 
 	resp, body := request(t, server, http.MethodPost, "/api/v1/auth/login", loginBody)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want 200; body: %s", resp.StatusCode, body)
 	}
-	if auth.loginCalls != 1 {
-		t.Fatalf("login calls = %d, want 1", auth.loginCalls)
+	if fake.loginCalls != 1 {
+		t.Fatalf("login calls = %d, want 1", fake.loginCalls)
 	}
 
 	resp, body = request(t, server, http.MethodPost, "/api/v1/auth/logout", "")
@@ -298,14 +299,14 @@ func TestRouterAuthAndCSRFOrder(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("logout without CSRF status = %d, want 403; body: %s", resp.StatusCode, body)
 	}
-	if auth.logoutCalls != 0 {
-		t.Fatalf("Logout calls = %d, want 0", auth.logoutCalls)
+	if fake.logoutCalls != 0 {
+		t.Fatalf("Logout calls = %d, want 0", fake.logoutCalls)
 	}
 }
 
 func TestAuthErrorResponseBodyHasNoRawError(t *testing.T) {
-	auth, deps := authFixture()
-	auth.loginErr = errors.New("database connection detail")
+	fake, deps := authFixture()
+	fake.loginErr = errors.New("database connection detail")
 	server := newTestServer(t, deps)
 	resp, body := request(t, server, http.MethodPost, "/api/v1/auth/login", loginBody)
 	if resp.StatusCode != http.StatusInternalServerError {

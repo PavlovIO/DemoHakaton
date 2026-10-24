@@ -1,7 +1,7 @@
 package handler
 
 // Операции тега offers (offersapi.StrictServerInterface): перевод api ⇄ service.
-// Роль, KYC, видимость и статусы проверяет service.Offers; AcceptOffer — service.Deals
+// Роль, KYC, видимость и статусы проверяет lending.Offers; AcceptOffer — lending.Deals
 // (результат принятия — сделка).
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/offersapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 func (h *Handler) ListApplicationOffers(ctx context.Context, req offersapi.ListApplicationOffersRequestObject) (offersapi.ListApplicationOffersResponseObject, error) {
@@ -35,7 +35,7 @@ func (h *Handler) CreateOffer(ctx context.Context, req offersapi.CreateOfferRequ
 		return nil, err
 	}
 	b := req.Body
-	o, err := h.offers.Create(ctx, p, middleware.ClientMetaFromContext(ctx), req.ApplicationID, service.CreateOfferInput{
+	o, err := h.offers.Create(ctx, p, middleware.ClientMetaFromContext(ctx), req.ApplicationID, lending.CreateOfferInput{
 		Amount:             b.Amount,
 		InterestRateAnnual: b.InterestRateAnnual,
 		FeePercent:         b.FeePercent,
@@ -121,8 +121,8 @@ func (h *Handler) WithdrawOffer(ctx context.Context, req offersapi.WithdrawOffer
 }
 
 // offerFilter — query-параметры списка в фильтр сервиса.
-func offerFilter(q api.ListOffersParams) service.OfferFilter {
-	f := service.OfferFilter{
+func offerFilter(q api.ListOffersParams) lending.OfferFilter {
+	f := lending.OfferFilter{
 		Statuses:      offerStatuses(q.Status),
 		ApplicationID: q.ApplicationID,
 		LenderOrgID:   q.LenderOrganizationID,
@@ -134,16 +134,16 @@ func offerFilter(q api.ListOffersParams) service.OfferFilter {
 	return f
 }
 
-func offerStatuses(in []api.OfferStatus) []service.OfferStatus {
-	out := make([]service.OfferStatus, len(in))
+func offerStatuses(in []api.OfferStatus) []lending.OfferStatus {
+	out := make([]lending.OfferStatus, len(in))
 	for i, s := range in {
-		out[i] = service.OfferStatus(s)
+		out[i] = lending.OfferStatus(s)
 	}
 	return out
 }
 
-func toAPIOffer(o service.Offer) api.Offer {
-	number := service.ApplicationNumber(o.ApplicationNumber)
+func toAPIOffer(o lending.Offer) api.Offer {
+	number := lending.ApplicationNumber(o.ApplicationNumber)
 	out := api.Offer{
 		ID:                 o.ID,
 		ApplicationID:      o.ApplicationID,

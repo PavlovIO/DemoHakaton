@@ -22,6 +22,11 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/auth"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/dictionaries"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/kyc"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/notifications"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
 )
 
@@ -63,26 +68,26 @@ func run(ctx context.Context) error {
 	txManager := service.NewTxManager(pool)
 	// Один ограничитель на процесс: ключи login/register/registry_lookup/chat:send различаются префиксом.
 	limiter := service.NewMemoryRateLimiter()
-	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, limiter, service.DefaultAuthLimits)
+	authService := auth.NewAuth(queries, txManager, cfg.SessionTTL, limiter, auth.DefaultAuthLimits)
 	companyRegistry := registry.NewMock() // в MVP реестр — только мок (DECISIONS п. 17)
 	h := handler.New(handler.Deps{
 		DB:    pool,
-		Dicts: service.NewDictionaries(queries),
-		Auth:  auth,
-		Kyc: service.NewKyc(service.KycDeps{
+		Dicts: dictionaries.NewDictionaries(queries),
+		Auth:  authService,
+		Kyc: kyc.NewKyc(kyc.KycDeps{
 			Store: queries, Tx: txManager, Files: documents,
 			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
 			Verifier: companyRegistry,
 		}),
-		Registry: service.NewRegistry(companyRegistry, limiter),
-		Applications: service.NewApplications(service.ApplicationsDeps{
+		Registry: kyc.NewRegistry(companyRegistry, limiter),
+		Applications: lending.NewApplications(lending.ApplicationsDeps{
 			Store: queries, Tx: txManager,
 			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
 		}),
-		Offers:        service.NewOffers(service.OffersDeps{Store: queries, Tx: txManager}),
-		Deals:         service.NewDeals(service.DealsDeps{Store: queries, Tx: txManager}),
-		Chat:          service.NewChat(service.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
-		Notifications: service.NewNotifications(queries, txManager),
+		Offers:        lending.NewOffers(lending.OffersDeps{Store: queries, Tx: txManager}),
+		Deals:         lending.NewDeals(lending.DealsDeps{Store: queries, Tx: txManager}),
+		Chat:          lending.NewChat(lending.ChatDeps{Store: queries, Tx: txManager, Limiter: limiter}),
+		Notifications: notifications.NewNotifications(queries, txManager),
 		CookieSecure:  cfg.CookieSecure,
 	})
 

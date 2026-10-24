@@ -14,39 +14,40 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 // fakeDeals запоминает, с чем его вызвали, и отдаёт заданную сделку или ошибку.
 type fakeDeals struct {
-	deal       service.Deal
+	deal       lending.Deal
 	err        error
 	gotID      uuid.UUID
-	gotFilter  *service.DealFilter
+	gotFilter  *lending.DealFilter
 	acceptedID uuid.UUID
 }
 
-func (f *fakeDeals) AcceptOffer(_ context.Context, _ service.Principal, _ service.ClientMeta, offerID uuid.UUID) (service.Deal, error) {
+func (f *fakeDeals) AcceptOffer(_ context.Context, _ service.Principal, _ service.ClientMeta, offerID uuid.UUID) (lending.Deal, error) {
 	f.acceptedID = offerID
 	return f.deal, f.err
 }
 
-func (f *fakeDeals) List(_ context.Context, _ service.Principal, filter service.DealFilter) (service.DealPage, error) {
+func (f *fakeDeals) List(_ context.Context, _ service.Principal, filter lending.DealFilter) (lending.DealPage, error) {
 	f.gotFilter = &filter
-	return service.DealPage{Items: []service.Deal{f.deal}, Total: 1, Page: 2, PageSize: 20}, f.err
+	return lending.DealPage{Items: []lending.Deal{f.deal}, Total: 1, Page: 2, PageSize: 20}, f.err
 }
 
-func (f *fakeDeals) Get(_ context.Context, _ service.Principal, id uuid.UUID) (service.Deal, error) {
+func (f *fakeDeals) Get(_ context.Context, _ service.Principal, id uuid.UUID) (lending.Deal, error) {
 	f.gotID = id
 	return f.deal, f.err
 }
 
 // testDeal — сделка из кейса issue: 500 000.00 EUR, комиссия 1 % = 5 000.00.
-func testDeal() service.Deal {
+func testDeal() lending.Deal {
 	fee, feeAmount := decimal.RequireFromString("1.0000"), decimal.RequireFromString("5000.00")
-	return service.Deal{
+	return lending.Deal{
 		ID: uuid.New(), Number: 45, ApplicationID: uuid.New(), OfferID: uuid.New(),
-		Borrower: service.OrgShort{ID: uuid.New(), Name: "ООО «Альфа»", CountryCode: "RU"},
-		Lender:   service.OrgShort{ID: uuid.New(), Name: "Beta Corp Ltd", CountryCode: "CY"},
+		Borrower: lending.OrgShort{ID: uuid.New(), Name: "ООО «Альфа»", CountryCode: "RU"},
+		Lender:   lending.OrgShort{ID: uuid.New(), Name: "Beta Corp Ltd", CountryCode: "CY"},
 		Amount:   decimal.RequireFromString("500000.00"), Currency: "EUR",
 		InterestRateAnnual: decimal.RequireFromString("8.0000"), FeePercent: &fee, FeeAmount: &feeAmount,
 		TermMonths: 12, TargetCountryCode: "DE", TransferMethod: "sepa", RepaymentSchedule: "annuity",

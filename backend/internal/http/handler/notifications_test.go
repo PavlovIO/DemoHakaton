@@ -14,24 +14,25 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/notifications"
 )
 
 // fakeNotifications запоминает аргументы и отдаёт заданную ошибку.
 type fakeNotifications struct {
 	err       error
-	gotFilter *service.NotificationFilter
+	gotFilter *notifications.NotificationFilter
 	gotMarkID int64
 	markedAll bool
 }
 
-func (f *fakeNotifications) List(_ context.Context, _ service.Principal, filter service.NotificationFilter) (service.NotificationPage, error) {
+func (f *fakeNotifications) List(_ context.Context, _ service.Principal, filter notifications.NotificationFilter) (notifications.NotificationPage, error) {
 	f.gotFilter = &filter
 	n := repository.Notification{
 		ID: 7, Type: repository.NotificationTypeOfferReceived, Title: "Новое предложение по заявке APP-000123",
 		EntityType: repository.EntityTypeOffer, EntityID: "0b6f7c4e-0000-4000-8000-000000000001",
 		CreatedAt: pgtype.Timestamptz{Time: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC), Valid: true},
 	}
-	return service.NotificationPage{Items: []repository.Notification{n}, Total: 3, UnreadTotal: 5, Page: 1, PageSize: 2}, f.err
+	return notifications.NotificationPage{Items: []repository.Notification{n}, Total: 3, UnreadTotal: 5, Page: 1, PageSize: 2}, f.err
 }
 
 func (f *fakeNotifications) MarkRead(_ context.Context, _ service.Principal, id int64) error {
@@ -44,25 +45,25 @@ func (f *fakeNotifications) MarkAllRead(context.Context, service.Principal) erro
 	return f.err
 }
 
-func newNotificationsServer(t *testing.T, notifications *fakeNotifications) *httptest.Server {
+func newNotificationsServer(t *testing.T, fake *fakeNotifications) *httptest.Server {
 	t.Helper()
 	fixture, deps := authFixture()
 	deps.Auth = &cookieAuth{fakeAuth: *fixture}
-	deps.Dicts, deps.DB, deps.Notifications = fakeDicts{}, okDB{}, notifications
+	deps.Dicts, deps.DB, deps.Notifications = fakeDicts{}, okDB{}, fake
 	return newTestServer(t, deps)
 }
 
 func TestListNotifications(t *testing.T) {
-	notifications := &fakeNotifications{}
-	srv := newNotificationsServer(t, notifications)
+	fake := &fakeNotifications{}
+	srv := newNotificationsServer(t, fake)
 
 	resp, body := sessionRequest(t, srv, "lender-verified", "GET", "/api/v1/notifications?unread_only=true&page=1&page_size=2", "", nil)
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d; body %s", resp.StatusCode, body)
 	}
-	if f := notifications.gotFilter; f == nil || !f.UnreadOnly || f.Page != 1 || f.PageSize != 2 {
-		t.Fatalf("filter = %+v", notifications.gotFilter)
+	if f := fake.gotFilter; f == nil || !f.UnreadOnly || f.Page != 1 || f.PageSize != 2 {
+		t.Fatalf("filter = %+v", fake.gotFilter)
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -89,13 +90,13 @@ func TestListNotificationsWithoutSession(t *testing.T) {
 
 func TestMarkNotificationRead(t *testing.T) {
 	t.Run("своё — 204", func(t *testing.T) {
-		notifications := &fakeNotifications{}
-		srv := newNotificationsServer(t, notifications)
+		fake := &fakeNotifications{}
+		srv := newNotificationsServer(t, fake)
 
 		resp, body := sessionRequest(t, srv, "borrower-verified", "POST", "/api/v1/notifications/42/read", "", nil)
 
-		if resp.StatusCode != http.StatusNoContent || len(body) != 0 || notifications.gotMarkID != 42 {
-			t.Fatalf("status = %d, id %d; body %s", resp.StatusCode, notifications.gotMarkID, body)
+		if resp.StatusCode != http.StatusNoContent || len(body) != 0 || fake.gotMarkID != 42 {
+			t.Fatalf("status = %d, id %d; body %s", resp.StatusCode, fake.gotMarkID, body)
 		}
 	})
 	t.Run("чужое — 404", func(t *testing.T) {
@@ -116,18 +117,18 @@ func TestMarkNotificationRead(t *testing.T) {
 
 func TestMarkAllNotificationsRead(t *testing.T) {
 	t.Run("204 без тела", func(t *testing.T) {
-		notifications := &fakeNotifications{}
-		srv := newNotificationsServer(t, notifications)
+		fake := &fakeNotifications{}
+		srv := newNotificationsServer(t, fake)
 
 		resp, body := sessionRequest(t, srv, "admin", "POST", "/api/v1/notifications/read-all", "", nil)
 
-		if resp.StatusCode != http.StatusNoContent || len(body) != 0 || !notifications.markedAll {
-			t.Fatalf("status = %d, marked %v; body %s", resp.StatusCode, notifications.markedAll, body)
+		if resp.StatusCode != http.StatusNoContent || len(body) != 0 || !fake.markedAll {
+			t.Fatalf("status = %d, marked %v; body %s", resp.StatusCode, fake.markedAll, body)
 		}
 	})
 	t.Run("без X-CSRF-Token — 403", func(t *testing.T) {
-		notifications := &fakeNotifications{}
-		srv := newNotificationsServer(t, notifications)
+		fake := &fakeNotifications{}
+		srv := newNotificationsServer(t, fake)
 		req, err := http.NewRequest("POST", srv.URL+"/api/v1/notifications/read-all", nil)
 		if err != nil {
 			t.Fatal(err)
@@ -140,8 +141,8 @@ func TestMarkAllNotificationsRead(t *testing.T) {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusForbidden || notifications.markedAll {
-			t.Fatalf("status = %d, marked %v", resp.StatusCode, notifications.markedAll)
+		if resp.StatusCode != http.StatusForbidden || fake.markedAll {
+			t.Fatalf("status = %d, marked %v", resp.StatusCode, fake.markedAll)
 		}
 	})
 }

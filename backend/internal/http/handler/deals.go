@@ -1,14 +1,14 @@
 package handler
 
 // Операции тега deals (dealsapi.StrictServerInterface): перевод api ⇄ service.
-// Видимость (стороны сделки и admin) проверяет service.Deals в SQL.
+// Видимость (стороны сделки и admin) проверяет lending.Deals в SQL.
 
 import (
 	"context"
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/dealsapi"
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 )
 
 func (h *Handler) ListDeals(ctx context.Context, req dealsapi.ListDealsRequestObject) (dealsapi.ListDealsResponseObject, error) {
@@ -41,8 +41,8 @@ func (h *Handler) GetDeal(ctx context.Context, req dealsapi.GetDealRequestObject
 	return dealsapi.GetDeal200JSONResponse(toAPIDeal(d)), nil
 }
 
-func dealFilter(q api.ListDealsParams) service.DealFilter {
-	f := service.DealFilter{
+func dealFilter(q api.ListDealsParams) lending.DealFilter {
+	f := lending.DealFilter{
 		BorrowerOrgID: q.BorrowerOrganizationID,
 		LenderOrgID:   q.LenderOrganizationID,
 		CreatedFrom:   q.CreatedFrom,
@@ -52,12 +52,12 @@ func dealFilter(q api.ListDealsParams) service.DealFilter {
 	return f
 }
 
-func toAPIDeal(d service.Deal) api.Deal {
+func toAPIDeal(d lending.Deal) api.Deal {
 	targetCountry := d.TargetCountryCode
 	transferMethod := api.TransferMethod(d.TransferMethod)
 	return api.Deal{
 		ID:                 d.ID,
-		Number:             service.DealNumber(d.Number),
+		Number:             lending.DealNumber(d.Number),
 		ApplicationID:      d.ApplicationID,
 		OfferID:            d.OfferID,
 		Borrower:           api.OrganizationShort{ID: d.Borrower.ID, Name: d.Borrower.Name, CountryCode: d.Borrower.CountryCode},
