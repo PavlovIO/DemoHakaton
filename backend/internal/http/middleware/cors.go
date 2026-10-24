@@ -10,9 +10,11 @@ import (
 // Что разрешено фронту на другом origin. Методы и заголовки — ровно те, что шлёт SPA:
 // X-CSRF-Token — double-submit, X-Request-ID — сквозной id запроса.
 var (
-	corsAllowMethods    = strings.Join([]string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete}, ", ")
-	corsAllowHeaders    = strings.Join([]string{"Content-Type", CSRFHeaderName, RequestIDHeader}, ", ")
-	corsExposeHeaders   = strings.Join([]string{"Retry-After", RequestIDHeader}, ", ")
+	corsAllowMethods = strings.Join([]string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete}, ", ")
+	corsAllowHeaders = strings.Join([]string{"Content-Type", CSRFHeaderName, RequestIDHeader}, ", ")
+	// Content-Disposition — имя файла у GET /documents/{id}/file: без него фронт на другом
+	// origin не прочитает исходное имя документа.
+	corsExposeHeaders   = strings.Join([]string{"Retry-After", RequestIDHeader, "Content-Disposition"}, ", ")
 	corsPreflightMaxAge = strconv.Itoa(600) // секунд: браузер не повторяет preflight 10 минут
 )
 

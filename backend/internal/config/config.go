@@ -122,10 +122,16 @@ func parseOrigins(raw string) ([]string, error) {
 		origin := strings.TrimSpace(item)
 		u, err := url.Parse(origin)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
-			u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			u.Path != "" || u.RawQuery != "" || u.ForceQuery || strings.Contains(origin, "#") || u.User != nil {
 			return nil, fmt.Errorf("want scheme://host[:port], got %q", origin)
 		}
-		origins = append(origins, origin)
+		// Браузер сериализует Origin в нижнем регистре и без порта по умолчанию:
+		// «https://App.example.com:443» иначе никогда не совпало бы.
+		host := strings.ToLower(u.Host)
+		if port := u.Port(); (u.Scheme == "http" && port == "80") || (u.Scheme == "https" && port == "443") {
+			host = strings.TrimSuffix(host, ":"+port)
+		}
+		origins = append(origins, u.Scheme+"://"+host)
 	}
 	return origins, nil
 }

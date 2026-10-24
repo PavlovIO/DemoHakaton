@@ -42,6 +42,9 @@ func TestCSRFOnBusinessEndpoint(t *testing.T) {
 				if resp.StatusCode != tc.wantStatus {
 					t.Fatalf("status = %d, want %d; body %s", resp.StatusCode, tc.wantStatus, body)
 				}
+				if tc.method == http.MethodPost && !fake.markedAll {
+					t.Fatal("MarkAllRead not called with valid CSRF token")
+				}
 				return
 			}
 			wantError(t, resp, body, http.StatusForbidden, "CSRF_INVALID", "")

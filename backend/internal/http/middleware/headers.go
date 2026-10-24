@@ -1,6 +1,9 @@
 package middleware
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 // hstsValue — год, с поддоменами, без preload: preload-список не откатить быстро.
 const hstsValue = "max-age=31536000; includeSubDomains"
@@ -26,5 +29,7 @@ func SecurityHeaders() func(http.Handler) http.Handler {
 
 // isHTTPS — запрос пришёл по TLS напрямую или через терминирующий TLS прокси.
 func isHTTPS(r *http.Request) bool {
-	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	// Цепочка прокси шлёт «https, http»: схема клиента — первое значение.
+	proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")
+	return r.TLS != nil || strings.EqualFold(strings.TrimSpace(proto), "https")
 }

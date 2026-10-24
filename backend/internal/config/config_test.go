@@ -92,12 +92,13 @@ func TestLoadCORSAllowedOrigins(t *testing.T) {
 
 	cfg, err = load(env(map[string]string{
 		"DATABASE_URL":         "postgres://x",
-		"CORS_ALLOWED_ORIGINS": "http://localhost:5173, https://app.example.com",
+		"CORS_ALLOWED_ORIGINS": "http://localhost:5173, https://app.example.com, HTTPS://Admin.Example.com:443",
 	}))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	want := []string{"http://localhost:5173", "https://app.example.com"}
+	// Как браузер шлёт Origin: нижний регистр, без порта по умолчанию.
+	want := []string{"http://localhost:5173", "https://app.example.com", "https://admin.example.com"}
 	if strings.Join(cfg.CORSAllowedOrigins, "|") != strings.Join(want, "|") {
 		t.Fatalf("CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
 	}
@@ -111,6 +112,8 @@ func TestLoadRejectsInvalidCORSOrigins(t *testing.T) {
 		"http://localhost:5173/",
 		"http://localhost:5173/app",
 		"https://app.example.com?x=1",
+		"https://app.example.com?",
+		"https://app.example.com#",
 		"*",
 		"ftp://files.example.com",
 	} {
