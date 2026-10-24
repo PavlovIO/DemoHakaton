@@ -71,6 +71,10 @@ func (f *fakeKyc) DeleteDocument(_ context.Context, _ service.Principal, id uuid
 	return f.err
 }
 
+func (f *fakeKyc) SubmitKyc(context.Context, service.Principal, service.ClientMeta) (service.OrganizationProfile, error) {
+	return f.profile, f.err
+}
+
 func (f *fakeKyc) OpenDocument(context.Context, service.Principal, service.ClientMeta, uuid.UUID) (service.DocumentFile, error) {
 	return f.file, f.err
 }
@@ -321,6 +325,23 @@ func TestMyDocumentsHandlers(t *testing.T) {
 		if resp.StatusCode != http.StatusNoContent || kyc.deletedID != id {
 			t.Fatalf("status = %d, deleted %s; body %s", resp.StatusCode, kyc.deletedID, raw)
 		}
+	})
+}
+
+func TestSubmitKYCHandler(t *testing.T) {
+	t.Run("200 — профиль в under_review", func(t *testing.T) {
+		profile := testProfile()
+		profile.Org.KycStatus = "under_review"
+		resp, raw := borrowerRequest(t, newKycServer(t, &fakeKyc{profile: profile}), http.MethodPost, "/api/v1/organizations/me/kyc/submit", "")
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"kyc_status":"under_review"`) {
+			t.Fatalf("status = %d; body %s", resp.StatusCode, raw)
+		}
+	})
+
+	t.Run("нет документов — 400 с details", func(t *testing.T) {
+		kyc := &fakeKyc{err: apperr.Validation("нет", apperr.FieldError{Field: "documents", Message: "нет документа: charter"})}
+		resp, raw := borrowerRequest(t, newKycServer(t, kyc), http.MethodPost, "/api/v1/organizations/me/kyc/submit", "")
+		wantError(t, resp, raw, 400, "VALIDATION_ERROR", "documents")
 	})
 }
 

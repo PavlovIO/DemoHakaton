@@ -74,27 +74,36 @@ type DocumentFiles interface {
 
 // KycDeps — зависимости сервиса KYC.
 type KycDeps struct {
-	Store KycStore
-	Tx    KycTx
-	Files DocumentFiles
+	Store    KycStore
+	Tx       KycTx
+	Files    DocumentFiles
+	Screener OrgScreener     // обязателен: без AML submitKyc не проходит
+	Verifier CompanyVerifier // nil — сверка с реестром не подключена (BE-06)
 }
 
 // Kyc — профиль компании, бенефициары, KYC-документы и отправка на проверку.
 type Kyc struct {
-	store KycStore
-	tx    KycTx
-	files DocumentFiles
+	store    KycStore
+	tx       KycTx
+	files    DocumentFiles
+	screener OrgScreener
+	verifier CompanyVerifier
+	notifier Notifier
 }
 
 // NewKyc создаёт сервис KYC.
 func NewKyc(d KycDeps) *Kyc {
-	return &Kyc{store: d.Store, tx: d.Tx, files: d.Files}
+	return &Kyc{store: d.Store, tx: d.Tx, files: d.Files, screener: d.Screener, verifier: d.Verifier}
 }
 
 // ownOrganization — организация заёмщика или кредитора. Роль проверяет и middleware
 // (x-roles), здесь — защита в глубину: у admin организации нет.
 func ownOrganization(p Principal) (uuid.UUID, error) {
-	if p.OrgID == nil || (p.Role != string(repository.UserRoleBorrower) && p.Role != string(repository.UserRoleLender)) {
+	if err := p.RequireRole(repository.UserRoleBorrower, repository.UserRoleLender); err != nil {
+		return uuid.Nil, err
+	}
+	// users_admin_org_chk гарантирует организацию у borrower/lender; nil здесь — битый principal.
+	if p.OrgID == nil {
 		return uuid.Nil, apperr.Forbidden("Операция доступна только заёмщику и кредитору")
 	}
 	return *p.OrgID, nil

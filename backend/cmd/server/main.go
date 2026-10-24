@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/config"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
@@ -61,10 +62,14 @@ func run(ctx context.Context) error {
 	txManager := service.NewTxManager(pool)
 	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, service.NewMemoryRateLimiter(), service.DefaultAuthLimits)
 	h := handler.New(handler.Deps{
-		DB:           pool,
-		Dicts:        service.NewDictionaries(queries),
-		Auth:         auth,
-		Kyc:          service.NewKyc(service.KycDeps{Store: queries, Tx: txManager, Files: documents}),
+		DB:    pool,
+		Dicts: service.NewDictionaries(queries),
+		Auth:  auth,
+		Kyc: service.NewKyc(service.KycDeps{
+			Store: queries, Tx: txManager, Files: documents,
+			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
+			Verifier: nil,                // сверку с реестром подключает BE-06: registry.New(cfg)
+		}),
 		CookieSecure: cfg.CookieSecure,
 	})
 

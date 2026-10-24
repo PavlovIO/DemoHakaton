@@ -60,6 +60,36 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	return i, err
 }
 
+const createNotificationsForAdmins = `-- name: CreateNotificationsForAdmins :execrows
+INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
+SELECT u.id, $1::notification_type, $2::text,
+       $3::entity_type, $4::text
+FROM users u
+WHERE u.role = 'admin' AND u.status = 'active'
+`
+
+type CreateNotificationsForAdminsParams struct {
+	Type       NotificationType `json:"type"`
+	Title      string           `json:"title"`
+	EntityType EntityType       `json:"entity_type"`
+	EntityID   string           `json:"entity_id"`
+}
+
+// Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
+// в INSERT … SELECT sqlc не выводит тип параметра из колонки.
+func (q *Queries) CreateNotificationsForAdmins(ctx context.Context, arg CreateNotificationsForAdminsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createNotificationsForAdmins,
+		arg.Type,
+		arg.Title,
+		arg.EntityType,
+		arg.EntityID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listNotifications = `-- name: ListNotifications :many
 SELECT id, user_id, type, title, entity_type, entity_id, is_read, created_at FROM notifications
 WHERE user_id = $1

@@ -202,6 +202,39 @@ func (q *Queries) GetTopSupplyCountries(ctx context.Context, limit int32) ([]Get
 	return items, nil
 }
 
+const hasSimilarAmlFlag = `-- name: HasSimilarAmlFlag :one
+SELECT EXISTS (
+    SELECT 1 FROM aml_flags
+    WHERE organization_id = $1::uuid
+      AND application_id IS NOT DISTINCT FROM $2::uuid
+      AND rule = $3::aml_rule
+      AND details = $4::text
+      AND status IN ('open', 'false_positive')
+)
+`
+
+type HasSimilarAmlFlagParams struct {
+	OrganizationID uuid.UUID   `json:"organization_id"`
+	ApplicationID  pgtype.UUID `json:"application_id"`
+	Rule           AmlRule     `json:"rule"`
+	Details        string      `json:"details"`
+}
+
+// Дедупликация находок (BE-13): у той же компании и заявки уже есть флаг с тем же правилом
+// и текстом в статусе open или false_positive. Повторный submit после rejected не плодит
+// копии, а закрытое как ложное срабатывание не всплывает снова; confirmed создаётся заново.
+func (q *Queries) HasSimilarAmlFlag(ctx context.Context, arg HasSimilarAmlFlagParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasSimilarAmlFlag,
+		arg.OrganizationID,
+		arg.ApplicationID,
+		arg.Rule,
+		arg.Details,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listAmlFlags = `-- name: ListAmlFlags :many
 SELECT id, organization_id, application_id, rule, severity, details, status, resolved_by_user_id, resolution_comment, created_at, resolved_at FROM aml_flags
 WHERE ($3::aml_flag_status IS NULL OR status = $3::aml_flag_status)

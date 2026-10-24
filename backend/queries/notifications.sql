@@ -3,6 +3,15 @@ INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
+-- name: CreateNotificationsForAdmins :execrows
+-- Уведомление каждому активному админу (BE-11, шаг 1). Явные ::type обязательны:
+-- в INSERT … SELECT sqlc не выводит тип параметра из колонки.
+INSERT INTO notifications (user_id, type, title, entity_type, entity_id)
+SELECT u.id, sqlc.arg('type')::notification_type, sqlc.arg('title')::text,
+       sqlc.arg('entity_type')::entity_type, sqlc.arg('entity_id')::text
+FROM users u
+WHERE u.role = 'admin' AND u.status = 'active';
+
 -- name: ListNotifications :many
 SELECT * FROM notifications
 WHERE user_id = $1
