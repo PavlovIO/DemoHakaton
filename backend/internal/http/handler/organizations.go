@@ -15,6 +15,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/organizationsapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 )
@@ -252,6 +253,37 @@ func (h *Handler) SubmitKYC(ctx context.Context, _ organizationsapi.SubmitKYCReq
 	return organizationsapi.SubmitKYC200JSONResponse(profileToAPI(profile)), nil
 }
 
-func (h *Handler) RegistryLookup(context.Context, organizationsapi.RegistryLookupRequestObject) (organizationsapi.RegistryLookupResponseObject, error) {
-	return nil, apperr.NotImplemented("registryLookup")
+// RegistryLookup ищет компанию в реестре для автозаполнения формы регистрации.
+// Маршрут публичный (security: []); лимиты частоты — в service.Registry.
+func (h *Handler) RegistryLookup(ctx context.Context, req organizationsapi.RegistryLookupRequestObject) (organizationsapi.RegistryLookupResponseObject, error) {
+	result, err := h.registry.Lookup(ctx, middleware.ClientMetaFromContext(ctx), req.Params.CountryCode, req.Params.Number)
+	if err != nil {
+		return nil, err
+	}
+	return organizationsapi.RegistryLookup200JSONResponse(registryResultToAPI(result)), nil
+}
+
+// registryResultToAPI: при found=false поля компании — null, checked_at есть всегда.
+func registryResultToAPI(r registry.Result) api.RegistryLookupResult {
+	checkedAt := r.CheckedAt
+	out := api.RegistryLookupResult{
+		Source:    api.RegistryLookupResultSource(r.Source),
+		Found:     r.Found,
+		CheckedAt: &checkedAt,
+	}
+	if !r.Found {
+		return out
+	}
+	out.Name = optionalString(r.Name)
+	out.RegistrationNumber = optionalString(r.RegistrationNumber)
+	out.LegalAddress = optionalString(r.LegalAddress)
+	out.RegistryStatus = optionalString(r.Status)
+	return out
+}
+
+func optionalString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

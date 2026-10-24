@@ -19,6 +19,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/aml"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/config"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
@@ -60,7 +61,10 @@ func run(ctx context.Context) error {
 
 	queries := repository.New(pool)
 	txManager := service.NewTxManager(pool)
-	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, service.NewMemoryRateLimiter(), service.DefaultAuthLimits)
+	// Один ограничитель на процесс: ключи login/register/registry_lookup различаются префиксом.
+	limiter := service.NewMemoryRateLimiter()
+	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, limiter, service.DefaultAuthLimits)
+	companyRegistry := registry.NewMock() // в MVP реестр — только мок (DECISIONS п. 17)
 	h := handler.New(handler.Deps{
 		DB:    pool,
 		Dicts: service.NewDictionaries(queries),
@@ -68,8 +72,9 @@ func run(ctx context.Context) error {
 		Kyc: service.NewKyc(service.KycDeps{
 			Store: queries, Tx: txManager, Files: documents,
 			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
-			Verifier: nil,                // сверку с реестром подключает BE-06: registry.New(cfg)
+			Verifier: companyRegistry,
 		}),
+		Registry:     service.NewRegistry(companyRegistry, limiter),
 		CookieSecure: cfg.CookieSecure,
 	})
 

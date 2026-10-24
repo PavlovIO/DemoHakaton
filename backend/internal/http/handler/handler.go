@@ -41,6 +41,7 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/offersapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/organizationsapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/systemapi"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/registry"
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 )
@@ -67,6 +68,11 @@ type AuthService interface {
 	Authenticate(ctx context.Context, token string) (*service.Principal, error)
 }
 
+// RegistryService — публичный поиск компании в реестре (service.Registry).
+type RegistryService interface {
+	Lookup(ctx context.Context, meta service.ClientMeta, countryCode, number string) (registry.Result, error)
+}
+
 // KycService — профиль компании, бенефициары, KYC-документы (service.Kyc).
 type KycService interface {
 	MyOrganization(ctx context.Context, p service.Principal) (service.OrganizationProfile, error)
@@ -84,6 +90,7 @@ type Deps struct {
 	Dicts        DictionaryService
 	Auth         AuthService
 	Kyc          KycService
+	Registry     RegistryService
 	CookieSecure bool
 }
 
@@ -93,6 +100,7 @@ type Handler struct {
 	dicts        DictionaryService
 	auth         AuthService
 	kyc          KycService
+	registry     RegistryService
 	cookieSecure bool
 }
 
@@ -111,5 +119,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, cookieSecure: d.CookieSecure}
 }
