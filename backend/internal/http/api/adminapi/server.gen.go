@@ -1663,6 +1663,20 @@ func (response AdminBlockUser200JSONResponse) VisitAdminBlockUserResponse(w http
 	return err
 }
 
+type AdminBlockUser400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AdminBlockUser400JSONResponse) VisitAdminBlockUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminBlockUser401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response AdminBlockUser401JSONResponse) VisitAdminBlockUserResponse(w http.ResponseWriter) error {

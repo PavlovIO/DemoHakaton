@@ -157,7 +157,7 @@ paths:
         - admin
   /admin/organizations/{organizationId}/kyc/approve:
     post:
-      description: 409, если у компании есть открытые AML-флаги с severity=high.
+      description: 409 `CONFLICT` — у компании есть открытые AML-флаги с severity=high; 409 `INVALID_STATUS_TRANSITION` — компания не в статусе under_review.
       operationId: adminApproveKyc
       parameters:
         - $ref: '#/components/parameters/OrganizationId'
@@ -320,6 +320,7 @@ paths:
         - admin
   /admin/users/{userId}/block:
     post:
+      description: 403 `FORBIDDEN` — нельзя заблокировать администратора, в том числе себя. Повторная блокировка идемпотентна.
       operationId: adminBlockUser
       parameters:
         - $ref: '#/components/parameters/UserId'
@@ -336,6 +337,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/User'
           description: OK
+        "400":
+          $ref: '#/components/responses/BadRequest'
         "401":
           $ref: '#/components/responses/Unauthorized'
         "403":

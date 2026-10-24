@@ -59,7 +59,9 @@ paths:
       operationId: adminApproveKyc
       x-roles: [admin]
       summary: Верифицировать компанию (under_review → verified)
-      description: 409, если у компании есть открытые AML-флаги с severity=high.
+      description: >-
+        409 `CONFLICT` — у компании есть открытые AML-флаги с severity=high;
+        409 `INVALID_STATUS_TRANSITION` — компания не в статусе under_review.
       parameters:
         - $ref: '../components.yaml#/components/parameters/OrganizationId'
       requestBody:
@@ -186,6 +188,9 @@ paths:
       operationId: adminBlockUser
       x-roles: [admin]
       summary: Заблокировать пользователя (инвалидирует все его сессии)
+      description: >-
+        403 `FORBIDDEN` — нельзя заблокировать администратора, в том числе себя.
+        Повторная блокировка идемпотентна.
       parameters:
         - $ref: '../components.yaml#/components/parameters/UserId'
       requestBody:
@@ -199,6 +204,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '../schemas/auth.yaml#/components/schemas/User' }
+        '400': { $ref: '../components.yaml#/components/responses/BadRequest' }
         '401': { $ref: '../components.yaml#/components/responses/Unauthorized' }
         '403': { $ref: '../components.yaml#/components/responses/Forbidden' }
         '404': { $ref: '../components.yaml#/components/responses/NotFound' }
