@@ -35,10 +35,12 @@ erDiagram
 
 | Запрос | Тип | Что делает |
 |---|---|---|
+| `LockOfferChat` | `:exec` | `pg_advisory_xact_lock` на чат оффера перед `CreateMessage` |
 | `CreateMessage` | `:one` | Отправка сообщения |
-| `ListMessages` | `:many` | Сообщения оффера с `id > after_id`, по возрастанию, с лимитом |
+| `ListMessagesVisible` | `:many` | Сообщения оффера с `id > after_id`, по возрастанию, с лимитом; с ролью и компанией автора. Правило видимости оффера — в `WHERE` (`viewer_role`/`viewer_org`), как у `*OffersVisible` |
 
 Замечания:
 - Непрочитанные (чужие сообщения после указателя из `message_reads`) считает подзапрос `unread_messages` в `GetOfferVisible`, `ListOffersVisible`, `ListApplicationOffersVisible` ([`offers`](offers.md)).
-- `ListMessages` с `after_id = 0` вернёт **первые** сообщения по возрастанию, а не последние, как сказано в комментарии к запросу. Для «последних N» нужен отдельный запрос с `ORDER BY id DESC`.
-- Доступ к чату (пользователь — заёмщик заявки или кредитор оффера) проверяет сервис.
+- `ListMessagesVisible` с `after_id = 0` возвращает **первые** (самые старые) сообщения. Для «последних N» нужен отдельный запрос с `ORDER BY id DESC` — в MVP не делаем (DECISIONS п. 15).
+- `id` из IDENTITY выдаётся до коммита, поэтому без блокировки сообщение с меньшим `id` может закоммититься позже большего, и polling по `id > after_id` его пропустит. `LockOfferChat` в транзакции отправки упорядочивает коммиты сообщений одного оффера по `id`.
+- `CreateMessage` не проверяет доступ: сервис сначала читает оффер через `GetOfferVisible` в той же транзакции.

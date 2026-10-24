@@ -19,7 +19,7 @@
 | [offers](offers.md) | маркетплейс | `uuid` | `Offer` | `offers.sql` | 10 |
 | [deals](deals.md) | маркетплейс | `uuid` | `Deal` | `deals.sql` | 4 |
 | [messages](messages.md) | чат | `bigint` | `Message` | `chat.sql` | 3 |
-| [message_reads](message_reads.md) | чат | `(offer_id, user_id)` | `MessageRead` | `chat.sql` | 1 (+ чтение в `CountUnreadMessages`) |
+| [message_reads](message_reads.md) | чат | `(offer_id, user_id)` | `MessageRead` | `chat.sql` | 1 (+ чтение в `*OffersVisible`) |
 | [notifications](notifications.md) | служебные | `bigint` | `Notification` | `notifications.sql` | 5 |
 | [status_history](status_history.md) | служебные | `bigint` | `StatusHistory` | `applications.sql` | 1 (только запись) |
 | [aml_flags](aml_flags.md) | AML | `bigint` | `AmlFlag` | `admin.sql` | 3 |
