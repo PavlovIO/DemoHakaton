@@ -80,6 +80,7 @@ func run(ctx context.Context) error {
 			Screener: aml.NoopScreener{}, // правила подключает BE-13: aml.NewRuleScreener
 		}),
 		Offers:       service.NewOffers(service.OffersDeps{Store: queries, Tx: txManager}),
+		Deals:        service.NewDeals(service.DealsDeps{Store: queries, Tx: txManager}),
 		CookieSecure: cfg.CookieSecure,
 	})
 

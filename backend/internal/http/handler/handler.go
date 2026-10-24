@@ -106,6 +106,13 @@ type OfferService interface {
 	Withdraw(ctx context.Context, p service.Principal, meta service.ClientMeta, id uuid.UUID) (service.Offer, error)
 }
 
+// DealService — сделки: принятие оффера, список, карточка (service.Deals).
+type DealService interface {
+	AcceptOffer(ctx context.Context, p service.Principal, meta service.ClientMeta, offerID uuid.UUID) (service.Deal, error)
+	List(ctx context.Context, p service.Principal, f service.DealFilter) (service.DealPage, error)
+	Get(ctx context.Context, p service.Principal, id uuid.UUID) (service.Deal, error)
+}
+
 // Deps — всё, от чего зависят хендлеры. Новые сервисы добавляются сюда.
 type Deps struct {
 	DB           Pinger
@@ -115,6 +122,7 @@ type Deps struct {
 	Registry     RegistryService
 	Applications ApplicationService
 	Offers       OfferService
+	Deals        DealService
 	CookieSecure bool
 }
 
@@ -127,6 +135,7 @@ type Handler struct {
 	registry     RegistryService
 	applications ApplicationService
 	offers       OfferService
+	deals        DealService
 	cookieSecure bool
 }
 
@@ -145,5 +154,5 @@ var (
 )
 
 func New(d Deps) *Handler {
-	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, cookieSecure: d.CookieSecure}
+	return &Handler{db: d.DB, dicts: d.Dicts, auth: d.Auth, kyc: d.Kyc, registry: d.Registry, applications: d.Applications, offers: d.Offers, deals: d.Deals, cookieSecure: d.CookieSecure}
 }

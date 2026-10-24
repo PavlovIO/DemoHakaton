@@ -1,12 +1,12 @@
 package handler
 
 // Операции тега offers (offersapi.StrictServerInterface): перевод api ⇄ service.
-// Роль, KYC, видимость и статусы проверяет service.Offers. AcceptOffer — заглушка до BE-09.
+// Роль, KYC, видимость и статусы проверяет service.Offers; AcceptOffer — service.Deals
+// (результат принятия — сделка).
 
 import (
 	"context"
 
-	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api/offersapi"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/middleware"
@@ -80,8 +80,16 @@ func (h *Handler) GetOffer(ctx context.Context, req offersapi.GetOfferRequestObj
 	return offersapi.GetOffer200JSONResponse(toAPIOffer(o)), nil
 }
 
-func (h *Handler) AcceptOffer(context.Context, offersapi.AcceptOfferRequestObject) (offersapi.AcceptOfferResponseObject, error) {
-	return nil, apperr.NotImplemented("acceptOffer")
+func (h *Handler) AcceptOffer(ctx context.Context, req offersapi.AcceptOfferRequestObject) (offersapi.AcceptOfferResponseObject, error) {
+	p, err := currentPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d, err := h.deals.AcceptOffer(ctx, p, middleware.ClientMetaFromContext(ctx), req.OfferID)
+	if err != nil {
+		return nil, err
+	}
+	return offersapi.AcceptOffer200JSONResponse(toAPIDeal(d)), nil
 }
 
 func (h *Handler) RejectOffer(ctx context.Context, req offersapi.RejectOfferRequestObject) (offersapi.RejectOfferResponseObject, error) {
