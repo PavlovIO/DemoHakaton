@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countNotifications = `-- name: CountNotifications :one
+SELECT count(*) FROM notifications
+WHERE user_id = $1
+  AND ($2::boolean IS NOT TRUE OR is_read = false)
+`
+
+type CountNotificationsParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	UnreadOnly pgtype.Bool `json:"unread_only"`
+}
+
+// Тот же WHERE, что у ListNotifications: total страницы.
+func (q *Queries) CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countNotifications, arg.UserID, arg.UnreadOnly)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUnreadNotifications = `-- name: CountUnreadNotifications :one
 SELECT count(*) FROM notifications
 WHERE user_id = $1 AND is_read = false
@@ -125,7 +144,7 @@ const listNotifications = `-- name: ListNotifications :many
 SELECT id, user_id, type, title, entity_type, entity_id, is_read, created_at FROM notifications
 WHERE user_id = $1
   AND ($4::boolean IS NOT TRUE OR is_read = false)
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT $2 OFFSET $3
 `
 
@@ -136,6 +155,7 @@ type ListNotificationsParams struct {
 	UnreadOnly pgtype.Bool `json:"unread_only"`
 }
 
+// id DESC — тай-брейк: уведомления одной транзакции получают одинаковый now().
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error) {
 	rows, err := q.db.Query(ctx, listNotifications,
 		arg.UserID,
@@ -181,7 +201,7 @@ func (q *Queries) MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID
 	return err
 }
 
-const markNotificationRead = `-- name: MarkNotificationRead :exec
+const markNotificationRead = `-- name: MarkNotificationRead :execrows
 UPDATE notifications
 SET is_read = true
 WHERE id = $1 AND user_id = $2
@@ -192,7 +212,11 @@ type MarkNotificationReadParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
-func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error {
-	_, err := q.db.Exec(ctx, markNotificationRead, arg.ID, arg.UserID)
-	return err
+// 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).
+func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markNotificationRead, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

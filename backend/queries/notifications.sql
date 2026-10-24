@@ -24,14 +24,22 @@ WHERE u.organization_id = sqlc.arg('organization_id')::uuid AND u.status = 'acti
 SELECT * FROM notifications
 WHERE user_id = $1
   AND (sqlc.narg('unread_only')::boolean IS NOT TRUE OR is_read = false)
-ORDER BY created_at DESC
+-- id DESC — тай-брейк: уведомления одной транзакции получают одинаковый now().
+ORDER BY created_at DESC, id DESC
 LIMIT $2 OFFSET $3;
 
 -- name: CountUnreadNotifications :one
 SELECT count(*) FROM notifications
 WHERE user_id = $1 AND is_read = false;
 
--- name: MarkNotificationRead :exec
+-- name: CountNotifications :one
+-- Тот же WHERE, что у ListNotifications: total страницы.
+SELECT count(*) FROM notifications
+WHERE user_id = $1
+  AND (sqlc.narg('unread_only')::boolean IS NOT TRUE OR is_read = false);
+
+-- name: MarkNotificationRead :execrows
+-- 0 строк — чужое или несуществующее уведомление (сервис отвечает 404).
 UPDATE notifications
 SET is_read = true
 WHERE id = $1 AND user_id = $2;
