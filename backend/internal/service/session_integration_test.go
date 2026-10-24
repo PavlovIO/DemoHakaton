@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"testing"
 	"time"
 
@@ -16,38 +17,25 @@ import (
 // одобрение KYC действует со следующего запроса. У admin организации нет — LEFT JOIN,
 // иначе админ не смог бы войти.
 func TestSessionKycStatusIntegration(t *testing.T) {
-	pool := newPool(t)
 	ctx := context.Background()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	tx := beginTestTx(t)
 	q := repository.New(tx)
 
 	var orgID uuid.UUID
-	err = tx.QueryRow(ctx, `INSERT INTO organizations
+	err := tx.QueryRow(ctx, `INSERT INTO organizations
 			(type, name, country_code, registration_number, legal_address, kyc_status, verified_at)
 		VALUES ('borrower', 'Session KYC', 'RU', $1, 'Адрес', 'verified', now()) RETURNING id`,
-		uuid.NewString()[:20]).Scan(&orgID)
+		uniqueRegistrationNumber()).Scan(&orgID)
 	if err != nil {
 		t.Fatalf("organization: %v", err)
 	}
 	newUser := func(role repository.UserRole, org *uuid.UUID) uuid.UUID {
-		t.Helper()
-		var id uuid.UUID
-		err := tx.QueryRow(ctx, `INSERT INTO users (email, password_hash, role, organization_id)
-			VALUES ($1, 'x', $2, $3) RETURNING id`,
-			"session-"+uuid.NewString()+"@example.test", role, org).Scan(&id)
-		if err != nil {
-			t.Fatalf("user %s: %v", role, err)
-		}
-		return id
+		return insertTestUser(ctx, t, tx, role, org)
 	}
 	newSession := func(userID uuid.UUID) []byte {
 		t.Helper()
-		hash := make([]byte, 32)
-		_, _ = rand.Read(hash)
+		hash := make([]byte, sha256.Size) // как sha256(cookie) в service.Auth
+		_, _ = rand.Read(hash)            // с Go 1.24 ошибка всегда nil
 		_, err := q.CreateSession(ctx, repository.CreateSessionParams{
 			TokenHash: hash,
 			UserID:    userID,
