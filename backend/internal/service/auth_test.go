@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	service "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -28,6 +31,8 @@ type fakeAuthStore struct {
 	lastLogin map[uuid.UUID]bool
 	audit     []repository.CreateAuditLogParams
 	auditErr  error
+	// sessionErr — ошибка CreateSession (проверка отката Login).
+	sessionErr error
 }
 
 func newFakeAuthStore() *fakeAuthStore {
@@ -57,7 +62,7 @@ func (s *fakeAuthStore) GetUserByID(ctx context.Context, id uuid.UUID) (reposito
 
 func (s *fakeAuthStore) CreateUser(ctx context.Context, arg repository.CreateUserParams) (repository.CreateUserRow, error) {
 	if _, exists := s.users[arg.Email]; exists {
-		return repository.CreateUserRow{}, apperr.Wrap(apperr.CodeConflict, "duplicate email", errors.New("duplicate email"))
+		return repository.CreateUserRow{}, &pgconn.PgError{Code: "23505", ConstraintName: "users_email_key"}
 	}
 	id := uuid.New()
 	now := time.Now()
@@ -77,7 +82,7 @@ func (s *fakeAuthStore) CreateUser(ctx context.Context, arg repository.CreateUse
 func (s *fakeAuthStore) CreateOrganization(ctx context.Context, arg repository.CreateOrganizationParams) (repository.Organization, error) {
 	for _, o := range s.orgs {
 		if o.RegistrationNumber == arg.RegistrationNumber {
-			return repository.Organization{}, apperr.Wrap(apperr.CodeConflict, "duplicate registration number", errors.New("duplicate registration number"))
+			return repository.Organization{}, &pgconn.PgError{Code: "23505", ConstraintName: "organizations_regnum_uq"}
 		}
 	}
 	id := uuid.New()
@@ -111,6 +116,9 @@ func (s *fakeAuthStore) UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 }
 
 func (s *fakeAuthStore) CreateSession(ctx context.Context, arg repository.CreateSessionParams) (repository.CreateSessionRow, error) {
+	if s.sessionErr != nil {
+		return repository.CreateSessionRow{}, s.sessionErr
+	}
 	var user repository.User
 	for _, u := range s.users {
 		if u.ID == arg.UserID {
@@ -161,13 +169,29 @@ func (s *fakeAuthStore) DeleteSessionByTokenHash(ctx context.Context, tokenHash 
 	return nil
 }
 
-// fakeAuthTx симулирует транзакцию и вызывает callback сразу на заглушке хранилища.
+// fakeAuthTx симулирует транзакцию: callback работает на заглушке хранилища,
+// при ошибке её состояние откатывается к снимку до вызова.
 type fakeAuthTx struct {
 	store *fakeAuthStore
 }
 
 func (tx *fakeAuthTx) InTx(ctx context.Context, fn func(q repository.Querier) error) error {
-	return fn(tx.store)
+	s := tx.store
+	users, orgs, sessions := maps.Clone(s.users), maps.Clone(s.orgs), maps.Clone(s.sessions)
+	lastLogin, audit := maps.Clone(s.lastLogin), slices.Clone(s.audit)
+	if err := fn(s); err != nil {
+		s.users, s.orgs, s.sessions, s.lastLogin, s.audit = users, orgs, sessions, lastLogin, audit
+		return err
+	}
+	return nil
+}
+
+func newTestAuth(store *fakeAuthStore) *service.Auth {
+	return newTestAuthWithLimiter(store, service.NewMemoryRateLimiter())
+}
+
+func newTestAuthWithLimiter(store *fakeAuthStore, limiter service.RateLimiter) *service.Auth {
+	return service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour, limiter, service.DefaultAuthLimits)
 }
 
 func hashOfToken(token string) []byte {
@@ -192,7 +216,7 @@ func TestAuthRegister(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newFakeAuthStore()
-			auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+			auth := newTestAuth(store)
 			session, err := auth.Register(context.Background(), tc.input, service.ClientMeta{UserAgent: "ua"})
 			if tc.wantErr {
 				if err == nil {
@@ -218,21 +242,36 @@ func TestAuthRegister(t *testing.T) {
 
 	t.Run("duplicate email conflict", func(t *testing.T) {
 		store := newFakeAuthStore()
-		auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+		auth := newTestAuth(store)
 		_, err := auth.Register(context.Background(), service.RegisterInput{Email: "dup@example.com", Password: "1234567890", Role: "borrower", Org: service.RegisterOrganizationInput{Name: "A", CountryCode: "RU", RegistrationNumber: "dup-1", LegalAddress: "addr"}}, service.ClientMeta{})
 		if err != nil {
 			t.Fatalf("first registration error = %v", err)
 		}
 		_, err = auth.Register(context.Background(), service.RegisterInput{Email: "dup@example.com", Password: "1234567890", Role: "lender", Org: service.RegisterOrganizationInput{Name: "B", CountryCode: "US", RegistrationNumber: "dup-2", LegalAddress: "addr"}}, service.ClientMeta{})
 		appErr, ok := apperr.As(err)
-		if !ok || appErr.Code != apperr.CodeConflict {
-			t.Fatalf("second registration err = %v, want conflict", err)
+		if !ok || appErr.Code != apperr.CodeConflict || appErr.Message != "Пользователь с таким email уже существует" {
+			t.Fatalf("second registration err = %v, want conflict about email", err)
+		}
+	})
+
+	t.Run("duplicate registration number conflict", func(t *testing.T) {
+		store := newFakeAuthStore()
+		auth := newTestAuth(store)
+		in := service.RegisterInput{Email: "a@example.com", Password: "1234567890", Role: "borrower", Org: service.RegisterOrganizationInput{Name: "A", CountryCode: "RU", RegistrationNumber: "same", LegalAddress: "addr"}}
+		if _, err := auth.Register(context.Background(), in, service.ClientMeta{}); err != nil {
+			t.Fatalf("first registration error = %v", err)
+		}
+		in.Email = "b@example.com"
+		_, err := auth.Register(context.Background(), in, service.ClientMeta{})
+		appErr, ok := apperr.As(err)
+		if !ok || appErr.Code != apperr.CodeConflict || appErr.Message != "Организация с таким номером уже зарегистрирована" {
+			t.Fatalf("second registration err = %v, want conflict about organization", err)
 		}
 	})
 
 	t.Run("session stores hash and role", func(t *testing.T) {
 		store := newFakeAuthStore()
-		auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+		auth := newTestAuth(store)
 		input := service.RegisterInput{Email: "role@example.com", Password: "1234567890", Role: "lender", Org: service.RegisterOrganizationInput{Name: "Org", CountryCode: "US", RegistrationNumber: "reg-1", LegalAddress: "addr"}}
 		session, err := auth.Register(context.Background(), input, service.ClientMeta{UserAgent: "ua"})
 		if err != nil {
@@ -258,7 +297,7 @@ func TestAuthRegister(t *testing.T) {
 
 func TestAuthLogin(t *testing.T) {
 	store := newFakeAuthStore()
-	auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+	auth := newTestAuth(store)
 	const (
 		email    = "login@example.com"
 		password = "secretPassword1"
@@ -355,7 +394,7 @@ func TestAuthLoginAudit(t *testing.T) {
 				Role:         repository.UserRoleBorrower,
 				Status:       tc.status,
 			}
-			auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+			auth := newTestAuth(store)
 
 			session, loginErr := auth.Login(context.Background(), tc.loginEmail, tc.loginPassword, meta)
 			if tc.wantErrCode == "" {
@@ -417,14 +456,16 @@ func TestAuthLoginAudit(t *testing.T) {
 		})
 	}
 
-	t.Run("audit failures do not change login result", func(t *testing.T) {
+	// auth.login пишется в транзакции входа: его сбой откатывает вход.
+	// auth.login_failed — best-effort: сбой записи не меняет ответ.
+	t.Run("audit failures", func(t *testing.T) {
 		for _, tc := range []struct {
 			name          string
 			loginPassword string
-			wantSuccess   bool
+			wantCode      apperr.Code
 		}{
-			{name: "success", loginPassword: password, wantSuccess: true},
-			{name: "bad password", loginPassword: "incorrect-password"},
+			{name: "success rolls back", loginPassword: password, wantCode: apperr.CodeInternal},
+			{name: "bad password", loginPassword: "incorrect-password", wantCode: apperr.CodeUnauthorized},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				store := newFakeAuthStore()
@@ -437,18 +478,14 @@ func TestAuthLoginAudit(t *testing.T) {
 					Status:       repository.UserStatusActive,
 				}
 				store.auditErr = errors.New("audit storage unavailable")
-				auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+				auth := newTestAuth(store)
 
 				session, loginErr := auth.Login(context.Background(), email, tc.loginPassword, meta)
-				if tc.wantSuccess {
-					if loginErr != nil || session == nil {
-						t.Fatalf("Login() = (%v, %v), want successful session", session, loginErr)
-					}
-					return
+				if session != nil || apperr.CodeOf(loginErr) != tc.wantCode {
+					t.Fatalf("Login() = (%v, %v), want error with code %s", session, loginErr, tc.wantCode)
 				}
-				appErr, ok := apperr.As(loginErr)
-				if !ok || appErr.Code != apperr.CodeUnauthorized {
-					t.Fatalf("Login() error = %v, want unauthorized", loginErr)
+				if len(store.sessions) != 0 || store.lastLogin[userID] {
+					t.Fatalf("failed login left state: sessions=%d lastLogin=%v", len(store.sessions), store.lastLogin[userID])
 				}
 			})
 		}
@@ -457,7 +494,7 @@ func TestAuthLoginAudit(t *testing.T) {
 
 func TestAuthAuthenticateAndLogout(t *testing.T) {
 	store := newFakeAuthStore()
-	auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+	auth := newTestAuth(store)
 	session, err := auth.Register(context.Background(), service.RegisterInput{Email: "auth@example.com", Password: "1234567890", Role: "lender", Org: service.RegisterOrganizationInput{Name: "Org", CountryCode: "US", RegistrationNumber: "auth-reg", LegalAddress: "Address"}}, service.ClientMeta{UserAgent: "ua"})
 	if err != nil {
 		t.Fatalf("Register() err = %v", err)
@@ -494,7 +531,7 @@ func TestAuthAuthenticateAndLogout(t *testing.T) {
 
 func TestAuthMe(t *testing.T) {
 	store := newFakeAuthStore()
-	auth := service.NewAuth(store, &fakeAuthTx{store: store}, time.Hour)
+	auth := newTestAuth(store)
 	session, err := auth.Register(context.Background(), service.RegisterInput{Email: "me@example.com", Password: "1234567890", Role: "borrower", Org: service.RegisterOrganizationInput{Name: "Org", CountryCode: "RU", RegistrationNumber: "me-reg", LegalAddress: "Address"}}, service.ClientMeta{})
 	if err != nil {
 		t.Fatalf("Register() err = %v", err)

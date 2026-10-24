@@ -17,6 +17,7 @@ import (
 	repository "github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -103,25 +104,67 @@ type AuthTx interface {
 	InTx(ctx context.Context, fn func(q repository.Querier) error) error
 }
 
+// AuthLimits — лимиты попыток входа и регистрации (скользящее окно).
+type AuthLimits struct {
+	LoginPerEmail  int // попыток на один email за LoginWindow; успешный вход сбрасывает счётчик
+	LoginPerIP     int // попыток с одного IP за LoginWindow
+	LoginWindow    time.Duration
+	RegisterPerIP  int // регистраций с одного IP за RegisterWindow
+	RegisterWindow time.Duration
+}
+
+// DefaultAuthLimits — лимиты из плана BE-03.
+var DefaultAuthLimits = AuthLimits{
+	LoginPerEmail:  10,
+	LoginPerIP:     50,
+	LoginWindow:    15 * time.Minute,
+	RegisterPerIP:  10,
+	RegisterWindow: time.Hour,
+}
+
 // Auth содержит зависимости аутентификации и TTL сессии.
 type Auth struct {
 	store        AuthStore
 	tx           AuthTx
 	sessionTTL   time.Duration
+	limiter      RateLimiter
+	limits       AuthLimits
 	fakePassword string
 }
 
 // NewAuth создаёт сервис аутентификации.
-func NewAuth(store AuthStore, tx AuthTx, sessionTTL time.Duration) *Auth {
+func NewAuth(store AuthStore, tx AuthTx, sessionTTL time.Duration, limiter RateLimiter, limits AuthLimits) *Auth {
+	if limiter == nil {
+		panic("service: nil rate limiter")
+	}
 	hash, err := HashPassword(context.Background(), "auth-dummy-guard")
 	if err != nil {
 		panic(err)
 	}
-	return &Auth{store: store, tx: tx, sessionTTL: sessionTTL, fakePassword: hash}
+	return &Auth{store: store, tx: tx, sessionTTL: sessionTTL, limiter: limiter, limits: limits, fakePassword: hash}
+}
+
+// allow проверяет лимит до любой работы с паролем: иначе поток запросов занимает
+// слоты argon2id (password.go) и ставит в очередь логины настоящих пользователей.
+func (a *Auth) allow(key string, limit int, window time.Duration) error {
+	if retryAfter, ok := a.limiter.Allow(key, limit, window); !ok {
+		return apperr.RateLimitedAfter(retryAfter)
+	}
+	return nil
+}
+
+func clientIPKey(meta ClientMeta) string {
+	if meta.IP == nil {
+		return "unknown"
+	}
+	return meta.IP.String()
 }
 
 // Register регистрирует нового пользователя и сразу создаёт активную сессию.
 func (a *Auth) Register(ctx context.Context, in RegisterInput, meta ClientMeta) (*Session, error) {
+	if err := a.allow("register:ip:"+clientIPKey(meta), a.limits.RegisterPerIP, a.limits.RegisterWindow); err != nil {
+		return nil, err
+	}
 	email := normalizeEmail(in.Email)
 	if err := ValidatePassword(in.Password); err != nil {
 		return nil, err
@@ -170,7 +213,7 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput, meta ClientMeta) 
 			LegalAddress:       strings.TrimSpace(in.Org.LegalAddress),
 		})
 		if err != nil {
-			return mapConflict(err, "Организация уже существует")
+			return mapConflict(err)
 		}
 
 		userRow, err := q.CreateUser(ctx, repository.CreateUserParams{
@@ -180,7 +223,7 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput, meta ClientMeta) 
 			OrganizationID: uuidToPgUUID(org.ID),
 		})
 		if err != nil {
-			return mapConflict(err, "Пользователь уже существует")
+			return mapConflict(err)
 		}
 
 		token, csrfToken, expiresAt, err := a.newSession()
@@ -224,8 +267,19 @@ func (a *Auth) Register(ctx context.Context, in RegisterInput, meta ClientMeta) 
 }
 
 // Login выполняет вход по email и паролю с защитой от тайминг-атак.
+//
+// Каждая попытка учитывается в лимитах на IP и на email; успешный вход сбрасывает
+// счётчик email, так что по email фактически считаются неудачные попытки.
 func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMeta) (*Session, error) {
 	normalizedEmail := normalizeEmail(email)
+	if err := a.allow("login:ip:"+clientIPKey(meta), a.limits.LoginPerIP, a.limits.LoginWindow); err != nil {
+		return nil, err
+	}
+	emailKey := "login:email:" + normalizedEmail
+	if err := a.allow(emailKey, a.limits.LoginPerEmail, a.limits.LoginWindow); err != nil {
+		return nil, err
+	}
+
 	userRow, err := a.store.GetUserByEmail(ctx, normalizedEmail)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -234,7 +288,7 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 		if _, verifyErr := VerifyPassword(ctx, password, a.fakePassword); verifyErr != nil {
 			return nil, verifyErr
 		}
-		a.audit(ctx, nil, "auth.login_failed", "unknown_email", meta)
+		a.auditFailure(ctx, nil, "unknown_email", meta)
 		return nil, apperr.Unauthorized("Неверный email или пароль")
 	}
 
@@ -244,17 +298,13 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 	}
 	if !ok {
 		userID := userRow.ID
-		a.audit(ctx, &userID, "auth.login_failed", "bad_password", meta)
+		a.auditFailure(ctx, &userID, "bad_password", meta)
 		return nil, apperr.Unauthorized("Неверный email или пароль")
 	}
 	if userRow.Status == repository.UserStatusBlocked {
 		userID := userRow.ID
-		a.audit(ctx, &userID, "auth.login_failed", "blocked", meta)
+		a.auditFailure(ctx, &userID, "blocked", meta)
 		return nil, apperr.Forbidden("Аккаунт заблокирован")
-	}
-
-	if err := a.store.UpdateLastLogin(ctx, userRow.ID); err != nil {
-		return nil, err
 	}
 
 	token, csrfToken, expiresAt, err := a.newSession()
@@ -262,18 +312,29 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 		return nil, err
 	}
 
-	_, err = a.store.CreateSession(ctx, repository.CreateSessionParams{
-		TokenHash: hashToken(token),
-		UserID:    userRow.ID,
-		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
-		Ip:        meta.IP,
-		UserAgent: pgtype.Text{String: meta.UserAgent, Valid: meta.UserAgent != ""},
+	// last_login_at, сессия и аудит входа — одна транзакция: если что-то упало,
+	// клиент получает ошибку и в БД не остаётся живой сессии.
+	userID := userRow.ID
+	err = a.tx.InTx(ctx, func(q repository.Querier) error {
+		if err := q.UpdateLastLogin(ctx, userID); err != nil {
+			return err
+		}
+		if _, err := q.CreateSession(ctx, repository.CreateSessionParams{
+			TokenHash: hashToken(token),
+			UserID:    userID,
+			ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+			Ip:        meta.IP,
+			UserAgent: pgtype.Text{String: meta.UserAgent, Valid: meta.UserAgent != ""},
+		}); err != nil {
+			return err
+		}
+		_, err := q.CreateAuditLog(ctx, auditParams(&userID, "auth.login", "", meta))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	userID := userRow.ID
-	a.audit(ctx, &userID, "auth.login", "", meta)
+	a.limiter.Reset(emailKey)
 
 	me := &Me{User: userFromRepositoryUser(userRow)}
 	if userRow.OrganizationID.Valid {
@@ -288,16 +349,20 @@ func (a *Auth) Login(ctx context.Context, email, password string, meta ClientMet
 	return &Session{Token: token, CSRFToken: csrfToken, ExpiresAt: expiresAt, Me: me}, nil
 }
 
-func (a *Auth) audit(ctx context.Context, userID *uuid.UUID, action, reason string, meta ClientMeta) {
-	fields := make(map[string]string)
+// auditFailure пишет auth.login_failed best-effort: транзакции нет, ошибка записи
+// только логируется и не меняет ответ клиенту.
+func (a *Auth) auditFailure(ctx context.Context, userID *uuid.UUID, reason string, meta ClientMeta) {
+	if _, err := a.store.CreateAuditLog(ctx, auditParams(userID, "auth.login_failed", reason, meta)); err != nil {
+		slog.Warn("audit write failed", "action", "auth.login_failed", "err", err)
+	}
+}
+
+func auditParams(userID *uuid.UUID, action, reason string, meta ClientMeta) repository.CreateAuditLogParams {
+	fields := map[string]string{}
 	if reason != "" {
 		fields["reason"] = reason
 	}
-	metaJSON, err := json.Marshal(fields)
-	if err != nil {
-		slog.Warn("audit write failed", "action", action, "err", err)
-		return
-	}
+	metaJSON, _ := json.Marshal(fields) // map[string]string сериализуется всегда
 
 	arg := repository.CreateAuditLogParams{
 		Action:    action,
@@ -310,9 +375,7 @@ func (a *Auth) audit(ctx context.Context, userID *uuid.UUID, action, reason stri
 		arg.EntityType = repository.NullEntityType{EntityType: repository.EntityTypeUser, Valid: true}
 		arg.EntityID = pgtype.Text{String: userID.String(), Valid: true}
 	}
-	if _, err := a.store.CreateAuditLog(ctx, arg); err != nil {
-		slog.Warn("audit write failed", "action", action, "err", err)
-	}
+	return arg
 }
 
 // Authenticate возвращает Principal по токену сессии.
@@ -401,18 +464,29 @@ func uuidToPgUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
-func mapConflict(err error, fallback string) error {
-	if err == nil {
-		return nil
+// Уникальные ограничения из migrations/00001_init.sql, которые может нарушить регистрация.
+const (
+	constraintUserEmail = "users_email_key"
+	constraintOrgRegnum = "organizations_regnum_uq"
+	constraintOrgLEI    = "organizations_lei_uq"
+)
+
+// mapConflict переводит нарушение уникальности при регистрации в 409 с текстом,
+// по которому пользователь поймёт, что именно занято. Остальное — через pgerr.Map.
+func mapConflict(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		switch pgErr.ConstraintName {
+		case constraintUserEmail:
+			return apperr.Wrap(apperr.CodeConflict, "Пользователь с таким email уже существует", err)
+		case constraintOrgRegnum, constraintOrgLEI:
+			return apperr.Wrap(apperr.CodeConflict, "Организация с таким номером уже зарегистрирована", err)
+		}
 	}
-	if e, ok := apperr.As(err); ok {
-		return e
-	}
-	mapped := pgerr.Map(err, fallback)
-	if mapped == nil {
+	if _, ok := apperr.As(err); ok {
 		return err
 	}
-	return mapped
+	return pgerr.Map(err, "Запись не найдена")
 }
 
 func userFromRepositoryUser(u repository.User) User {

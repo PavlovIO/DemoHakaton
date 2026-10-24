@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,24 +17,42 @@ func TestMemoryRateLimiterSlidingWindow(t *testing.T) {
 
 	for _, elapsed := range []time.Duration{0, time.Minute, 2 * time.Minute} {
 		now = start.Add(elapsed)
-		if retryAfter, allowed := limiter.Check("login", 3, window); !allowed || retryAfter != 0 {
-			t.Fatalf("Check before hit = (%s, %v), want (0, true)", retryAfter, allowed)
+		if retryAfter, ok := limiter.Allow("login", 3, window); !ok || retryAfter != 0 {
+			t.Fatalf("Allow under limit = (%s, %v), want (0, true)", retryAfter, ok)
 		}
-		limiter.Hit("login", window)
 	}
 
 	now = start.Add(3 * time.Minute)
-	if retryAfter, allowed := limiter.Check("login", 3, window); allowed || retryAfter != 12*time.Minute {
-		t.Fatalf("Check at limit = (%s, %v), want (12m, false)", retryAfter, allowed)
+	if retryAfter, ok := limiter.Allow("login", 3, window); ok || retryAfter != 12*time.Minute {
+		t.Fatalf("Allow at limit = (%s, %v), want (12m, false)", retryAfter, ok)
 	}
 
 	now = start.Add(15 * time.Minute)
-	if retryAfter, allowed := limiter.Check("login", 3, window); allowed || retryAfter != time.Millisecond {
-		t.Fatalf("Check at expiration boundary = (%s, %v), want (1ms, false)", retryAfter, allowed)
+	if retryAfter, ok := limiter.Allow("login", 3, window); ok || retryAfter != time.Millisecond {
+		t.Fatalf("Allow at expiration boundary = (%s, %v), want (1ms, false)", retryAfter, ok)
 	}
 	now = start.Add(15*time.Minute + time.Millisecond)
-	if retryAfter, allowed := limiter.Check("login", 3, window); !allowed || retryAfter != 0 {
-		t.Fatalf("Check after expiration = (%s, %v), want (0, true)", retryAfter, allowed)
+	if retryAfter, ok := limiter.Allow("login", 3, window); !ok || retryAfter != 0 {
+		t.Fatalf("Allow after expiration = (%s, %v), want (0, true)", retryAfter, ok)
+	}
+}
+
+func TestMemoryRateLimiterDeniedAttemptIsNotRecorded(t *testing.T) {
+	start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	now := start
+	limiter := service.NewMemoryRateLimiterWithClock(func() time.Time { return now })
+
+	limiter.Allow("key", 1, time.Minute)
+	for range 5 {
+		now = now.Add(10 * time.Second)
+		if _, ok := limiter.Allow("key", 1, time.Minute); ok {
+			t.Fatal("Allow over limit returned ok")
+		}
+	}
+	// Отказы не продлевают блокировку: слот освобождается через окно от первой попытки.
+	now = start.Add(time.Minute + time.Millisecond)
+	if _, ok := limiter.Allow("key", 1, time.Minute); !ok {
+		t.Fatal("denied attempts extended the window")
 	}
 }
 
@@ -41,21 +60,21 @@ func TestMemoryRateLimiterResetAndIndependentKeys(t *testing.T) {
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	limiter := service.NewMemoryRateLimiterWithClock(func() time.Time { return now })
 	window := time.Minute
-	limiter.Hit("first", window)
-	limiter.Hit("second", window)
+	limiter.Allow("first", 1, window)
+	limiter.Allow("second", 2, window)
 
-	if _, allowed := limiter.Check("first", 1, window); allowed {
+	if _, ok := limiter.Allow("first", 1, window); ok {
 		t.Fatal("first key allowed after reaching its limit")
 	}
-	if _, allowed := limiter.Check("second", 2, window); !allowed {
+	if _, ok := limiter.Allow("second", 2, window); !ok {
 		t.Fatal("second key was affected by the first key")
 	}
 
 	limiter.Reset("first")
-	if _, allowed := limiter.Check("first", 1, window); !allowed {
+	if _, ok := limiter.Allow("first", 1, window); !ok {
 		t.Fatal("first key remains limited after Reset")
 	}
-	if _, allowed := limiter.Check("second", 1, window); allowed {
+	if _, ok := limiter.Allow("second", 2, window); ok {
 		t.Fatal("Reset of first key affected second key")
 	}
 }
@@ -65,48 +84,59 @@ func TestMemoryRateLimiterDisabledLimit(t *testing.T) {
 		return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	})
 	for _, limit := range []int{0, -1} {
-		if retryAfter, allowed := limiter.Check("key", limit, time.Minute); !allowed || retryAfter != 0 {
-			t.Errorf("Check(limit=%d) = (%s, %v), want (0, true)", limit, retryAfter, allowed)
+		if retryAfter, ok := limiter.Allow("key", limit, time.Minute); !ok || retryAfter != 0 {
+			t.Errorf("Allow(limit=%d) = (%s, %v), want (0, true)", limit, retryAfter, ok)
 		}
+	}
+	if got := limiter.Len(); got != 0 {
+		t.Fatalf("Len() after disabled-limit calls = %d, want 0", got)
 	}
 }
 
-func TestMemoryRateLimiterConcurrentHits(t *testing.T) {
+// Проверка и запись атомарны: из 100 одновременных попыток с limit=10 проходят ровно 10.
+func TestMemoryRateLimiterConcurrentAllow(t *testing.T) {
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	limiter := service.NewMemoryRateLimiterWithClock(func() time.Time { return now })
-	const hits = 100
+	const attempts, limit = 100, 10
+	var allowed atomic.Int32
 	var wg sync.WaitGroup
-	wg.Add(hits)
-	for range hits {
+	wg.Add(attempts)
+	for range attempts {
 		go func() {
 			defer wg.Done()
-			limiter.Hit("shared", time.Hour)
+			if _, ok := limiter.Allow("shared", limit, time.Hour); ok {
+				allowed.Add(1)
+			}
 		}()
 	}
 	wg.Wait()
 
-	if _, allowed := limiter.Check("shared", hits, time.Hour); allowed {
-		t.Fatal("limit 100 allowed after 100 concurrent hits")
-	}
-	if _, allowed := limiter.Check("shared", hits+1, time.Hour); !allowed {
-		t.Fatal("limit 101 denied after 100 concurrent hits")
+	if got := allowed.Load(); got != limit {
+		t.Fatalf("allowed = %d, want %d", got, limit)
 	}
 }
 
-func TestMemoryRateLimiterCleansExpiredKeys(t *testing.T) {
+func TestMemoryRateLimiterSweepsExpiredKeys(t *testing.T) {
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	limiter := service.NewMemoryRateLimiterWithClock(func() time.Time { return now })
-	window := time.Minute
-	for i := 0; i <= 10000; i++ {
-		limiter.Hit(string(rune(i+1)), window)
+	window := 30 * time.Second
+	for i := range 100 {
+		limiter.Allow(string(rune(i+1)), 1, window)
 	}
-	if got := limiter.Len(); got != 10001 {
-		t.Fatalf("Len() before expiration = %d, want 10001", got)
+	if got := limiter.Len(); got != 100 {
+		t.Fatalf("Len() before expiration = %d, want 100", got)
 	}
 
-	now = now.Add(window + time.Millisecond)
-	limiter.Hit("fresh", window)
+	// Окна истекли, но интервал чистки ещё нет — ключи лежат.
+	now = now.Add(window + time.Second)
+	limiter.Allow("fresh", 1, window)
+	if got := limiter.Len(); got != 101 {
+		t.Fatalf("Len() before sweep interval = %d, want 101", got)
+	}
+
+	now = now.Add(time.Minute)
+	limiter.Allow("fresh2", 1, window)
 	if got := limiter.Len(); got != 1 {
-		t.Fatalf("Len() after expired-key cleanup = %d, want 1", got)
+		t.Fatalf("Len() after sweep = %d, want 1", got)
 	}
 }

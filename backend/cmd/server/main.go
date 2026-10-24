@@ -52,7 +52,7 @@ func run(ctx context.Context) error {
 
 	queries := repository.New(pool)
 	txManager := service.NewTxManager(pool)
-	auth := service.NewAuth(queries, txManager, cfg.SessionTTL)
+	auth := service.NewAuth(queries, txManager, cfg.SessionTTL, service.NewMemoryRateLimiter(), service.DefaultAuthLimits)
 	h := handler.New(handler.Deps{
 		DB:           pool,
 		Dicts:        service.NewDictionaries(queries),
