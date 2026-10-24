@@ -164,6 +164,17 @@ jobs:
       # Без -short: интеграционные тесты идут против Postgres из services.
       - name: go test
         run: go -C backend test -race -count=1 ./...
+      # Демо-сид (BE-16) — как make seed-demo, но psql раннера вместо docker exec. После
+      # тестов: TestSeedDemoVariantA/B применяют оба варианта в откатываемой транзакции и
+      # нужны БД без сида (вариант A на заселённой пропускается). Этот шаг ловит то, что
+      # тест не видит: применение psql-ом одной транзакцией. Файлы документов не копируются —
+      # тесты к ним не обращаются.
+      - name: seed
+        run: >-
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction
+          -f backend/migrations/testdata/seed_demo_common.sql
+          -f backend/migrations/testdata/seed_demo_b.sql
+          -f backend/migrations/testdata/seed_demo_kyc.sql
 
   build:
     needs: [lint, gen-check, test]
