@@ -56,6 +56,10 @@ type fakeAppStore struct {
 	beforeAccept  func(*repository.Offer)
 	listDealsArg  *repository.ListDealsVisibleParams
 	countDealsArg *repository.CountDealsVisibleParams
+	// Чат — chat_test.go.
+	messages  []repository.Message
+	authors   map[uuid.UUID]service.Principal // автор сообщения → роль и организация
+	readMarks []repository.MarkMessagesReadParams
 }
 
 func newFakeAppStore() *fakeAppStore {
