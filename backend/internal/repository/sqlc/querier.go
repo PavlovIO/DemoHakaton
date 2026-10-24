@@ -23,7 +23,6 @@ type Querier interface {
 	CountDealsVisible(ctx context.Context, arg CountDealsVisibleParams) (int64, error)
 	CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error)
 	CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error)
-	CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	CreateAmlFlag(ctx context.Context, arg CreateAmlFlagParams) (AmlFlag, error)
@@ -70,8 +69,9 @@ type Querier interface {
 	GetLatestRegistryCheck(ctx context.Context, organizationID pgtype.UUID) (RegistryCheck, error)
 	// Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
 	// свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
-	// EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
-	GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (Offer, error)
+	// Правило и колонки совпадают с ListOffersVisible и ListApplicationOffersVisible.
+	// borrower_organization_id — получатель уведомлений о судьбе оффера (BE-08, BE-10).
+	GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (GetOfferVisibleRow, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
 	// Блокирует строку организации до конца транзакции: правка профиля, загрузка и удаление
 	// документа и submit KYC сериализуются, и проверка статуса в сервисе не устаревает.
@@ -91,6 +91,9 @@ type Querier interface {
 	// История заявки и её офферов. Доступ к заявке проверяется до вызова (GetApplicationVisible);
 	// фильтр по офферам не даёт кредитору увидеть историю чужих офферов.
 	ListApplicationHistory(ctx context.Context, arg ListApplicationHistoryParams) ([]StatusHistory, error)
+	// Офферы заявки глазами зрителя: кредитор видит только свой (DECISIONS п. 11), заёмщик-
+	// владелец и admin — все. Без пагинации: контракт отдаёт массив.
+	ListApplicationOffersVisible(ctx context.Context, arg ListApplicationOffersVisibleParams) ([]ListApplicationOffersVisibleRow, error)
 	// Видимость — на обязательных arg (как в GetApplicationVisible); бизнес-фильтры — narg:
 	// они только сужают выборку и не могут её открыть.
 	ListApplicationsVisible(ctx context.Context, arg ListApplicationsVisibleParams) ([]ListApplicationsVisibleRow, error)
@@ -105,9 +108,8 @@ type Querier interface {
 	// Для polling используем after_id. Если передать 0, вернет последние сообщения.
 	ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
-	ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error)
 	// Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
-	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]Offer, error)
+	ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error)
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)
 	ListTransferMethods(ctx context.Context) ([]TransferMethod, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
@@ -115,15 +117,19 @@ type Querier interface {
 	// Чужая и несуществующая — 0 строк → 404. Порядок блокировок: сначала заявка, потом её
 	// офферы — так же в acceptOffer (BE-09), иначе cancel и accept ловят deadlock.
 	LockApplicationForBorrower(ctx context.Context, arg LockApplicationForBorrowerParams) (Application, error)
+	// FOR SHARE на заявку при создании оффера: конфликтует с FOR UPDATE из cancel, reject-offers
+	// (BE-07) и accept (BE-09) — оффер не появится на заявке, которую в этот момент отменяют или
+	// принимают. Условие совпадает с видимостью заявки для lender в GetApplicationVisible:
+	// невидимая — 0 строк → 404. Порядок блокировок общий: сначала заявка, потом офферы.
+	LockApplicationForLender(ctx context.Context, arg LockApplicationForLenderParams) (LockApplicationForLenderRow, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) error
 	// Upsert: обновляем last_read_message_id, только если новое значение больше старого
 	MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
 	RejectApplication(ctx context.Context, arg RejectApplicationParams) (Application, error)
 	RejectKyc(ctx context.Context, arg RejectKycParams) (RejectKycRow, error)
+	// 0 строк после проверки статуса в сервисе — гонка с другим решением → 409.
 	RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error)
-	// Вызывать внутри транзакции после AcceptOffer
-	RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error
 	// Каскадное отклонение активных офферов заявки (cancel, reject-offers; BE-09 — после AcceptOffer).
 	// Вызывать после LockApplicationForBorrower в той же транзакции: сначала заявка, потом офферы.
 	// RETURNING — для истории офферов и уведомлений их кредиторам.
@@ -140,7 +146,7 @@ type Querier interface {
 	// lei: NULL — не трогать, пустая строка — очистить (DECISIONS п. 7), иначе — записать.
 	// Охрана статуса в WHERE — вторая линия после блокировки и проверки в сервисе.
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
-	WithdrawOffer(ctx context.Context, id uuid.UUID) (Offer, error)
+	WithdrawOffer(ctx context.Context, arg WithdrawOfferParams) (Offer, error)
 }
 
 var _ Querier = (*Queries)(nil)

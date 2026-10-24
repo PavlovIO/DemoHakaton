@@ -48,35 +48,48 @@ func (q *Queries) AcceptOffer(ctx context.Context, id uuid.UUID) (Offer, error) 
 }
 
 const countOffersVisible = `-- name: CountOffersVisible :one
-SELECT count(*) FROM offers
-WHERE
-  -- Блок видимости — символ в символ как в GetOfferVisible (sqlc не умеет общие фрагменты).
-  (
+SELECT count(*)
+FROM offers o
+JOIN applications a ON a.id = o.application_id
+WHERE true
+  AND (
        $1::user_role = 'admin'
     OR ($1::user_role = 'lender'
-        AND lender_organization_id = $2::uuid)
+        AND o.lender_organization_id = $2::uuid)
     OR ($1::user_role = 'borrower'
-        AND EXISTS (SELECT 1 FROM applications a
-                     WHERE a.id = offers.application_id
-                       AND a.borrower_organization_id = $2::uuid))
+        AND a.borrower_organization_id = $2::uuid)
   )
-  AND ($3::uuid IS NULL OR application_id = $3::uuid)
-  AND ($4::offer_status[] IS NULL OR status = ANY($4::offer_status[]))
+  -- text[], а не offer_status[]: pgx не знает OID массива enum (как в ListApplicationsVisible).
+  AND ($3::text[] IS NULL OR o.status = ANY(CAST($3::text[] AS offer_status[])))
+  AND ($4::uuid IS NULL OR o.application_id = $4::uuid)
+  -- Сервис передаёт только для admin.
+  AND ($5::uuid IS NULL OR o.lender_organization_id = $5::uuid)
+  AND ($6::uuid IS NULL OR a.borrower_organization_id = $6::uuid)
+  AND ($7::timestamptz IS NULL OR o.created_at >= $7::timestamptz)
+  AND ($8::timestamptz IS NULL OR o.created_at < $8::timestamptz)
 `
 
 type CountOffersVisibleParams struct {
-	ViewerRole    UserRole      `json:"viewer_role"`
-	ViewerOrg     uuid.UUID     `json:"viewer_org"`
-	ApplicationID pgtype.UUID   `json:"application_id"`
-	Statuses      []OfferStatus `json:"statuses"`
+	ViewerRole        UserRole           `json:"viewer_role"`
+	ViewerOrg         uuid.UUID          `json:"viewer_org"`
+	Statuses          []string           `json:"statuses"`
+	ApplicationID     pgtype.UUID        `json:"application_id"`
+	LenderOrgFilter   pgtype.UUID        `json:"lender_org_filter"`
+	BorrowerOrgFilter pgtype.UUID        `json:"borrower_org_filter"`
+	CreatedFrom       pgtype.Timestamptz `json:"created_from"`
+	CreatedTo         pgtype.Timestamptz `json:"created_to"`
 }
 
 func (q *Queries) CountOffersVisible(ctx context.Context, arg CountOffersVisibleParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countOffersVisible,
 		arg.ViewerRole,
 		arg.ViewerOrg,
-		arg.ApplicationID,
 		arg.Statuses,
+		arg.ApplicationID,
+		arg.LenderOrgFilter,
+		arg.BorrowerOrgFilter,
+		arg.CreatedFrom,
+		arg.CreatedTo,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -145,92 +158,173 @@ func (q *Queries) CreateOffer(ctx context.Context, arg CreateOfferParams) (Offer
 }
 
 const getOfferVisible = `-- name: GetOfferVisible :one
-SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers
-WHERE offers.id = $1
+SELECT o.id, o.application_id, o.lender_organization_id, o.created_by_user_id, o.status, o.reject_reason, o.reject_comment, o.amount, o.currency, o.interest_rate_annual, o.fee_percent, o.repayment_schedule, o.collateral, o.additional_terms, o.valid_until, o.created_at, o.decided_at,
+       a.number AS application_number,
+       a.borrower_organization_id,
+       lo.name AS lender_name,
+       lo.country_code AS lender_country_code,
+       -- Непрочитанные viewer_user: чужие сообщения после его указателя message_reads.
+       -- Подзапрос в выдаче, а не отдельный счётчик на каждую строку: список без N+1.
+       (SELECT count(*) FROM messages m
+         WHERE m.offer_id = o.id AND m.author_user_id <> $1::uuid
+           AND m.id > COALESCE((SELECT r.last_read_message_id FROM message_reads r
+                                 WHERE r.offer_id = o.id AND r.user_id = $1::uuid), 0)
+       ) AS unread_messages
+FROM offers o
+JOIN applications a   ON a.id  = o.application_id
+JOIN organizations lo ON lo.id = o.lender_organization_id
+WHERE o.id = $2
+  -- Блок видимости — символ в символ во всех *OffersVisible (sqlc не умеет общие фрагменты).
   AND (
-       $2::user_role = 'admin'
-    OR ($2::user_role = 'lender'
-        AND lender_organization_id = $3::uuid)
-    OR ($2::user_role = 'borrower'
-        AND EXISTS (SELECT 1 FROM applications a
-                     WHERE a.id = offers.application_id
-                       AND a.borrower_organization_id = $3::uuid))
+       $3::user_role = 'admin'
+    OR ($3::user_role = 'lender'
+        AND o.lender_organization_id = $4::uuid)
+    OR ($3::user_role = 'borrower'
+        AND a.borrower_organization_id = $4::uuid)
   )
 `
 
 type GetOfferVisibleParams struct {
+	ViewerUser uuid.UUID `json:"viewer_user"`
 	ID         uuid.UUID `json:"id"`
 	ViewerRole UserRole  `json:"viewer_role"`
 	ViewerOrg  uuid.UUID `json:"viewer_org"`
 }
 
+type GetOfferVisibleRow struct {
+	Offer                  Offer       `json:"offer"`
+	ApplicationNumber      pgtype.Int8 `json:"application_number"`
+	BorrowerOrganizationID uuid.UUID   `json:"borrower_organization_id"`
+	LenderName             string      `json:"lender_name"`
+	LenderCountryCode      string      `json:"lender_country_code"`
+	UnreadMessages         int64       `json:"unread_messages"`
+}
+
 // Оффер, если пользователь (viewer_role, viewer_org) его видит: кредитор — свой, заёмщик — на
 // свою заявку, admin — любой. Чужой и несуществующий одинаково дают 0 строк → 404 (IDOR).
-// EXISTS, а не JOIN: результат остаётся моделью Offer. Правило совпадает с ListOffersVisible.
-func (q *Queries) GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (Offer, error) {
-	row := q.db.QueryRow(ctx, getOfferVisible, arg.ID, arg.ViewerRole, arg.ViewerOrg)
-	var i Offer
+// Правило и колонки совпадают с ListOffersVisible и ListApplicationOffersVisible.
+// borrower_organization_id — получатель уведомлений о судьбе оффера (BE-08, BE-10).
+func (q *Queries) GetOfferVisible(ctx context.Context, arg GetOfferVisibleParams) (GetOfferVisibleRow, error) {
+	row := q.db.QueryRow(ctx, getOfferVisible,
+		arg.ViewerUser,
+		arg.ID,
+		arg.ViewerRole,
+		arg.ViewerOrg,
+	)
+	var i GetOfferVisibleRow
 	err := row.Scan(
-		&i.ID,
-		&i.ApplicationID,
-		&i.LenderOrganizationID,
-		&i.CreatedByUserID,
-		&i.Status,
-		&i.RejectReason,
-		&i.RejectComment,
-		&i.Amount,
-		&i.Currency,
-		&i.InterestRateAnnual,
-		&i.FeePercent,
-		&i.RepaymentSchedule,
-		&i.Collateral,
-		&i.AdditionalTerms,
-		&i.ValidUntil,
-		&i.CreatedAt,
-		&i.DecidedAt,
+		&i.Offer.ID,
+		&i.Offer.ApplicationID,
+		&i.Offer.LenderOrganizationID,
+		&i.Offer.CreatedByUserID,
+		&i.Offer.Status,
+		&i.Offer.RejectReason,
+		&i.Offer.RejectComment,
+		&i.Offer.Amount,
+		&i.Offer.Currency,
+		&i.Offer.InterestRateAnnual,
+		&i.Offer.FeePercent,
+		&i.Offer.RepaymentSchedule,
+		&i.Offer.Collateral,
+		&i.Offer.AdditionalTerms,
+		&i.Offer.ValidUntil,
+		&i.Offer.CreatedAt,
+		&i.Offer.DecidedAt,
+		&i.ApplicationNumber,
+		&i.BorrowerOrganizationID,
+		&i.LenderName,
+		&i.LenderCountryCode,
+		&i.UnreadMessages,
 	)
 	return i, err
 }
 
-const listOffersByApplication = `-- name: ListOffersByApplication :many
-SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers 
-WHERE application_id = $1
-  AND ($2::offer_status[] IS NULL OR status = ANY($2::offer_status[]))
-ORDER BY created_at DESC
+const listApplicationOffersVisible = `-- name: ListApplicationOffersVisible :many
+SELECT o.id, o.application_id, o.lender_organization_id, o.created_by_user_id, o.status, o.reject_reason, o.reject_comment, o.amount, o.currency, o.interest_rate_annual, o.fee_percent, o.repayment_schedule, o.collateral, o.additional_terms, o.valid_until, o.created_at, o.decided_at,
+       a.number AS application_number,
+       a.borrower_organization_id,
+       lo.name AS lender_name,
+       lo.country_code AS lender_country_code,
+       -- Непрочитанные viewer_user: чужие сообщения после его указателя message_reads.
+       -- Подзапрос в выдаче, а не отдельный счётчик на каждую строку: список без N+1.
+       (SELECT count(*) FROM messages m
+         WHERE m.offer_id = o.id AND m.author_user_id <> $1::uuid
+           AND m.id > COALESCE((SELECT r.last_read_message_id FROM message_reads r
+                                 WHERE r.offer_id = o.id AND r.user_id = $1::uuid), 0)
+       ) AS unread_messages
+FROM offers o
+JOIN applications a   ON a.id  = o.application_id
+JOIN organizations lo ON lo.id = o.lender_organization_id
+WHERE o.application_id = $2
+  AND (
+       $3::user_role = 'admin'
+    OR ($3::user_role = 'lender'
+        AND o.lender_organization_id = $4::uuid)
+    OR ($3::user_role = 'borrower'
+        AND a.borrower_organization_id = $4::uuid)
+  )
+  -- text[], а не offer_status[]: pgx не знает OID массива enum (как в ListApplicationsVisible).
+  AND ($5::text[] IS NULL OR o.status = ANY(CAST($5::text[] AS offer_status[])))
+ORDER BY o.created_at DESC, o.id DESC
 `
 
-type ListOffersByApplicationParams struct {
-	ApplicationID uuid.UUID     `json:"application_id"`
-	Statuses      []OfferStatus `json:"statuses"`
+type ListApplicationOffersVisibleParams struct {
+	ViewerUser    uuid.UUID `json:"viewer_user"`
+	ApplicationID uuid.UUID `json:"application_id"`
+	ViewerRole    UserRole  `json:"viewer_role"`
+	ViewerOrg     uuid.UUID `json:"viewer_org"`
+	Statuses      []string  `json:"statuses"`
 }
 
-func (q *Queries) ListOffersByApplication(ctx context.Context, arg ListOffersByApplicationParams) ([]Offer, error) {
-	rows, err := q.db.Query(ctx, listOffersByApplication, arg.ApplicationID, arg.Statuses)
+type ListApplicationOffersVisibleRow struct {
+	Offer                  Offer       `json:"offer"`
+	ApplicationNumber      pgtype.Int8 `json:"application_number"`
+	BorrowerOrganizationID uuid.UUID   `json:"borrower_organization_id"`
+	LenderName             string      `json:"lender_name"`
+	LenderCountryCode      string      `json:"lender_country_code"`
+	UnreadMessages         int64       `json:"unread_messages"`
+}
+
+// Офферы заявки глазами зрителя: кредитор видит только свой (DECISIONS п. 11), заёмщик-
+// владелец и admin — все. Без пагинации: контракт отдаёт массив.
+func (q *Queries) ListApplicationOffersVisible(ctx context.Context, arg ListApplicationOffersVisibleParams) ([]ListApplicationOffersVisibleRow, error) {
+	rows, err := q.db.Query(ctx, listApplicationOffersVisible,
+		arg.ViewerUser,
+		arg.ApplicationID,
+		arg.ViewerRole,
+		arg.ViewerOrg,
+		arg.Statuses,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Offer{}
+	items := []ListApplicationOffersVisibleRow{}
 	for rows.Next() {
-		var i Offer
+		var i ListApplicationOffersVisibleRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ApplicationID,
-			&i.LenderOrganizationID,
-			&i.CreatedByUserID,
-			&i.Status,
-			&i.RejectReason,
-			&i.RejectComment,
-			&i.Amount,
-			&i.Currency,
-			&i.InterestRateAnnual,
-			&i.FeePercent,
-			&i.RepaymentSchedule,
-			&i.Collateral,
-			&i.AdditionalTerms,
-			&i.ValidUntil,
-			&i.CreatedAt,
-			&i.DecidedAt,
+			&i.Offer.ID,
+			&i.Offer.ApplicationID,
+			&i.Offer.LenderOrganizationID,
+			&i.Offer.CreatedByUserID,
+			&i.Offer.Status,
+			&i.Offer.RejectReason,
+			&i.Offer.RejectComment,
+			&i.Offer.Amount,
+			&i.Offer.Currency,
+			&i.Offer.InterestRateAnnual,
+			&i.Offer.FeePercent,
+			&i.Offer.RepaymentSchedule,
+			&i.Offer.Collateral,
+			&i.Offer.AdditionalTerms,
+			&i.Offer.ValidUntil,
+			&i.Offer.CreatedAt,
+			&i.Offer.DecidedAt,
+			&i.ApplicationNumber,
+			&i.BorrowerOrganizationID,
+			&i.LenderName,
+			&i.LenderCountryCode,
+			&i.UnreadMessages,
 		); err != nil {
 			return nil, err
 		}
@@ -243,68 +337,109 @@ func (q *Queries) ListOffersByApplication(ctx context.Context, arg ListOffersByA
 }
 
 const listOffersVisible = `-- name: ListOffersVisible :many
-SELECT id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at FROM offers
-WHERE
-  -- Блок видимости — символ в символ как в GetOfferVisible (sqlc не умеет общие фрагменты).
-  (
-       $3::user_role = 'admin'
-    OR ($3::user_role = 'lender'
-        AND lender_organization_id = $4::uuid)
-    OR ($3::user_role = 'borrower'
-        AND EXISTS (SELECT 1 FROM applications a
-                     WHERE a.id = offers.application_id
-                       AND a.borrower_organization_id = $4::uuid))
+SELECT o.id, o.application_id, o.lender_organization_id, o.created_by_user_id, o.status, o.reject_reason, o.reject_comment, o.amount, o.currency, o.interest_rate_annual, o.fee_percent, o.repayment_schedule, o.collateral, o.additional_terms, o.valid_until, o.created_at, o.decided_at,
+       a.number AS application_number,
+       a.borrower_organization_id,
+       lo.name AS lender_name,
+       lo.country_code AS lender_country_code,
+       -- Непрочитанные viewer_user: чужие сообщения после его указателя message_reads.
+       -- Подзапрос в выдаче, а не отдельный счётчик на каждую строку: список без N+1.
+       (SELECT count(*) FROM messages m
+         WHERE m.offer_id = o.id AND m.author_user_id <> $1::uuid
+           AND m.id > COALESCE((SELECT r.last_read_message_id FROM message_reads r
+                                 WHERE r.offer_id = o.id AND r.user_id = $1::uuid), 0)
+       ) AS unread_messages
+FROM offers o
+JOIN applications a   ON a.id  = o.application_id
+JOIN organizations lo ON lo.id = o.lender_organization_id
+WHERE true
+  AND (
+       $2::user_role = 'admin'
+    OR ($2::user_role = 'lender'
+        AND o.lender_organization_id = $3::uuid)
+    OR ($2::user_role = 'borrower'
+        AND a.borrower_organization_id = $3::uuid)
   )
-  AND ($5::uuid IS NULL OR application_id = $5::uuid)
-  AND ($6::offer_status[] IS NULL OR status = ANY($6::offer_status[]))
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
+  -- text[], а не offer_status[]: pgx не знает OID массива enum (как в ListApplicationsVisible).
+  AND ($4::text[] IS NULL OR o.status = ANY(CAST($4::text[] AS offer_status[])))
+  AND ($5::uuid IS NULL OR o.application_id = $5::uuid)
+  -- Сервис передаёт только для admin.
+  AND ($6::uuid IS NULL OR o.lender_organization_id = $6::uuid)
+  AND ($7::uuid IS NULL OR a.borrower_organization_id = $7::uuid)
+  AND ($8::timestamptz IS NULL OR o.created_at >= $8::timestamptz)
+  AND ($9::timestamptz IS NULL OR o.created_at < $9::timestamptz)
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT $11 OFFSET $10
 `
 
 type ListOffersVisibleParams struct {
-	Limit         int32         `json:"limit"`
-	Offset        int32         `json:"offset"`
-	ViewerRole    UserRole      `json:"viewer_role"`
-	ViewerOrg     uuid.UUID     `json:"viewer_org"`
-	ApplicationID pgtype.UUID   `json:"application_id"`
-	Statuses      []OfferStatus `json:"statuses"`
+	ViewerUser        uuid.UUID          `json:"viewer_user"`
+	ViewerRole        UserRole           `json:"viewer_role"`
+	ViewerOrg         uuid.UUID          `json:"viewer_org"`
+	Statuses          []string           `json:"statuses"`
+	ApplicationID     pgtype.UUID        `json:"application_id"`
+	LenderOrgFilter   pgtype.UUID        `json:"lender_org_filter"`
+	BorrowerOrgFilter pgtype.UUID        `json:"borrower_org_filter"`
+	CreatedFrom       pgtype.Timestamptz `json:"created_from"`
+	CreatedTo         pgtype.Timestamptz `json:"created_to"`
+	PageOffset        int32              `json:"page_offset"`
+	PageLimit         int32              `json:"page_limit"`
+}
+
+type ListOffersVisibleRow struct {
+	Offer                  Offer       `json:"offer"`
+	ApplicationNumber      pgtype.Int8 `json:"application_number"`
+	BorrowerOrganizationID uuid.UUID   `json:"borrower_organization_id"`
+	LenderName             string      `json:"lender_name"`
+	LenderCountryCode      string      `json:"lender_country_code"`
+	UnreadMessages         int64       `json:"unread_messages"`
 }
 
 // Бизнес-фильтры — narg: они только сужают выборку и не могут её открыть.
-func (q *Queries) ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]Offer, error) {
+func (q *Queries) ListOffersVisible(ctx context.Context, arg ListOffersVisibleParams) ([]ListOffersVisibleRow, error) {
 	rows, err := q.db.Query(ctx, listOffersVisible,
-		arg.Limit,
-		arg.Offset,
+		arg.ViewerUser,
 		arg.ViewerRole,
 		arg.ViewerOrg,
-		arg.ApplicationID,
 		arg.Statuses,
+		arg.ApplicationID,
+		arg.LenderOrgFilter,
+		arg.BorrowerOrgFilter,
+		arg.CreatedFrom,
+		arg.CreatedTo,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Offer{}
+	items := []ListOffersVisibleRow{}
 	for rows.Next() {
-		var i Offer
+		var i ListOffersVisibleRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ApplicationID,
-			&i.LenderOrganizationID,
-			&i.CreatedByUserID,
-			&i.Status,
-			&i.RejectReason,
-			&i.RejectComment,
-			&i.Amount,
-			&i.Currency,
-			&i.InterestRateAnnual,
-			&i.FeePercent,
-			&i.RepaymentSchedule,
-			&i.Collateral,
-			&i.AdditionalTerms,
-			&i.ValidUntil,
-			&i.CreatedAt,
-			&i.DecidedAt,
+			&i.Offer.ID,
+			&i.Offer.ApplicationID,
+			&i.Offer.LenderOrganizationID,
+			&i.Offer.CreatedByUserID,
+			&i.Offer.Status,
+			&i.Offer.RejectReason,
+			&i.Offer.RejectComment,
+			&i.Offer.Amount,
+			&i.Offer.Currency,
+			&i.Offer.InterestRateAnnual,
+			&i.Offer.FeePercent,
+			&i.Offer.RepaymentSchedule,
+			&i.Offer.Collateral,
+			&i.Offer.AdditionalTerms,
+			&i.Offer.ValidUntil,
+			&i.Offer.CreatedAt,
+			&i.Offer.DecidedAt,
+			&i.ApplicationNumber,
+			&i.BorrowerOrganizationID,
+			&i.LenderName,
+			&i.LenderCountryCode,
+			&i.UnreadMessages,
 		); err != nil {
 			return nil, err
 		}
@@ -316,23 +451,70 @@ func (q *Queries) ListOffersVisible(ctx context.Context, arg ListOffersVisiblePa
 	return items, nil
 }
 
+const lockApplicationForLender = `-- name: LockApplicationForLender :one
+SELECT a.id, a.number, a.status, a.amount, a.currency, a.borrower_organization_id
+FROM applications a
+WHERE a.id = $1
+  AND (a.status = 'published'
+       OR EXISTS (SELECT 1 FROM offers f
+                   WHERE f.application_id = a.id
+                     AND f.lender_organization_id = $2::uuid))
+FOR SHARE OF a
+`
+
+type LockApplicationForLenderParams struct {
+	ID        uuid.UUID `json:"id"`
+	LenderOrg uuid.UUID `json:"lender_org"`
+}
+
+type LockApplicationForLenderRow struct {
+	ID                     uuid.UUID         `json:"id"`
+	Number                 pgtype.Int8       `json:"number"`
+	Status                 ApplicationStatus `json:"status"`
+	Amount                 decimal.Decimal   `json:"amount"`
+	Currency               string            `json:"currency"`
+	BorrowerOrganizationID uuid.UUID         `json:"borrower_organization_id"`
+}
+
+// FOR SHARE на заявку при создании оффера: конфликтует с FOR UPDATE из cancel, reject-offers
+// (BE-07) и accept (BE-09) — оффер не появится на заявке, которую в этот момент отменяют или
+// принимают. Условие совпадает с видимостью заявки для lender в GetApplicationVisible:
+// невидимая — 0 строк → 404. Порядок блокировок общий: сначала заявка, потом офферы.
+func (q *Queries) LockApplicationForLender(ctx context.Context, arg LockApplicationForLenderParams) (LockApplicationForLenderRow, error) {
+	row := q.db.QueryRow(ctx, lockApplicationForLender, arg.ID, arg.LenderOrg)
+	var i LockApplicationForLenderRow
+	err := row.Scan(
+		&i.ID,
+		&i.Number,
+		&i.Status,
+		&i.Amount,
+		&i.Currency,
+		&i.BorrowerOrganizationID,
+	)
+	return i, err
+}
+
 const rejectOffer = `-- name: RejectOffer :one
 UPDATE offers SET
     status = 'rejected',
     reject_reason = 'rejected_by_borrower',
-    reject_comment = $2::text,
+    reject_comment = $1::text,
     decided_at = now()
-WHERE id = $1 AND status = 'sent'
+WHERE offers.id = $2 AND offers.status = 'sent'
+  -- Владелец в самом UPDATE (AGENTS.md, «Доступ»): только заёмщик заявки оффера.
+  AND offers.application_id IN (SELECT ap.id FROM applications ap WHERE ap.borrower_organization_id = $3::uuid)
 RETURNING id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at
 `
 
 type RejectOfferParams struct {
-	ID      uuid.UUID   `json:"id"`
-	Comment pgtype.Text `json:"comment"`
+	Comment     pgtype.Text `json:"comment"`
+	ID          uuid.UUID   `json:"id"`
+	BorrowerOrg uuid.UUID   `json:"borrower_org"`
 }
 
+// 0 строк после проверки статуса в сервисе — гонка с другим решением → 409.
 func (q *Queries) RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer, error) {
-	row := q.db.QueryRow(ctx, rejectOffer, arg.ID, arg.Comment)
+	row := q.db.QueryRow(ctx, rejectOffer, arg.Comment, arg.ID, arg.BorrowerOrg)
 	var i Offer
 	err := row.Scan(
 		&i.ID,
@@ -354,25 +536,6 @@ func (q *Queries) RejectOffer(ctx context.Context, arg RejectOfferParams) (Offer
 		&i.DecidedAt,
 	)
 	return i, err
-}
-
-const rejectOtherOffers = `-- name: RejectOtherOffers :exec
-UPDATE offers SET
-    status = 'rejected',
-    reject_reason = 'another_offer_accepted',
-    decided_at = now()
-WHERE application_id = $1 AND id <> $2 AND status = 'sent'
-`
-
-type RejectOtherOffersParams struct {
-	ApplicationID uuid.UUID `json:"application_id"`
-	ID            uuid.UUID `json:"id"`
-}
-
-// Вызывать внутри транзакции после AcceptOffer
-func (q *Queries) RejectOtherOffers(ctx context.Context, arg RejectOtherOffersParams) error {
-	_, err := q.db.Exec(ctx, rejectOtherOffers, arg.ApplicationID, arg.ID)
-	return err
 }
 
 const rejectSentOffersByApplication = `-- name: RejectSentOffersByApplication :many
@@ -422,11 +585,17 @@ UPDATE offers SET
     status = 'withdrawn',
     decided_at = now()
 WHERE id = $1 AND status = 'sent'
+  AND lender_organization_id = $2::uuid
 RETURNING id, application_id, lender_organization_id, created_by_user_id, status, reject_reason, reject_comment, amount, currency, interest_rate_annual, fee_percent, repayment_schedule, collateral, additional_terms, valid_until, created_at, decided_at
 `
 
-func (q *Queries) WithdrawOffer(ctx context.Context, id uuid.UUID) (Offer, error) {
-	row := q.db.QueryRow(ctx, withdrawOffer, id)
+type WithdrawOfferParams struct {
+	ID        uuid.UUID `json:"id"`
+	LenderOrg uuid.UUID `json:"lender_org"`
+}
+
+func (q *Queries) WithdrawOffer(ctx context.Context, arg WithdrawOfferParams) (Offer, error) {
+	row := q.db.QueryRow(ctx, withdrawOffer, arg.ID, arg.LenderOrg)
 	var i Offer
 	err := row.Scan(
 		&i.ID,

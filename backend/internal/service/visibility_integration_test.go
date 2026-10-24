@@ -86,13 +86,13 @@ var offersVisible = visibleEntity{
 		row, err := q.GetOfferVisible(ctx, repository.GetOfferVisibleParams{
 			ID: id, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return row.ID, err
+		return row.Offer.ID, err
 	},
 	list: func(ctx context.Context, q *repository.Queries, v viewer) ([]uuid.UUID, error) {
 		rows, err := q.ListOffersVisible(ctx, repository.ListOffersVisibleParams{
-			Limit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
+			PageLimit: listLimit, ViewerRole: v.role, ViewerOrg: v.org,
 		})
-		return rowIDs(rows, func(r repository.Offer) uuid.UUID { return r.ID }), err
+		return rowIDs(rows, func(r repository.ListOffersVisibleRow) uuid.UUID { return r.Offer.ID }), err
 	},
 	count: func(ctx context.Context, q *repository.Queries, v viewer) (int64, error) {
 		return q.CountOffersVisible(ctx, repository.CountOffersVisibleParams{

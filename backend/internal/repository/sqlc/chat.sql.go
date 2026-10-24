@@ -11,26 +11,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const countUnreadMessages = `-- name: CountUnreadMessages :one
-SELECT count(*) FROM messages m
-LEFT JOIN message_reads r ON r.offer_id = m.offer_id AND r.user_id = $2
-WHERE m.offer_id = $1
-  AND m.author_user_id <> $2
-  AND (r.last_read_message_id IS NULL OR m.id > r.last_read_message_id)
-`
-
-type CountUnreadMessagesParams struct {
-	OfferID uuid.UUID `json:"offer_id"`
-	UserID  uuid.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountUnreadMessages(ctx context.Context, arg CountUnreadMessagesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUnreadMessages, arg.OfferID, arg.UserID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createMessage = `-- name: CreateMessage :one
 INSERT INTO messages (offer_id, author_user_id, text)
 VALUES ($1, $2, $3)
