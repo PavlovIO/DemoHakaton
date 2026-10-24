@@ -324,7 +324,7 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 | `offers.sql` | offers | `CreateOffer`, `GetOfferVisible`, `ListApplicationOffersVisible`, `ListOffersVisible`, `CountOffersVisible`, `LockApplicationForLender`, `LockOfferForAccept`, `AcceptOffer`, `RejectOffer`, `WithdrawOffer`, `RejectSentOffersByApplication` |
 | `deals.sql` | deals | `CreateDeal`, `GetDealVisible`, `ListDealsVisible`, `CountDealsVisible` |
 | `chat.sql` | messages, message_reads | `CreateMessage`, `ListMessagesVisible`, `MarkMessagesRead` (непрочитанные считают `*OffersVisible`) |
-| `notifications.sql` | notifications | `CreateNotification`, `ListNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
+| `notifications.sql` | notifications | `CreateNotification`, `CreateNotificationsForAdmins`, `CreateNotificationsForOrganization`, `ListNotifications`, `CountNotifications`, `CountUnreadNotifications`, `MarkNotificationRead`, `MarkAllNotificationsRead` |
 | `admin.sql` | aml_flags, sanctions_entries, audit_log, аналитика | `CreateAmlFlag`, `ListAmlFlags`, `ResolveAmlFlag`, `SearchSanctions`, `CreateAuditLog`, `ListAuditLog`, `GetAnalyticsSummaryByCurrency`, `GetTopDemandCountries`, `GetTopSupplyCountries` |
 
 ### Чего не хватает и где запросы расходятся с этим документом
@@ -335,7 +335,7 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - `sanctions_entries` — нет запросов загрузчика списков.
 
 Расхождения с примерами выше:
-- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). Чат читается `ListMessagesVisible` с тем же правилом; `CreateMessage` и `MarkMessagesRead` вызываются только после `GetOfferVisible`. `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`.
+- **IDOR.** Чтение заявок, офферов и сделок по `id` и их списки идут через `*Visible` с обязательными `viewer_role`/`viewer_org` (правило видимости — `OR`-ветки по ролям в `WHERE`, неизвестная роль и пустая организация видят ничего). Чат читается `ListMessagesVisible` с тем же правилом; `CreateMessage` и `MarkMessagesRead` вызываются только после `GetOfferVisible`. `LockApplicationByOfferForBorrower` проверяет владельца заявки в `WHERE`, `AcceptOffer` — принадлежность оффера заблокированной заявке. `RejectOffer` и `WithdrawOffer` проверяют организацию в самом `UPDATE`. Запросы уведомлений фильтруют по `user_id` текущего пользователя; `MarkNotificationRead` — `:execrows`, 0 строк → `404`.
 - **Витрина.** `ListApplicationsVisible` не джойнит `organizations` и не возвращает `my_offer_id`; сортировка по умолчанию по `created_at`, а не по `published_at`.
 - **Аналитика.** `GetAnalyticsSummaryByCurrency` исключает и `draft`, и `cancelled`, и не принимает период `from/to`.
 - **Переходы статусов** заявок и решения админа по KYC (`ApproveKyc`, `RejectKyc`) не защищены условием по текущему статусу в `WHERE` (у офферов защищены: `AND status = 'sent'`, у `UpdateOrganization` и `SubmitKycForReview` — `kyc_status IN ('draft','rejected')` плюс `GetOrganizationForUpdate`). Параллельные запросы могут проскочить проверку сервиса.
@@ -346,3 +346,4 @@ SELECT id, source, name, similarity(name_normalized, $q) AS score
 - **Партиционирование `audit_log` и `messages`.** Объёмы демо этого не требуют.
 - **Row-Level Security.** IDOR закрываем в репозитории. RLS — хороший следующий шаг, если останется время.
 - **Конвертация валют.** Суммы и аналитика считаются по каждой валюте отдельно.
+- **Чистка старых уведомлений.** Строки `notifications` не удаляются: объёмы демо малы, ленту покрывает индекс `notifications_user_idx` (DECISIONS п. 39).

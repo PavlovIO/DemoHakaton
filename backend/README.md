@@ -36,7 +36,8 @@ npx @stoplight/prism-cli mock api/openapi.yaml   # http://127.0.0.1:4010
 | ✅ | `GET /offers`, `GET /offers/{offerId}`, `GET`/`POST /applications/{applicationId}/offers`, `POST /offers/{offerId}/reject`, `POST /offers/{offerId}/withdraw` — офферы: видимость по сторонам, `unread_messages`, история, уведомления |
 | ✅ | `POST /offers/{offerId}/accept`, `GET /deals`, `GET /deals/{dealId}` — принятие оффера в одной транзакции, сделка-снапшот с комиссией, видимость сделок сторонам и admin |
 | ✅ | `GET`/`POST /offers/{offerId}/messages` — чат сторон оффера: polling, отметка прочтения, уведомление другой стороне, лимит отправки |
-| ⏳ 501 | остальные 16 — реализуются по образцу справочников (см. «Как добавить операцию») |
+| ✅ | `GET /notifications`, `POST /notifications/{notificationId}/read`, `POST /notifications/read-all` — лента уведомлений с `unread_total` |
+| ⏳ 501 | остальные 13 — реализуются по образцу справочников (см. «Как добавить операцию») |
 
 ## Общие правила
 
@@ -223,6 +224,25 @@ JWT не используется (ADR-0001, п. 3): сессию в `HttpOnly`-
 | GET | `/notifications` | Уведомления текущего пользователя (polling) | авториз. |
 | POST | `/notifications/{notificationId}/read` | Отметить прочитанным → `204` | авториз. |
 | POST | `/notifications/read-all` | Отметить все прочитанными → `204` | авториз. |
+
+- **Лента** — только свои уведомления, новые сверху (`created_at DESC, id DESC`); `unread_only=true` — только непрочитанные; пагинация `page`/`page_size` (1/20). `total` считается с тем же фильтром, что и `items`; `unread_total` — все непрочитанные пользователя, от `unread_only` не зависит (счётчик в шапке).
+- **Отметка:** повторная отметка своего уведомления — снова `204`; чужое или несуществующее — `404 NOT_FOUND`; `notificationId` не число — `400 VALIDATION_ERROR`.
+- **Откуда берутся:** бизнес-событие пишет уведомление в той же транзакции, что и смену статуса (`service.Notifier`): откат события откатывает и уведомление. «Организации» — каждому активному пользователю компании, «админам» — каждому активному admin. `title` — снимок на момент события. Старые уведомления не удаляются.
+
+| Тип | Событие | Кому |
+|---|---|---|
+| `kyc_submitted` | `submitKyc` | админам |
+| `kyc_approved`, `kyc_rejected` | `adminApproveKyc`, `adminRejectKyc` (BE-12, ещё `501`) | компании |
+| `application_submitted` | `submitApplication` | админам |
+| `application_published`, `application_rejected` | `adminApproveApplication`, `adminRejectApplication` (BE-12, ещё `501`) | компании-заёмщику |
+| `offer_received` | `createOffer` | компании-заёмщику |
+| `offer_accepted` | `acceptOffer` | кредитору принятого оффера |
+| `offer_rejected` | `rejectOffer`; `acceptOffer`, `cancelApplication`, `rejectAllOffers` — каждому кредитору автоматически отклонённого `sent`-оффера | кредитору |
+| `offer_withdrawn` | `withdrawOffer` | компании-заёмщику |
+| `message_received` | `sendMessage` — на каждое сообщение | другой стороне оффера (admin не получает) |
+| `aml_flag_created` | AML-скрининг в `submitKyc`/`submitApplication` нашёл флаги — одно на прогон | админам |
+
+Не уведомляем: заёмщика о сделке (она в ответе `acceptOffer`), админов о новом оффере и об отмене заявки.
 
 ### admin — модерация, KYC, AML, аналитика
 
