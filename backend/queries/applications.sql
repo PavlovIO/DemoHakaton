@@ -122,7 +122,9 @@ WHERE true
                          WHERE o.application_id = a.id
                            AND o.lender_organization_id = sqlc.arg('viewer_org')::uuid)))
   )
-  AND (sqlc.narg('statuses')::application_status[] IS NULL OR a.status = ANY(sqlc.narg('statuses')::application_status[]))
+  -- text[], а не application_status[]: pgx не знает OID массива enum и не кодирует его
+  -- без регистрации типа. Приведение в SQL оставляет сравнение по колонке (индекс по status).
+  AND (sqlc.narg('statuses')::text[] IS NULL OR a.status = ANY(CAST(sqlc.narg('statuses')::text[] AS application_status[])))
   AND (sqlc.narg('target_countries')::text[] IS NULL OR a.target_country_code = ANY(sqlc.narg('target_countries')::text[]))
   AND (sqlc.narg('transfer_methods')::text[] IS NULL OR a.transfer_method = ANY(sqlc.narg('transfer_methods')::text[]))
   AND (sqlc.narg('currency')::char(3) IS NULL OR a.currency = sqlc.narg('currency')::char(3))
@@ -166,7 +168,9 @@ WHERE true
                          WHERE o.application_id = a.id
                            AND o.lender_organization_id = sqlc.arg('viewer_org')::uuid)))
   )
-  AND (sqlc.narg('statuses')::application_status[] IS NULL OR a.status = ANY(sqlc.narg('statuses')::application_status[]))
+  -- text[], а не application_status[]: pgx не знает OID массива enum и не кодирует его
+  -- без регистрации типа. Приведение в SQL оставляет сравнение по колонке (индекс по status).
+  AND (sqlc.narg('statuses')::text[] IS NULL OR a.status = ANY(CAST(sqlc.narg('statuses')::text[] AS application_status[])))
   AND (sqlc.narg('target_countries')::text[] IS NULL OR a.target_country_code = ANY(sqlc.narg('target_countries')::text[]))
   AND (sqlc.narg('transfer_methods')::text[] IS NULL OR a.transfer_method = ANY(sqlc.narg('transfer_methods')::text[]))
   AND (sqlc.narg('currency')::char(3) IS NULL OR a.currency = sqlc.narg('currency')::char(3))

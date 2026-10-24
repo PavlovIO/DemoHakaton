@@ -147,7 +147,9 @@ WHERE true
                          WHERE o.application_id = a.id
                            AND o.lender_organization_id = $2::uuid)))
   )
-  AND ($3::application_status[] IS NULL OR a.status = ANY($3::application_status[]))
+  -- text[], а не application_status[]: pgx не знает OID массива enum и не кодирует его
+  -- без регистрации типа. Приведение в SQL оставляет сравнение по колонке (индекс по status).
+  AND ($3::text[] IS NULL OR a.status = ANY(CAST($3::text[] AS application_status[])))
   AND ($4::text[] IS NULL OR a.target_country_code = ANY($4::text[]))
   AND ($5::text[] IS NULL OR a.transfer_method = ANY($5::text[]))
   AND ($6::char(3) IS NULL OR a.currency = $6::char(3))
@@ -169,7 +171,7 @@ WHERE true
 type CountApplicationsVisibleParams struct {
 	ViewerRole        UserRole            `json:"viewer_role"`
 	ViewerOrg         uuid.UUID           `json:"viewer_org"`
-	Statuses          []ApplicationStatus `json:"statuses"`
+	Statuses          []string            `json:"statuses"`
 	TargetCountries   []string            `json:"target_countries"`
 	TransferMethods   []string            `json:"transfer_methods"`
 	Currency          pgtype.Text         `json:"currency"`
@@ -380,7 +382,9 @@ WHERE true
                          WHERE o.application_id = a.id
                            AND o.lender_organization_id = $1::uuid)))
   )
-  AND ($3::application_status[] IS NULL OR a.status = ANY($3::application_status[]))
+  -- text[], а не application_status[]: pgx не знает OID массива enum и не кодирует его
+  -- без регистрации типа. Приведение в SQL оставляет сравнение по колонке (индекс по status).
+  AND ($3::text[] IS NULL OR a.status = ANY(CAST($3::text[] AS application_status[])))
   AND ($4::text[] IS NULL OR a.target_country_code = ANY($4::text[]))
   AND ($5::text[] IS NULL OR a.transfer_method = ANY($5::text[]))
   AND ($6::char(3) IS NULL OR a.currency = $6::char(3))
@@ -414,7 +418,7 @@ LIMIT $17 OFFSET $16
 type ListApplicationsVisibleParams struct {
 	ViewerOrg         uuid.UUID           `json:"viewer_org"`
 	ViewerRole        UserRole            `json:"viewer_role"`
-	Statuses          []ApplicationStatus `json:"statuses"`
+	Statuses          []string            `json:"statuses"`
 	TargetCountries   []string            `json:"target_countries"`
 	TransferMethods   []string            `json:"transfer_methods"`
 	Currency          pgtype.Text         `json:"currency"`
