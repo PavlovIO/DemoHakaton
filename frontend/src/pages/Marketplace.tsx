@@ -6,6 +6,7 @@ import { handleApiError } from '@/lib/api-errors'
 import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { LoadMore } from '@/components/ui/LoadMore'
 
 export function Marketplace() {
   const [filterCountry, setFilterCountry] = useState('')
@@ -13,11 +14,12 @@ export function Marketplace() {
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
   // Фильтрует бэкенд; пустые значения в запрос не уходят.
-  const { data, isLoading } = useMarketplace({
+  const marketplaceQuery = useMarketplace({
     target_country: filterCountry || undefined,
     currency: filterCurrency || undefined,
     amount_min: filterAmountMin || undefined,
   })
+  const { data, isLoading } = marketplaceQuery
   const filteredApps = data?.items ?? []
   const createOffer = useCreateOffer()
 
@@ -133,6 +135,7 @@ export function Marketplace() {
             <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено.</li>
           )}
         </ul>
+        <LoadMore query={marketplaceQuery} />
       </div>
 
       {/* Модалка создания оффера */}

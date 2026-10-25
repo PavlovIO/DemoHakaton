@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
+import { PAGE_SIZE, pagedList } from '@/lib/pagination'
 import { APPLICATIONS_KEY } from './useApplications'
 import { DEALS_KEY, type Deal } from './useDeals'
 
@@ -12,10 +13,10 @@ export const OFFERS_KEY = ['offers'] as const
 
 // Кредитору бэкенд отдаёт офферы его организации.
 export function useMyOffers() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...OFFERS_KEY, 'mine'],
-    // Пагинации в UI пока нет — берём максимум страницы API.
-    queryFn: () => api.get<OfferPage>('/offers', { query: { page_size: 100 } }),
+    queryFn: ({ pageParam }) => api.get<OfferPage>('/offers', { query: { page: pageParam, page_size: PAGE_SIZE } }),
+    ...pagedList<Offer>(),
   })
 }
 

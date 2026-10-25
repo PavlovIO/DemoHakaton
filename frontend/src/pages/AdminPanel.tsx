@@ -5,6 +5,7 @@ import { handleApiError } from '@/lib/api-errors'
 import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { LoadMore } from '@/components/ui/LoadMore'
 
 interface KycOrg {
   id: string
@@ -25,7 +26,8 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'kyc' | 'apps'>('kyc')
   
   const [kycQueue, setKycQueue] = useState<KycOrg[]>(INITIAL_KYC)
-  const { data: moderation, isLoading: isModerationLoading } = useModerationQueue()
+  const moderationQuery = useModerationQueue()
+  const { data: moderation, isLoading: isModerationLoading } = moderationQuery
   const appQueue = moderation?.items ?? []
   const approveApplication = useApproveApplication()
   const rejectApplication = useRejectApplication()
@@ -139,6 +141,7 @@ export function AdminPanel() {
             ))}
             {!isModerationLoading && appQueue.length === 0 && <li className="p-6 text-center text-gray-500">Нет заявок на модерации.</li>}
           </ul>
+          <LoadMore query={moderationQuery} />
         </div>
       )}
     </div>

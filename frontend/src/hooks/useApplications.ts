@@ -1,6 +1,7 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
+import { PAGE_SIZE, pagedList } from '@/lib/pagination'
 
 export type Application = components['schemas']['Application']
 export type ApplicationCreate = components['schemas']['ApplicationCreate']
@@ -8,14 +9,13 @@ type ApplicationPage = components['schemas']['ApplicationPage']
 
 export const APPLICATIONS_KEY = ['applications'] as const
 
-// Пагинации в UI пока нет — берём максимум страницы API.
-const PAGE_SIZE = 100
-
 // Заёмщику бэкенд отдаёт только заявки его организации.
 export function useMyApplications() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...APPLICATIONS_KEY, 'mine'],
-    queryFn: () => api.get<ApplicationPage>('/applications', { query: { page_size: PAGE_SIZE } }),
+    queryFn: ({ pageParam }) =>
+      api.get<ApplicationPage>('/applications', { query: { page: pageParam, page_size: PAGE_SIZE } }),
+    ...pagedList<Application>(),
   })
 }
 
@@ -27,24 +27,26 @@ export interface MarketplaceFilters {
 
 // Кредитору бэкенд отдаёт только опубликованные заявки.
 export function useMarketplace(filters: MarketplaceFilters = {}) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...APPLICATIONS_KEY, 'marketplace', filters],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       api.get<ApplicationPage>('/applications', {
-        query: { ...filters, sort: 'created_at_desc', page_size: PAGE_SIZE },
+        query: { ...filters, sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
       }),
+    ...pagedList<Application>(),
     // Пока грузится новый фильтр, показываем прежний список вместо «ничего не найдено».
     placeholderData: keepPreviousData,
   })
 }
 
 export function useModerationQueue() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...APPLICATIONS_KEY, 'moderation'],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       api.get<ApplicationPage>('/applications', {
-        query: { status: ['moderation'], sort: 'created_at_desc', page_size: PAGE_SIZE },
+        query: { status: ['moderation'], sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
       }),
+    ...pagedList<Application>(),
   })
 }
 

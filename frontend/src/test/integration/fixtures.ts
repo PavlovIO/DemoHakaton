@@ -3,9 +3,27 @@ import type { components } from '@/lib/api-schema'
 import { ADMIN, BORROWER, LENDER, loginAs } from './actors'
 
 type Application = components['schemas']['Application']
+type ApplicationPage = components['schemas']['ApplicationPage']
 type Offer = components['schemas']['Offer']
 
 // Подготовка через API: проверяемое поведение — в тестах хуков, не здесь.
+
+// У заёмщика минимум n заявок (досоздаёт черновики): для проверки второй страницы.
+// На свежем сиде их меньше страницы, дальше прогоны переиспользуют созданные.
+export async function ensureBorrowerApplications(n: number) {
+  loginAs(BORROWER)
+  const { total } = await api.get<ApplicationPage>('/applications', { query: { page_size: 1 } })
+  for (let i = total; i < n; i++) {
+    await api.post<Application>('/applications', {
+      amount: '50000.00',
+      currency: 'EUR',
+      target_country_code: 'DE',
+      term_months: 3,
+      transfer_method: 'sepa',
+      purpose: `Черновик для пагинации ${crypto.randomUUID()}`,
+    })
+  }
+}
 
 export async function submitApplication() {
   loginAs(BORROWER)

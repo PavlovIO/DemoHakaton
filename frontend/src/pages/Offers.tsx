@@ -7,10 +7,12 @@ import { formatMoney, formatPercent } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ChatModal } from '@/components/ChatModal'
+import { LoadMore } from '@/components/ui/LoadMore'
 
 export function Offers() {
   const { user } = useAuth()
-  const { data, isLoading } = useMyOffers()
+  const offersQuery = useMyOffers()
+  const { data, isLoading } = offersQuery
   const offers = data?.items ?? []
   const withdrawOffer = useWithdrawOffer()
   const [chatOffer, setChatOffer] = useState<Offer | null>(null)
@@ -76,6 +78,7 @@ export function Offers() {
             </li>
           )}
         </ul>
+        <LoadMore query={offersQuery} />
       </div>
 
       <ChatModal

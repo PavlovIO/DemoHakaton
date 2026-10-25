@@ -11,7 +11,8 @@ import {
 } from './useApplications'
 import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, LENDER, loginAs } from '@/test/integration/actors'
-import { submitApplication } from '@/test/integration/fixtures'
+import { ensureBorrowerApplications, submitApplication } from '@/test/integration/fixtures'
+import { PAGE_SIZE } from '@/lib/pagination'
 
 describe('заявки против живого бэкенда', () => {
   it('заёмщик сохраняет черновик и подаёт его — заявка в его списке на модерации', async () => {
@@ -92,5 +93,24 @@ describe('модерация: отказ', () => {
         }),
       ),
     )
+  })
+})
+
+describe('пагинация', () => {
+  it('«показать ещё» догружает следующую страницу без повторов', async () => {
+    await ensureBorrowerApplications(PAGE_SIZE + 1)
+
+    const { result } = renderHook(() => useMyApplications(), { wrapper: AppProviders })
+    await waitFor(() => expect(result.current.data?.items).toHaveLength(PAGE_SIZE))
+    expect(result.current.data!.total).toBeGreaterThan(PAGE_SIZE)
+    expect(result.current.hasNextPage).toBe(true)
+    const firstPage = result.current.data!.items.map((a) => a.id)
+
+    await act(() => result.current.fetchNextPage())
+
+    await waitFor(() => expect(result.current.data!.items.length).toBeGreaterThan(PAGE_SIZE))
+    const ids = result.current.data!.items.map((a) => a.id)
+    expect(ids.slice(0, PAGE_SIZE)).toEqual(firstPage)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })

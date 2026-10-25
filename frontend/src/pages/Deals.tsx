@@ -2,10 +2,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { useDeals } from '@/hooks/useDeals'
 import { formatMoney, formatPercent } from '@/lib/money'
 import { Badge } from '@/components/ui/Badge'
+import { LoadMore } from '@/components/ui/LoadMore'
 
 export function Deals() {
   const { user } = useAuth()
-  const { data, isLoading } = useDeals()
+  const dealsQuery = useDeals()
+  const { data, isLoading } = dealsQuery
   const deals = data?.items ?? []
 
   return (
@@ -43,6 +45,7 @@ export function Deals() {
             </li>
           )}
         </ul>
+        <LoadMore query={dealsQuery} />
       </div>
     </div>
   )

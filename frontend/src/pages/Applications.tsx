@@ -5,6 +5,7 @@ import { useCreateApplication, useMyApplications, useSubmitApplication, type App
 import { useAcceptOffer, useApplicationOffers, type Offer } from '@/hooks/useOffers'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney, formatPercent } from '@/lib/money'
+import { LoadMore } from '@/components/ui/LoadMore'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ChatModal } from '@/components/ChatModal'
@@ -41,7 +42,8 @@ export function Applications() {
 }
 
 function BorrowerApplications() {
-  const { data: applications, isLoading } = useMyApplications()
+  const applicationsQuery = useMyApplications()
+  const { data: applications, isLoading } = applicationsQuery
   const createApplication = useCreateApplication()
   const submitApplication = useSubmitApplication()
   const acceptOffer = useAcceptOffer()
@@ -139,6 +141,7 @@ function BorrowerApplications() {
             <li className="p-8 text-center text-gray-500">Заявок пока нет.</li>
           )}
         </ul>
+        <LoadMore query={applicationsQuery} />
       </div>
 
       {/* Модалка создания заявки */}
