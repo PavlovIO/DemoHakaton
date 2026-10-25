@@ -15,9 +15,11 @@ import (
 )
 
 // Истечение и блокировку проверяет SQL (GetSessionByTokenHash), поэтому тест — на настоящей БД.
-// Пользователи не удаляются: после DB-SEC у lp_app нет DELETE на users; суффикс делает их уникальными.
+// Register коммитит компанию и пользователя; удаляет их владелец схемы (CleanupCommittedOrgs):
+// у lp_app нет DELETE на users.
 func TestAuthIntegrationSessionLifecycle(t *testing.T) {
 	pool := servicetest.NewPool(t)
+	track := servicetest.CleanupCommittedOrgs(t)
 	ctx := context.Background()
 	svc := auth.NewAuth(repository.New(pool), service.NewTxManager(pool), time.Hour,
 		service.NewMemoryRateLimiter(), auth.DefaultAuthLimits)
@@ -34,6 +36,7 @@ func TestAuthIntegrationSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register() err = %v", err)
 	}
+	track(session.Me.Organization.ID)
 	userID := session.Me.User.ID
 
 	lastSeen := func() time.Time {

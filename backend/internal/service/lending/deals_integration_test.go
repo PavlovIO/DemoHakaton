@@ -5,7 +5,7 @@ package lending_test
 //     всё в транзакции с откатом (сервис открывает savepoint через tx.Begin).
 //   - TestAcceptOfferConcurrent — параллельные accept: настоящие транзакции на пуле с
 //     коммитами, иначе FOR UPDATE нечего сериализовать. У каждой итерации свои заявка и
-//     офферы; в конце deleteCommittedOrgs удаляет всё созданное.
+//     офферы; в конце servicetest.CleanupCommittedOrgs удаляет всё созданное.
 
 import (
 	"context"
@@ -23,44 +23,6 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/lending"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/service/servicetest"
 )
-
-// deleteCommittedOrgs удаляет закоммиченные данные компаний orgs (заявки, офферы, сделки,
-// история, аудит, пользователи) в порядке внешних ключей. pool — владельца схемы
-// (servicetest.NewOwnerPool): у lp_app нет DELETE, а без чистки каждый прогон оставлял бы мусор в dev-БД.
-func deleteCommittedOrgs(t *testing.T, pool *pgxpool.Pool, orgs ...uuid.UUID) {
-	t.Helper()
-	ctx := context.Background()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Errorf("cleanup begin: %v", err)
-		return
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	for _, q := range []string{
-		`DELETE FROM status_history WHERE entity_id IN (
-			SELECT id FROM applications WHERE borrower_organization_id = ANY($1)
-			UNION SELECT id FROM offers WHERE lender_organization_id = ANY($1)
-			UNION SELECT id FROM deals WHERE borrower_organization_id = ANY($1))
-		   OR actor_user_id IN (SELECT id FROM users WHERE organization_id = ANY($1))`,
-		`DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE organization_id = ANY($1))`,
-		`DELETE FROM deals WHERE borrower_organization_id = ANY($1) OR lender_organization_id = ANY($1)`,
-		// Заявка и оффер ссылаются друг на друга (accepted_offer_id), а agreed без него не
-		// пускает applications_agreed_chk: удаляем одной командой, FK проверятся в её конце.
-		`WITH o AS (DELETE FROM offers WHERE lender_organization_id = ANY($1)
-		    OR application_id IN (SELECT id FROM applications WHERE borrower_organization_id = ANY($1)))
-		 DELETE FROM applications WHERE borrower_organization_id = ANY($1)`,
-		`DELETE FROM users WHERE organization_id = ANY($1)`, // sessions, notifications — CASCADE
-		`DELETE FROM organizations WHERE id = ANY($1)`,
-	} {
-		if _, err := tx.Exec(ctx, q, orgs); err != nil {
-			t.Errorf("cleanup: %v; %s", err, q)
-			return
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Errorf("cleanup commit: %v", err)
-	}
-}
 
 // insertDealsApp — опубликованная заявка 500 000.00 EUR, DE, 12 мес., sepa.
 func insertDealsApp(ctx context.Context, t *testing.T, db servicetest.RowQuerier, b service.Principal) uuid.UUID {
@@ -226,11 +188,13 @@ func TestAcceptOfferConcurrent(t *testing.T) {
 	ctx := context.Background()
 	pool := servicetest.NewPool(t)
 	deals := lending.NewDeals(lending.DealsDeps{Store: repository.New(pool), Tx: service.NewTxManager(pool)})
+	track := servicetest.CleanupCommittedOrgs(t)
 	borrower := servicetest.InsertVerifiedOrg(ctx, t, pool, repository.UserRoleBorrower, "Concurrent B")
+	track(*borrower.OrgID)
 	lenderA := servicetest.InsertVerifiedOrg(ctx, t, pool, repository.UserRoleLender, "Concurrent LA")
+	track(*lenderA.OrgID)
 	lenderB := servicetest.InsertVerifiedOrg(ctx, t, pool, repository.UserRoleLender, "Concurrent LB")
-	owner := servicetest.NewOwnerPool(t)
-	t.Cleanup(func() { deleteCommittedOrgs(t, owner, *borrower.OrgID, *lenderA.OrgID, *lenderB.OrgID) })
+	track(*lenderB.OrgID)
 
 	// raceAccept — accept каждого id в своей горутине, старт одновременно.
 	raceAccept := func(ids ...uuid.UUID) []error {

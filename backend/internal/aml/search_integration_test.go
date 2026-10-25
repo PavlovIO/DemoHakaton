@@ -55,8 +55,17 @@ func TestSearchSanctionsThresholdIndependent(t *testing.T) {
 // сильнее организации, не вытесняют её из кандидатов, и компания получает флаг.
 func TestScreenOrganizationKindBeforeLimit(t *testing.T) {
 	ctx := context.Background()
+	// Порог «%» берём с настоящей роли приложения: у владельца схемы дефолт 0.3, и тест
+	// не заметил бы, что значение на lp_app (backend/db/roles.sql) отсекает организацию.
+	var appThreshold string
+	if err := servicetest.NewPool(t).QueryRow(ctx, "SHOW pg_trgm.similarity_threshold").Scan(&appThreshold); err != nil {
+		t.Fatalf("lp_app threshold: %v", err)
+	}
 	// Списки пишет загрузчик под владельцем схемы, у lp_app на sanctions_entries только SELECT.
 	tx := servicetest.BeginOwnerTx(t)
+	if _, err := tx.Exec(ctx, "SELECT set_config('pg_trgm.similarity_threshold', $1, true)", appThreshold); err != nil {
+		t.Fatalf("set threshold: %v", err)
+	}
 	insert := func(id, kind, name string) {
 		t.Helper()
 		if _, err := tx.Exec(ctx, `INSERT INTO sanctions_entries (source, external_id, entity_kind, name, name_normalized)
