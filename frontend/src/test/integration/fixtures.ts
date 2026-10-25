@@ -17,24 +17,23 @@ export async function submitApplication() {
     transfer_method: 'sepa',
     purpose: `Пополнение оборотных средств ${crypto.randomUUID()}`,
   })
-  return api.post<Application>(`/applications/${draft.id}/submit` as '/applications/{applicationId}/submit')
+  return api.post<Application>('/applications/{applicationId}/submit', undefined, { path: { applicationId: draft.id } })
 }
 
 export async function publishApplication() {
   const app = await submitApplication()
   loginAs(ADMIN)
-  return api.post<Application>(`/admin/applications/${app.id}/approve` as '/admin/applications/{applicationId}/approve')
+  return api.post<Application>('/admin/applications/{applicationId}/approve', undefined, { path: { applicationId: app.id } })
 }
 
 // Опубликованная заявка с оффером кредитора; сессия остаётся у кредитора.
 export async function sendOffer() {
   const app = await publishApplication()
   loginAs(LENDER)
-  const offer = await api.post<Offer>(`/applications/${app.id}/offers` as '/applications/{applicationId}/offers', {
-    amount: '90000.00',
-    interest_rate_annual: '9.50',
-    fee_percent: '1.00',
-    repayment_schedule: 'bullet',
-  })
+  const offer = await api.post<Offer>(
+    '/applications/{applicationId}/offers',
+    { amount: '90000.00', interest_rate_annual: '9.50', fee_percent: '1.00', repayment_schedule: 'bullet' },
+    { path: { applicationId: app.id } },
+  )
   return { app, offer }
 }

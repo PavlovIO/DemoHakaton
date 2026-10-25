@@ -23,7 +23,7 @@ export function useApplicationOffers(applicationId: string | undefined) {
   return useQuery({
     queryKey: [...OFFERS_KEY, 'application', applicationId],
     queryFn: () =>
-      api.get<Offer[]>(`/applications/${applicationId}/offers` as '/applications/{applicationId}/offers'),
+      api.get<Offer[]>('/applications/{applicationId}/offers', { path: { applicationId } }),
     enabled: !!applicationId,
   })
 }
@@ -33,7 +33,7 @@ export function useAcceptOffer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (offerId: string) =>
-      api.post<Deal>(`/offers/${offerId}/accept` as '/offers/{offerId}/accept'),
+      api.post<Deal>('/offers/{offerId}/accept', undefined, { path: { offerId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: OFFERS_KEY })
       queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY })
@@ -46,7 +46,7 @@ export function useWithdrawOffer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (offerId: string) =>
-      api.post<Offer>(`/offers/${offerId}/withdraw` as '/offers/{offerId}/withdraw'),
+      api.post<Offer>('/offers/{offerId}/withdraw', undefined, { path: { offerId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: OFFERS_KEY })
       queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY })
@@ -58,7 +58,7 @@ export function useCreateOffer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ applicationId, ...payload }: OfferCreate & { applicationId: string }) =>
-      api.post<Offer>(`/applications/${applicationId}/offers` as '/applications/{applicationId}/offers', payload),
+      api.post<Offer>('/applications/{applicationId}/offers', payload, { path: { applicationId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: OFFERS_KEY })
       // У заявки меняется my_offer_id — витрина показывает «Оффер отправлен».

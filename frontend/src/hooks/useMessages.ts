@@ -15,7 +15,8 @@ const BATCH = 200
 async function fetchAllMessages(offerId: string) {
   const all: Message[] = []
   for (;;) {
-    const batch = await api.get<Message[]>(`/offers/${offerId}/messages` as '/offers/{offerId}/messages', {
+    const batch = await api.get<Message[]>('/offers/{offerId}/messages', {
+      path: { offerId },
       query: { after_id: all.at(-1)?.id, limit: BATCH },
     })
     all.push(...batch)
@@ -37,7 +38,7 @@ export function useSendMessage(offerId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (text: string) =>
-      api.post<Message>(`/offers/${offerId}/messages` as '/offers/{offerId}/messages', { text }),
+      api.post<Message>('/offers/{offerId}/messages', { text }, { path: { offerId } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: messagesKey(offerId) }),
   })
 }

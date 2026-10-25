@@ -52,7 +52,7 @@ export function useApproveApplication() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) =>
-      api.post<Application>(`/admin/applications/${id}/approve` as '/admin/applications/{applicationId}/approve'),
+      api.post<Application>('/admin/applications/{applicationId}/approve', undefined, { path: { applicationId: id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
   })
 }
@@ -61,7 +61,7 @@ export function useRejectApplication() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      api.post<Application>(`/admin/applications/${id}/reject` as '/admin/applications/{applicationId}/reject', { reason }),
+      api.post<Application>('/admin/applications/{applicationId}/reject', { reason }, { path: { applicationId: id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
   })
 }
@@ -78,7 +78,7 @@ export function useSubmitApplication() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) =>
-      api.post<Application>(`/applications/${id}/submit` as '/applications/{applicationId}/submit'),
+      api.post<Application>('/applications/{applicationId}/submit', undefined, { path: { applicationId: id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
   })
 }
