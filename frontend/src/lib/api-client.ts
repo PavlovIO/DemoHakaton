@@ -36,7 +36,17 @@ interface RequestOptions {
   method?: Method
   body?: unknown
   query?: Record<string, string | number | boolean | undefined | null | Array<string | number>>
+  // Значения для {param} в шаблоне пути из OpenAPI: '/offers/{offerId}/accept', { path: { offerId } }
+  path?: Record<string, string>
   signal?: AbortSignal
+}
+
+function buildPath(template: string, params: Record<string, string> = {}): string {
+  return template.replace(/\{(\w+)\}/g, (_, name: string) => {
+    const value = params[name]
+    if (value === undefined) throw new Error(`Не задан параметр пути ${name} для ${template}`)
+    return encodeURIComponent(value)
+  })
 }
 
 // Сериализация query-параметров (включая массивы в формате ?status=sent&status=accepted)
@@ -56,8 +66,8 @@ function buildQuery(query?: RequestOptions['query']): string {
 }
 
 async function request<T>(path: keyof paths | string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, signal } = options
-  const url = `/api/v1${String(path)}${buildQuery(query)}`
+  const { method = 'GET', body, query, path: params, signal } = options
+  const url = `/api/v1${buildPath(String(path), params)}${buildQuery(query)}`
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -68,14 +78,17 @@ async function request<T>(path: keyof paths | string, options: RequestOptions = 
   if (unsafeMethods.includes(method)) {
     const csrf = getCookie('csrf_token')
     if (csrf) headers['X-CSRF-Token'] = csrf
-    if (body !== undefined) headers['Content-Type'] = 'application/json'
   }
+
+  // FormData (загрузка файлов) уходит как есть: boundary в Content-Type ставит fetch.
+  const isForm = body instanceof FormData
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
 
   const res = await fetch(url, {
     method,
     headers,
     credentials: 'include', // обязательно: шлём и принимаем cookie
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     signal,
   })
 

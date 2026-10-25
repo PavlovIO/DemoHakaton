@@ -9,6 +9,8 @@ import { Offers } from '@/pages/Offers'
 import { Deals } from '@/pages/Deals'
 import { KycStub } from '@/pages/KycStub'
 import { ProfileStub } from '@/pages/ProfileStub'
+import { Marketplace } from '@/pages/Marketplace'
+import { AdminPanel } from '@/pages/AdminPanel'
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -33,7 +35,9 @@ const router = createBrowserRouter([
       </PrivateRoute>
     ),
     children: [
-      { index: true, element: <div>Админ-панель (Фаза 6)</div> },
+      { index: true, element: <AdminPanel /> },
+      // Пункты меню админа (/admin/organizations, /admin/aml...) открывают ту же панель.
+      { path: '*', element: <AdminPanel /> },
     ],
   },
   {
@@ -48,6 +52,7 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'applications', element: <Applications /> },
       { path: 'applications/:id', element: <div>Детали заявки</div> },
+      { path: 'marketplace', element: <Marketplace /> },
       { path: 'offers', element: <Offers /> },
       { path: 'deals', element: <Deals /> },
     ],

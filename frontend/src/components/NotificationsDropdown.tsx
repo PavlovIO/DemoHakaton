@@ -1,50 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bell, CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-interface Notification {
-  id: string
-  title: string
-  description: string
-  timestamp: string
-  isRead: boolean
-  type: 'offer' | 'application' | 'deal' | 'system'
-}
-
-// Моковые данные
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'Новое предложение',
-    description: 'Beta Corp предложила 500,000 EUR под 8%',
-    timestamp: '14:32',
-    isRead: false,
-    type: 'offer',
-  },
-  {
-    id: '2',
-    title: 'Заявка одобрена',
-    description: 'Заявка APP-000123 одобрена модератором',
-    timestamp: '10:15',
-    isRead: false,
-    type: 'application',
-  },
-  {
-    id: '3',
-    title: 'Сделка создана',
-    description: 'Сделка DEAL-000045 успешно создана',
-    timestamp: 'Вчера',
-    isRead: true,
-    type: 'deal',
-  },
-]
+import { useMarkAllNotificationsRead, useNotifications } from '@/hooks/useNotifications'
+import { handleApiError } from '@/lib/api-errors'
 
 export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState(mockNotifications)
+  const { data } = useNotifications()
+  const notifications = data?.items ?? []
+  const unreadCount = data?.unread_total ?? 0
+  const markAllRead = useMarkAllNotificationsRead()
   const dropdownRef = useRef<HTMLDivElement>(null)
-
-  const unreadCount = notifications.filter((n) => !n.isRead).length
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -56,9 +22,7 @@ export function NotificationsDropdown() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, isRead: true })))
-  }
+  const markAllAsRead = () => markAllRead.mutate(undefined, { onError: handleApiError })
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -100,15 +64,14 @@ export function NotificationsDropdown() {
                   key={notification.id}
                   className={cn(
                     'border-b border-gray-100 px-4 py-3 transition-colors hover:bg-gray-50',
-                    !notification.isRead && 'bg-primary-50/30'
+                    !notification.is_read && 'bg-primary-50/30'
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{notification.title}</p>
-                      <p className="mt-0.5 text-xs text-gray-600">{notification.description}</p>
                     </div>
-                    <span className="shrink-0 text-xs text-gray-400">{notification.timestamp}</span>
+                    <span className="shrink-0 text-xs text-gray-400">{new Date(notification.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 </div>
               ))
