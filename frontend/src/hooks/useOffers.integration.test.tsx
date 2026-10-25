@@ -14,6 +14,9 @@ describe('офферы против живого бэкенда', () => {
       () => ({ create: useCreateOffer(), mine: useMyOffers() }),
       { wrapper: AppProviders },
     )
+    // Список загружен до мутации, как в UI: иначе invalidateQueries присоединится к первому
+    // GET, ушедшему до мутации, и список останется устаревшим.
+    await waitFor(() => expect(lender.result.current.mine.isSuccess).toBe(true))
     const offer = await act(() =>
       lender.result.current.create.mutateAsync({
         applicationId: app.id,
@@ -46,6 +49,7 @@ describe('офферы против живого бэкенда', () => {
       () => ({ withdraw: useWithdrawOffer(), mine: useMyOffers() }),
       { wrapper: AppProviders },
     )
+    await waitFor(() => expect(result.current.mine.isSuccess).toBe(true))
     await act(() => result.current.withdraw.mutateAsync(offer.id))
 
     await waitFor(() =>

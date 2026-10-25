@@ -33,6 +33,9 @@ describe('подготовка к KYC против живого бэкенда',
       () => ({ upload: useUploadDocument(), list: useMyDocuments() }),
       { wrapper: AppProviders },
     )
+    // Список загружен до мутации, как в UI: иначе invalidateQueries присоединится к первому
+    // GET, ушедшему до мутации, и список останется устаревшим.
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true))
     await act(() => result.current.upload.mutateAsync({ docType: 'charter', file: pdf('устав.pdf') }))
 
     await waitFor(() =>
@@ -49,6 +52,7 @@ describe('подготовка к KYC против живого бэкенда',
       () => ({ upload: useUploadDocument(), remove: useDeleteDocument(), list: useMyDocuments() }),
       { wrapper: AppProviders },
     )
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true))
     const wrong = await act(() =>
       result.current.upload.mutateAsync({ docType: 'address_proof', file: pdf('не-тот-файл.pdf') }),
     )

@@ -16,6 +16,12 @@ describe('сделки против живого бэкенда', () => {
       () => ({ accept: useAcceptOffer(), deals: useDeals(), apps: useMyApplications() }),
       { wrapper: AppProviders },
     )
+    // Список загружен до мутации, как в UI: иначе invalidateQueries присоединится к первому
+    // GET, ушедшему до мутации, и список останется устаревшим.
+    await waitFor(() => {
+      expect(borrower.result.current.deals.isSuccess).toBe(true)
+      expect(borrower.result.current.apps.isSuccess).toBe(true)
+    })
     const deal = await act(() => borrower.result.current.accept.mutateAsync(offer.id))
 
     await waitFor(() => {

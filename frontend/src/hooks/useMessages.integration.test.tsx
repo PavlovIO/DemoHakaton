@@ -14,6 +14,9 @@ describe('чат по офферу против живого бэкенда', ()
       () => ({ send: useSendMessage(offer.id), messages: useMessages(offer.id) }),
       { wrapper: AppProviders },
     )
+    // Список загружен до мутации, как в UI: иначе invalidateQueries присоединится к первому
+    // GET, ушедшему до мутации, и список останется устаревшим.
+    await waitFor(() => expect(lender.result.current.messages.isSuccess).toBe(true))
     await act(() => lender.result.current.send.mutateAsync('Готовы обсудить график?'))
     await waitFor(() =>
       expect(lender.result.current.messages.data).toEqual([

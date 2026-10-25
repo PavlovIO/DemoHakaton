@@ -24,6 +24,9 @@ describe('заявки против живого бэкенда', () => {
       () => ({ create: useCreateApplication(), submit: useSubmitApplication(), list: useMyApplications() }),
       { wrapper: AppProviders },
     )
+    // Список загружен до мутации, как в UI: иначе invalidateQueries присоединится к первому
+    // GET, ушедшему до мутации, и список останется устаревшим.
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true))
     const draft = await act(() =>
       result.current.create.mutateAsync({
         amount: '250000.00',
