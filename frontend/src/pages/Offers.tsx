@@ -1,39 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
+import { useMyOffers, useWithdrawOffer, type Offer } from '@/hooks/useOffers'
+import { handleApiError } from '@/lib/api-errors'
+import { formatMoney, formatPercent } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ChatModal } from '@/components/ChatModal'
 
-interface Offer {
-  id: string
-  application_id: string
-  application_number: string
-  company_name: string
-  amount: string
-  currency: string
-  interest_rate_annual: string
-  fee_percent: string
-  repayment_schedule: string
-  status: 'sent' | 'accepted' | 'rejected' | 'withdrawn'
-  created_at: string
-}
-
 export function Offers() {
   const { user } = useAuth()
-  const [offers, setOffers] = useState<Offer[]>([])
-  const [chatOffer, setChatOffer] = useState<Offer | null>(null) // <-- ДОБАВЛЕН СТЕЙТ ДЛЯ ЧАТА
-
-  // Загружаем офферы из localStorage при открытии страницы
-  useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('mock_offers') || '[]')
-    setOffers(saved)
-  }, [])
+  const { data } = useMyOffers()
+  const offers = data?.items ?? []
+  const withdrawOffer = useWithdrawOffer()
+  const [chatOffer, setChatOffer] = useState<Offer | null>(null)
 
   const handleWithdraw = (id: string) => {
     if (confirm('Вы уверены, что хотите отозвать предложение?')) {
-      const updated = offers.map(o => o.id === id ? { ...o, status: 'withdrawn' } : o)
-      setOffers(updated)
-      localStorage.setItem('mock_offers', JSON.stringify(updated))
+      withdrawOffer.mutate(id, {
+        onSuccess: () => toast.success('Предложение отозвано'),
+        onError: handleApiError,
+      })
     }
   }
 
@@ -66,19 +53,18 @@ export function Offers() {
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-mono text-sm text-gray-500">{offer.application_number}</span>
                     {getStatusBadge(offer.status)}
-                    <span className="text-sm font-semibold text-gray-900">{offer.company_name}</span>
                   </div>
                   <p className="text-sm text-gray-900">
-                    Вы предложили: <span className="font-medium">{Number(offer.amount).toLocaleString('ru-RU')} {offer.currency}</span> под <span className="font-medium">{offer.interest_rate_annual}%</span> годовых
+                    Вы предложили: <span className="font-medium">{formatMoney(offer.amount, offer.currency)}</span> под <span className="font-medium">{formatPercent(offer.interest_rate_annual)}</span> годовых
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Комиссия: {offer.fee_percent}% | График: {offer.repayment_schedule === 'bullet' ? 'В конце срока' : offer.repayment_schedule}
+                    Комиссия: {formatPercent(offer.fee_percent)} | График: {offer.repayment_schedule === 'bullet' ? 'В конце срока' : offer.repayment_schedule}
                   </p>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
                   {offer.status === 'sent' && (
-                    <Button variant="danger" onClick={() => handleWithdraw(offer.id)}>Отозвать</Button>
+                    <Button variant="danger" disabled={withdrawOffer.isPending} onClick={() => handleWithdraw(offer.id)}>Отозвать</Button>
                   )}
                 </div>
               </div>
@@ -97,7 +83,6 @@ export function Offers() {
         onClose={() => setChatOffer(null)}
         offerId={chatOffer?.id || ''}
         offerNumber={chatOffer?.application_number || ''}
-        role="lender"
       />
     </div>
   )

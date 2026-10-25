@@ -1,4 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { useApproveApplication, useModerationQueue, useRejectApplication } from '@/hooks/useApplications'
+import { handleApiError } from '@/lib/api-errors'
+import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 
@@ -11,16 +15,6 @@ interface KycOrg {
   status: 'under_review' | 'verified'
 }
 
-interface ModerationApp {
-  id: string
-  number: string
-  company_name?: string
-  amount: string
-  currency: string
-  purpose: string
-  status: 'moderation' | 'published' | 'rejected' | string
-}
-
 const INITIAL_KYC: KycOrg[] = [
   { id: '1', name: 'Альфа', type: 'borrower', country_code: 'RU', registration_number: '7700000001', status: 'under_review' },
   { id: '2', name: 'Beta Corp', type: 'lender', country_code: 'CY', registration_number: 'CY-123456', status: 'under_review' },
@@ -31,13 +25,10 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'kyc' | 'apps'>('kyc')
   
   const [kycQueue, setKycQueue] = useState<KycOrg[]>(INITIAL_KYC)
-  const [appQueue, setAppQueue] = useState<ModerationApp[]>([])
-
-  // Загружаем заявки из localStorage
-  useEffect(() => {
-    const savedApps = JSON.parse(localStorage.getItem('mock_applications') || '[]')
-    setAppQueue(savedApps)
-  }, [])
+  const { data: moderation } = useModerationQueue()
+  const appQueue = moderation?.items ?? []
+  const approveApplication = useApproveApplication()
+  const rejectApplication = useRejectApplication()
 
   const handleApproveKyc = (id: string) => {
     setKycQueue(kycQueue.map(org => org.id === id ? { ...org, status: 'verified' } : org))
@@ -50,17 +41,19 @@ export function AdminPanel() {
   }
 
   const handleApproveApp = (id: string) => {
-    const updated = appQueue.map(app => app.id === id ? { ...app, status: 'published' as const } : app)
-    setAppQueue(updated)
-    localStorage.setItem('mock_applications', JSON.stringify(updated))
-    alert('Заявка одобрена и опубликована на витрине!')
+    approveApplication.mutate(id, {
+      onSuccess: () => toast.success('Заявка опубликована на витрине'),
+      onError: handleApiError,
+    })
   }
 
   const handleRejectApp = (id: string) => {
-    const updated = appQueue.map(app => app.id === id ? { ...app, status: 'rejected' as const } : app)
-    setAppQueue(updated)
-    localStorage.setItem('mock_applications', JSON.stringify(updated))
-    alert('Заявка отклонена.')
+    const reason = prompt('Причина возврата на доработку')?.trim()
+    if (!reason) return
+    rejectApplication.mutate({ id, reason }, {
+      onSuccess: () => toast.success('Заявка возвращена заемщику'),
+      onError: handleApiError,
+    })
   }
 
   return (
@@ -87,7 +80,7 @@ export function AdminPanel() {
               activeTab === 'apps' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            Модерация заявок ({appQueue.filter(a => a.status === 'moderation').length})
+            Модерация заявок ({moderation?.total ?? 0})
           </button>
         </nav>
       </div>
@@ -132,20 +125,16 @@ export function AdminPanel() {
                 <div>
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-mono text-sm text-gray-500">{app.number}</span>
-                    <span className="font-semibold text-gray-900">{app.company_name || 'Альфа'}</span>
-                    <Badge variant={app.status === 'moderation' ? 'warning' : (app.status === 'published' ? 'success' : 'danger')}>
-                      {app.status === 'moderation' ? 'На модерации' : (app.status === 'published' ? 'Опубликована' : 'Отклонена')}
-                    </Badge>
+                    <span className="font-semibold text-gray-900">{app.borrower.name}</span>
+                    <Badge variant="warning">На модерации</Badge>
                   </div>
                   <p className="text-sm text-gray-900">{app.purpose}</p>
-                  <p className="text-sm font-medium text-gray-700 mt-1">{Number(app.amount).toLocaleString('ru-RU')} {app.currency}</p>
+                  <p className="text-sm font-medium text-gray-700 mt-1">{formatMoney(app.amount, app.currency)}</p>
                 </div>
-                {app.status === 'moderation' && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => handleRejectApp(app.id)}>Отклонить</Button>
-                    <Button onClick={() => handleApproveApp(app.id)}>Опубликовать</Button>
-                  </div>
-                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" disabled={rejectApplication.isPending} onClick={() => handleRejectApp(app.id)}>Отклонить</Button>
+                  <Button disabled={approveApplication.isPending} onClick={() => handleApproveApp(app.id)}>Опубликовать</Button>
+                </div>
               </li>
             ))}
             {appQueue.length === 0 && <li className="p-6 text-center text-gray-500">Нет заявок на модерации.</li>}

@@ -1,26 +1,12 @@
-import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useDeals } from '@/hooks/useDeals'
+import { formatMoney, formatPercent } from '@/lib/money'
 import { Badge } from '@/components/ui/Badge'
-
-interface Deal {
-  id: string
-  application_number: string
-  lender_name: string
-  amount: string
-  currency: string
-  interest_rate: string
-  fee_percent: string
-  agreed_at: string
-}
 
 export function Deals() {
   const { user } = useAuth()
-  const [deals, setDeals] = useState<Deal[]>([])
-
-  useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('mock_deals') || '[]')
-    setDeals(saved)
-  }, [])
+  const { data } = useDeals()
+  const deals = data?.items ?? []
 
   return (
     <div className="space-y-6">
@@ -35,16 +21,16 @@ export function Deals() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-3 mb-1">
-                    <span className="font-mono text-sm text-gray-500">{deal.application_number}</span>
+                    <span className="font-mono text-sm text-gray-500">{deal.number}</span>
                     <Badge variant="success">Сделка зафиксирована</Badge>
                   </div>
                   <p className="text-sm font-medium text-gray-900">
-                    {user?.role === 'borrower' ? `Кредитор: ${deal.lender_name}` : `Заемщик: Альфа`}
+                    {user?.role === 'borrower' ? `Кредитор: ${deal.lender.name}` : `Заемщик: ${deal.borrower.name}`}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
-                    <span className="font-medium text-gray-900">{Number(deal.amount).toLocaleString('ru-RU')} {deal.currency}</span>
-                    <span>Ставка: {deal.interest_rate}%</span>
-                    <span>Комиссия: {deal.fee_percent}%</span>
+                    <span className="font-medium text-gray-900">{formatMoney(deal.amount, deal.currency)}</span>
+                    <span>Ставка: {formatPercent(deal.interest_rate_annual)}</span>
+                    <span>Комиссия: {formatPercent(deal.fee_percent)}</span>
                     <span>Дата: {new Date(deal.agreed_at).toLocaleDateString('ru-RU')}</span>
                   </div>
                 </div>

@@ -1,26 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bell, CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Notification } from '@/lib/notifications'
+import { useMarkAllNotificationsRead, useNotifications } from '@/hooks/useNotifications'
+import { handleApiError } from '@/lib/api-errors'
 
 export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  const { data } = useNotifications()
+  const notifications = data?.items ?? []
+  const unreadCount = data?.unread_total ?? 0
+  const markAllRead = useMarkAllNotificationsRead()
   const dropdownRef = useRef<HTMLDivElement>(null)
-
-  const loadNotifications = () => {
-    const saved = JSON.parse(localStorage.getItem('mock_notifications') || '[]')
-    setNotifications(saved)
-  }
-
-  useEffect(() => {
-    loadNotifications()
-    // Слушаем кастомное событие обновления
-    window.addEventListener('notifications-updated', loadNotifications)
-    return () => window.removeEventListener('notifications-updated', loadNotifications)
-  }, [])
-
-  const unreadCount = notifications.filter((n) => !n.isRead).length
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -32,11 +22,7 @@ export function NotificationsDropdown() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const markAllAsRead = () => {
-    const updated = notifications.map((n) => ({ ...n, isRead: true }))
-    setNotifications(updated)
-    localStorage.setItem('mock_notifications', JSON.stringify(updated))
-  }
+  const markAllAsRead = () => markAllRead.mutate(undefined, { onError: handleApiError })
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -78,15 +64,14 @@ export function NotificationsDropdown() {
                   key={notification.id}
                   className={cn(
                     'border-b border-gray-100 px-4 py-3 transition-colors hover:bg-gray-50',
-                    !notification.isRead && 'bg-primary-50/30'
+                    !notification.is_read && 'bg-primary-50/30'
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{notification.title}</p>
-                      <p className="mt-0.5 text-xs text-gray-600">{notification.description}</p>
                     </div>
-                    <span className="shrink-0 text-xs text-gray-400">{notification.timestamp}</span>
+                    <span className="shrink-0 text-xs text-gray-400">{new Date(notification.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 </div>
               ))

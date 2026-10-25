@@ -1,52 +1,34 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { useMarketplace, type Application } from '@/hooks/useApplications'
+import { useCreateOffer, type OfferCreate } from '@/hooks/useOffers'
+import { handleApiError } from '@/lib/api-errors'
+import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { addNotification } from '@/lib/notifications' // <-- ДОБАВЛЕН ИМПОРТ
-
-interface Application {
-  id: string
-  number: string
-  company_name: string
-  amount: string
-  currency: string
-  target_country_code: string
-  purpose: string
-  term_months: number
-  status: string
-}
 
 export function Marketplace() {
-  const [applications, setApplications] = useState<Application[]>([])
-
-  const [myOffers, setMyOffers] = useState<any[]>([])
-  
   const [filterCountry, setFilterCountry] = useState('')
   const [filterCurrency, setFilterCurrency] = useState('')
   const [filterAmountMin, setFilterAmountMin] = useState('')
+
+  // Фильтрует бэкенд; пустые значения в запрос не уходят.
+  const { data } = useMarketplace({
+    target_country: filterCountry || undefined,
+    currency: filterCurrency || undefined,
+    amount_min: filterAmountMin || undefined,
+  })
+  const filteredApps = data?.items ?? []
+  const createOffer = useCreateOffer()
 
   const [selectedApp, setSelectedApp] = useState<Application | null>(null)
   const [offerData, setOfferData] = useState({
     amount: '',
     interest_rate_annual: '8.00',
     fee_percent: '1.00',
-    repayment_schedule: 'bullet',
+    repayment_schedule: 'bullet' as OfferCreate['repayment_schedule'],
     collateral: '',
     additional_terms: ''
-  })
-
-  useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('mock_applications') || '[]')
-    const publishedOnly = saved.filter((a: Application) => a.status === 'published')
-    setApplications(publishedOnly)
-    const savedOffers = JSON.parse(localStorage.getItem('mock_offers') || '[]')
-    setMyOffers(savedOffers)
-  }, [])
-
-  const filteredApps = applications.filter(app => {
-    if (filterCountry && app.target_country_code !== filterCountry) return false
-    if (filterCurrency && app.currency !== filterCurrency) return false
-    if (filterAmountMin && Number(app.amount) < Number(filterAmountMin)) return false
-    return true
   })
 
   const openOfferModal = (app: Application) => {
@@ -63,37 +45,26 @@ export function Marketplace() {
 
   const handleCreateOffer = (e: React.FormEvent) => {
     e.preventDefault()
-    
-    const newOffer = {
-      id: Math.random().toString(),
-      application_id: selectedApp?.id,
-      application_number: selectedApp?.number,
-      company_name: 'Demo Company LLC',
-      amount: offerData.amount,
-      currency: selectedApp?.currency,
-      interest_rate_annual: offerData.interest_rate_annual,
-      fee_percent: offerData.fee_percent,
-      repayment_schedule: offerData.repayment_schedule,
-      status: 'sent',
-      created_at: new Date().toISOString()
-    }
+    if (!selectedApp) return
 
-    const existingOffers = JSON.parse(localStorage.getItem('mock_offers') || '[]')
-    const updatedOffers = [newOffer, ...existingOffers]
-    localStorage.setItem('mock_offers', JSON.stringify(updatedOffers))
-    
-    setMyOffers(updatedOffers) 
-
-    // ДОБАВЛЕНО УВЕДОМЛЕНИЕ ДЛЯ ЗАЕМЩИКА
-    addNotification({
-      type: 'offer',
-      title: `Новое предложение по заявке ${selectedApp?.number}`,
-      description: `Кредитор Demo Company LLC отправил оффер на сумму ${offerData.amount} ${selectedApp?.currency}`,
-      entity_id: selectedApp?.id || ''
-    })
-
-    alert('Оффер успешно отправлен заемщику!')
-    setSelectedApp(null)
+    createOffer.mutate(
+      {
+        applicationId: selectedApp.id,
+        amount: offerData.amount,
+        interest_rate_annual: offerData.interest_rate_annual,
+        fee_percent: offerData.fee_percent || undefined,
+        repayment_schedule: offerData.repayment_schedule,
+        collateral: offerData.collateral || undefined,
+        additional_terms: offerData.additional_terms || undefined,
+      },
+      {
+        onSuccess: () => {
+          toast.success('Оффер отправлен заемщику')
+          setSelectedApp(null)
+        },
+        onError: handleApiError,
+      },
+    )
   }
 
   return (
@@ -139,17 +110,17 @@ export function Marketplace() {
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-mono text-sm text-gray-500">{app.number}</span>
                     <Badge variant="success">Опубликована</Badge>
-                    <span className="text-sm font-semibold text-gray-900">{app.company_name}</span>
+                    <span className="text-sm font-semibold text-gray-900">{app.borrower.name}</span>
                   </div>
                   <p className="text-sm text-gray-900">{app.purpose}</p>
                   <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500">
-                    <span className="font-medium text-gray-900">{Number(app.amount).toLocaleString('ru-RU')} {app.currency}</span>
+                    <span className="font-medium text-gray-900">{formatMoney(app.amount, app.currency)}</span>
                     <span>Срок: {app.term_months} мес.</span>
                     <span>Страна: {app.target_country_code}</span>
                   </div>
                 </div>
                 <div>
-                  {myOffers.some(o => o.application_id === app.id && o.status === 'sent') ? (
+                  {app.my_offer_id ? (
                     <Badge variant="success">Оффер отправлен</Badge>
                   ) : (
                     <Button onClick={() => openOfferModal(app)}>Предложить финансирование</Button>
@@ -159,7 +130,7 @@ export function Marketplace() {
             </li>
           ))}
           {filteredApps.length === 0 && (
-            <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено. Опубликуйте заявки через админку.</li>
+            <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено.</li>
           )}
         </ul>
       </div>
@@ -170,7 +141,7 @@ export function Marketplace() {
           <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="mb-4">
               <h2 className="text-xl font-semibold">Предложение по заявке {selectedApp.number}</h2>
-              <p className="text-sm text-gray-500 mt-1">{selectedApp.company_name} запрашивает {selectedApp.amount} {selectedApp.currency}</p>
+              <p className="text-sm text-gray-500 mt-1">{selectedApp.borrower.name} запрашивает {formatMoney(selectedApp.amount, selectedApp.currency)}</p>
             </div>
             
             <form onSubmit={handleCreateOffer} className="space-y-4">
@@ -192,7 +163,7 @@ export function Marketplace() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">График погашения</label>
-                  <select value={offerData.repayment_schedule} onChange={e => setOfferData({...offerData, repayment_schedule: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
+                  <select value={offerData.repayment_schedule} onChange={e => setOfferData({...offerData, repayment_schedule: e.target.value as OfferCreate['repayment_schedule']})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
                     <option value="bullet">В конце срока (Bullet)</option>
                     <option value="annuity">Аннуитетный</option>
                     <option value="interest_monthly_principal_bullet">Проценты ежемесячно, тело в конце</option>
@@ -212,7 +183,7 @@ export function Marketplace() {
 
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button type="button" variant="outline" onClick={() => setSelectedApp(null)}>Отмена</Button>
-                <Button type="submit">Отправить предложение</Button>
+                <Button type="submit" disabled={createOffer.isPending}>Отправить предложение</Button>
               </div>
             </form>
           </div>

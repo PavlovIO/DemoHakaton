@@ -13,7 +13,7 @@ const REQUIRED_DOCS = [
 ]
 
 export function KycStub() {
-  const { organization, user, refresh } = useAuth()
+  const { organization, user } = useAuth()
   
   // Локальный стейт для имитации статуса и загруженных файлов
   const [localStatus, setLocalStatus] = useState(organization?.kyc_status || 'draft')
