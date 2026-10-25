@@ -9,6 +9,7 @@ export default mergeConfig(
       include: ['src/**/*.integration.test.{ts,tsx}'],
       environment: 'jsdom',
       setupFiles: ['src/test/integration/setup.ts'],
+      globalSetup: ['src/test/integration/global-setup.ts'],
       // Один бэкенд и общие лимиты логина — файлы по очереди.
       fileParallelism: false,
       testTimeout: 15_000,

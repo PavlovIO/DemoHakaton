@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
 
@@ -8,11 +8,14 @@ type ApplicationPage = components['schemas']['ApplicationPage']
 
 export const APPLICATIONS_KEY = ['applications'] as const
 
+// Пагинации в UI пока нет — берём максимум страницы API.
+const PAGE_SIZE = 100
+
 // Заёмщику бэкенд отдаёт только заявки его организации.
 export function useMyApplications() {
   return useQuery({
     queryKey: [...APPLICATIONS_KEY, 'mine'],
-    queryFn: () => api.get<ApplicationPage>('/applications'),
+    queryFn: () => api.get<ApplicationPage>('/applications', { query: { page_size: PAGE_SIZE } }),
   })
 }
 
@@ -28,8 +31,10 @@ export function useMarketplace(filters: MarketplaceFilters = {}) {
     queryKey: [...APPLICATIONS_KEY, 'marketplace', filters],
     queryFn: () =>
       api.get<ApplicationPage>('/applications', {
-        query: { ...filters, sort: 'created_at_desc' },
+        query: { ...filters, sort: 'created_at_desc', page_size: PAGE_SIZE },
       }),
+    // Пока грузится новый фильтр, показываем прежний список вместо «ничего не найдено».
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -38,7 +43,7 @@ export function useModerationQueue() {
     queryKey: [...APPLICATIONS_KEY, 'moderation'],
     queryFn: () =>
       api.get<ApplicationPage>('/applications', {
-        query: { status: ['moderation'], sort: 'created_at_desc' },
+        query: { status: ['moderation'], sort: 'created_at_desc', page_size: PAGE_SIZE },
       }),
   })
 }
@@ -61,14 +66,19 @@ export function useRejectApplication() {
   })
 }
 
-// Создаёт черновик и сразу отправляет его на модерацию — как кнопка в форме.
 export function useCreateApplication() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: ApplicationCreate) => {
-      const draft = await api.post<Application>('/applications', payload)
-      return api.post<Application>(`/applications/${draft.id}/submit` as '/applications/{applicationId}/submit')
-    },
+    mutationFn: (payload: ApplicationCreate) => api.post<Application>('/applications', payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
+  })
+}
+
+export function useSubmitApplication() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<Application>(`/applications/${id}/submit` as '/applications/{applicationId}/submit'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
   })
 }

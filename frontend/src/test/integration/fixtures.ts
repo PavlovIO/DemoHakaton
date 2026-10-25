@@ -8,7 +8,7 @@ type Offer = components['schemas']['Offer']
 // Подготовка через API: проверяемое поведение — в тестах хуков, не здесь.
 
 export async function submitApplication() {
-  await loginAs(BORROWER)
+  loginAs(BORROWER)
   const draft = await api.post<Application>('/applications', {
     amount: '100000.00',
     currency: 'EUR',
@@ -22,14 +22,14 @@ export async function submitApplication() {
 
 export async function publishApplication() {
   const app = await submitApplication()
-  await loginAs(ADMIN)
+  loginAs(ADMIN)
   return api.post<Application>(`/admin/applications/${app.id}/approve` as '/admin/applications/{applicationId}/approve')
 }
 
 // Опубликованная заявка с оффером кредитора; сессия остаётся у кредитора.
 export async function sendOffer() {
   const app = await publishApplication()
-  await loginAs(LENDER)
+  loginAs(LENDER)
   const offer = await api.post<Offer>(`/applications/${app.id}/offers` as '/applications/{applicationId}/offers', {
     amount: '90000.00',
     interest_rate_annual: '9.50',

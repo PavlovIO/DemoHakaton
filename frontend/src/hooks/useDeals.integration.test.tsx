@@ -11,7 +11,7 @@ describe('сделки против живого бэкенда', () => {
   it('заёмщик принимает оффер — заявка согласована, сделка видна обеим сторонам', async () => {
     const { app, offer } = await sendOffer()
 
-    await loginAs(BORROWER)
+    loginAs(BORROWER)
     const borrower = renderHook(
       () => ({ accept: useAcceptOffer(), deals: useDeals(), apps: useMyApplications() }),
       { wrapper: AppProviders },
@@ -28,7 +28,7 @@ describe('сделки против живого бэкенда', () => {
     })
     borrower.unmount()
 
-    await loginAs(LENDER)
+    loginAs(LENDER)
     const lender = renderHook(() => useDeals(), { wrapper: AppProviders })
     await waitFor(() =>
       expect(lender.result.current.data?.items.map((d) => d.id)).toContain(deal.id),

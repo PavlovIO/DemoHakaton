@@ -9,7 +9,7 @@ describe('офферы против живого бэкенда', () => {
   it('кредитор отправляет оффер — он у кредитора в «Моих предложениях» и у заёмщика в заявке', async () => {
     const app = await publishApplication()
 
-    await loginAs(LENDER)
+    loginAs(LENDER)
     const lender = renderHook(
       () => ({ create: useCreateOffer(), mine: useMyOffers() }),
       { wrapper: AppProviders },
@@ -30,7 +30,7 @@ describe('офферы против живого бэкенда', () => {
     )
     lender.unmount()
 
-    await loginAs(BORROWER)
+    loginAs(BORROWER)
     const borrower = renderHook(() => useApplicationOffers(app.id), { wrapper: AppProviders })
     await waitFor(() =>
       expect(borrower.result.current.data).toEqual([

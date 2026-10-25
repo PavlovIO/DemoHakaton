@@ -13,7 +13,7 @@ export function Marketplace() {
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
   // Фильтрует бэкенд; пустые значения в запрос не уходят.
-  const { data } = useMarketplace({
+  const { data, isLoading } = useMarketplace({
     target_country: filterCountry || undefined,
     currency: filterCurrency || undefined,
     amount_min: filterAmountMin || undefined,
@@ -129,7 +129,7 @@ export function Marketplace() {
               </div>
             </li>
           ))}
-          {filteredApps.length === 0 && (
+          {!isLoading && filteredApps.length === 0 && (
             <li className="p-8 text-center text-gray-500">По вашему запросу ничего не найдено.</li>
           )}
         </ul>

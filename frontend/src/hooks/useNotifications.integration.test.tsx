@@ -9,7 +9,7 @@ describe('уведомления против живого бэкенда', () =
   it('заёмщик получает уведомление о новом оффере и отмечает все прочитанными', async () => {
     const { offer } = await sendOffer()
 
-    await loginAs(BORROWER)
+    loginAs(BORROWER)
     const { result } = renderHook(
       () => ({ list: useNotifications(), readAll: useMarkAllNotificationsRead() }),
       { wrapper: AppProviders },

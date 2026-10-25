@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge'
 
 export function Deals() {
   const { user } = useAuth()
-  const { data } = useDeals()
+  const { data, isLoading } = useDeals()
   const deals = data?.items ?? []
 
   return (
@@ -37,7 +37,7 @@ export function Deals() {
               </div>
             </li>
           ))}
-          {deals.length === 0 && (
+          {!isLoading && deals.length === 0 && (
             <li className="p-8 text-center text-gray-500">
               Сделок пока нет.
             </li>

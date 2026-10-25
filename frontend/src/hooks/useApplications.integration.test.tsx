@@ -7,21 +7,22 @@ import {
   useModerationQueue,
   useMyApplications,
   useRejectApplication,
+  useSubmitApplication,
 } from './useApplications'
 import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, LENDER, loginAs } from '@/test/integration/actors'
 import { submitApplication } from '@/test/integration/fixtures'
 
 describe('заявки против живого бэкенда', () => {
-  it('заёмщик подаёт заявку — она в его списке на модерации', async () => {
-    await loginAs(BORROWER)
+  it('заёмщик сохраняет черновик и подаёт его — заявка в его списке на модерации', async () => {
+    loginAs(BORROWER)
     const purpose = `Закупка оборудования ${crypto.randomUUID()}`
 
     const { result } = renderHook(
-      () => ({ create: useCreateApplication(), list: useMyApplications() }),
+      () => ({ create: useCreateApplication(), submit: useSubmitApplication(), list: useMyApplications() }),
       { wrapper: AppProviders },
     )
-    await act(() =>
+    const draft = await act(() =>
       result.current.create.mutateAsync({
         amount: '250000.00',
         currency: 'EUR',
@@ -31,10 +32,18 @@ describe('заявки против живого бэкенда', () => {
         purpose,
       }),
     )
+    // Черновик виден сразу: если подача сорвётся, его можно подать повторно из списка.
+    await waitFor(() =>
+      expect(result.current.list.data?.items).toContainEqual(
+        expect.objectContaining({ id: draft.id, purpose, status: 'draft' }),
+      ),
+    )
+
+    await act(() => result.current.submit.mutateAsync(draft.id))
 
     await waitFor(() =>
       expect(result.current.list.data?.items).toContainEqual(
-        expect.objectContaining({ purpose, status: 'moderation', amount: '250000.00' }),
+        expect.objectContaining({ id: draft.id, status: 'moderation', amount: '250000.00' }),
       ),
     )
   })
@@ -42,7 +51,7 @@ describe('заявки против живого бэкенда', () => {
   it('admin публикует заявку из очереди — кредитор видит её на витрине', async () => {
     const app = await submitApplication()
 
-    await loginAs(ADMIN)
+    loginAs(ADMIN)
     const admin = renderHook(
       () => ({ queue: useModerationQueue(), approve: useApproveApplication() }),
       { wrapper: AppProviders },
@@ -53,7 +62,7 @@ describe('заявки против живого бэкенда', () => {
     await act(() => admin.result.current.approve.mutateAsync(app.id))
     admin.unmount()
 
-    await loginAs(LENDER)
+    loginAs(LENDER)
     const lender = renderHook(() => useMarketplace({ currency: 'EUR' }), { wrapper: AppProviders })
     await waitFor(() =>
       expect(lender.result.current.data?.items).toContainEqual(
@@ -67,12 +76,12 @@ describe('модерация: отказ', () => {
   it('admin возвращает заявку с причиной — заёмщик видит отказ и причину', async () => {
     const app = await submitApplication()
 
-    await loginAs(ADMIN)
+    loginAs(ADMIN)
     const admin = renderHook(() => useRejectApplication(), { wrapper: AppProviders })
     await act(() => admin.result.current.mutateAsync({ id: app.id, reason: 'Уточните назначение платежа' }))
     admin.unmount()
 
-    await loginAs(BORROWER)
+    loginAs(BORROWER)
     const borrower = renderHook(() => useMyApplications(), { wrapper: AppProviders })
     await waitFor(() =>
       expect(borrower.result.current.data?.items).toContainEqual(

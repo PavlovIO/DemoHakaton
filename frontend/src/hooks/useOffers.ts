@@ -14,7 +14,8 @@ export const OFFERS_KEY = ['offers'] as const
 export function useMyOffers() {
   return useQuery({
     queryKey: [...OFFERS_KEY, 'mine'],
-    queryFn: () => api.get<OfferPage>('/offers'),
+    // Пагинации в UI пока нет — берём максимум страницы API.
+    queryFn: () => api.get<OfferPage>('/offers', { query: { page_size: 100 } }),
   })
 }
 

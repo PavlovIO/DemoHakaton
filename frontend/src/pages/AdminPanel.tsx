@@ -25,7 +25,7 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'kyc' | 'apps'>('kyc')
   
   const [kycQueue, setKycQueue] = useState<KycOrg[]>(INITIAL_KYC)
-  const { data: moderation } = useModerationQueue()
+  const { data: moderation, isLoading: isModerationLoading } = useModerationQueue()
   const appQueue = moderation?.items ?? []
   const approveApplication = useApproveApplication()
   const rejectApplication = useRejectApplication()
@@ -137,7 +137,7 @@ export function AdminPanel() {
                 </div>
               </li>
             ))}
-            {appQueue.length === 0 && <li className="p-6 text-center text-gray-500">Нет заявок на модерации.</li>}
+            {!isModerationLoading && appQueue.length === 0 && <li className="p-6 text-center text-gray-500">Нет заявок на модерации.</li>}
           </ul>
         </div>
       )}

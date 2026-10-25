@@ -21,7 +21,7 @@ describe('чат по офферу против живого бэкенда', ()
     )
     lender.unmount()
 
-    await loginAs(BORROWER)
+    loginAs(BORROWER)
     const borrower = renderHook(() => useMessages(offer.id), { wrapper: AppProviders })
     await waitFor(() =>
       expect(borrower.result.current.data).toEqual([

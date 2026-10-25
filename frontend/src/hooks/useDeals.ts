@@ -11,6 +11,7 @@ export const DEALS_KEY = ['deals'] as const
 export function useDeals() {
   return useQuery({
     queryKey: DEALS_KEY,
-    queryFn: () => api.get<DealPage>('/deals'),
+    // Пагинации в UI пока нет — берём максимум страницы API.
+    queryFn: () => api.get<DealPage>('/deals', { query: { page_size: 100 } }),
   })
 }

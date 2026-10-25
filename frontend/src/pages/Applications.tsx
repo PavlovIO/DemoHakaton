@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
-import { useCreateApplication, useMyApplications, type Application } from '@/hooks/useApplications'
+import { useCreateApplication, useMyApplications, useSubmitApplication, type Application } from '@/hooks/useApplications'
 import { useAcceptOffer, useApplicationOffers, type Offer } from '@/hooks/useOffers'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney, formatPercent } from '@/lib/money'
@@ -32,8 +32,18 @@ const EMPTY_FORM = {
 
 export function Applications() {
   const { user } = useAuth()
-  const { data: applications } = useMyApplications()
+
+  // Проверка роли до запросов: кредитору GET /applications отдал бы всю витрину.
+  if (user?.role !== 'borrower') {
+    return <div className="p-6">Доступно только для заемщиков.</div>
+  }
+  return <BorrowerApplications />
+}
+
+function BorrowerApplications() {
+  const { data: applications, isLoading } = useMyApplications()
   const createApplication = useCreateApplication()
+  const submitApplication = useSubmitApplication()
   const acceptOffer = useAcceptOffer()
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -44,19 +54,24 @@ export function Applications() {
 
   const [formData, setFormData] = useState(EMPTY_FORM)
 
-  if (user?.role !== 'borrower') {
-    return <div className="p-6">Доступно только для заемщиков.</div>
+  const handleSubmit = (id: string) => {
+    submitApplication.mutate(id, {
+      onSuccess: () => toast.success('Заявка отправлена на модерацию'),
+      onError: handleApiError,
+    })
   }
 
+  // Черновик сохраняется сразу: если подача сорвётся, его можно подать из списка,
+  // а повторное нажатие в форме не плодит дубликаты.
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     createApplication.mutate(
       { ...formData, term_months: Number(formData.term_months) },
       {
-        onSuccess: () => {
+        onSuccess: (draft) => {
           setIsCreateModalOpen(false)
           setFormData(EMPTY_FORM)
-          toast.success('Заявка отправлена на модерацию')
+          handleSubmit(draft.id)
         },
         onError: handleApiError,
       },
@@ -103,8 +118,13 @@ export function Applications() {
                       <span>Страна: {app.target_country_code}</span>
                     </div>
                   </div>
-                  <div>
-                    <Button 
+                  <div className="flex gap-2">
+                    {app.status === 'draft' && (
+                      <Button disabled={submitApplication.isPending} onClick={() => handleSubmit(app.id)}>
+                        Отправить на модерацию
+                      </Button>
+                    )}
+                    <Button
                       variant={appOffersCount > 0 && app.status === 'published' ? 'primary' : 'outline'}
                       onClick={() => setSelectedAppForOffers(app)}
                     >
@@ -115,6 +135,9 @@ export function Applications() {
               </li>
             )
           })}
+          {!isLoading && applications?.items.length === 0 && (
+            <li className="p-8 text-center text-gray-500">Заявок пока нет.</li>
+          )}
         </ul>
       </div>
 
@@ -209,6 +232,7 @@ export function Applications() {
       )}
 
       <ChatModal
+        key={chatOffer?.id}
         isOpen={!!chatOffer}
         onClose={() => setChatOffer(null)}
         offerId={chatOffer?.id || ''}

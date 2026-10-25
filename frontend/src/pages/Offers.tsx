@@ -10,7 +10,7 @@ import { ChatModal } from '@/components/ChatModal'
 
 export function Offers() {
   const { user } = useAuth()
-  const { data } = useMyOffers()
+  const { data, isLoading } = useMyOffers()
   const offers = data?.items ?? []
   const withdrawOffer = useWithdrawOffer()
   const [chatOffer, setChatOffer] = useState<Offer | null>(null)
@@ -70,7 +70,7 @@ export function Offers() {
               </div>
             </li>
           ))}
-          {offers.length === 0 && (
+          {!isLoading && offers.length === 0 && (
             <li className="p-8 text-center text-gray-500">
               Вы еще не отправляли предложений. Перейдите в «Витрину заявок», чтобы найти интересные проекты.
             </li>
@@ -79,6 +79,7 @@ export function Offers() {
       </div>
 
       <ChatModal
+        key={chatOffer?.id}
         isOpen={!!chatOffer}
         onClose={() => setChatOffer(null)}
         offerId={chatOffer?.id || ''}

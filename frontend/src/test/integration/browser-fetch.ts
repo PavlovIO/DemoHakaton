@@ -55,14 +55,8 @@ export function clearCookies() {
   jar.clear()
 }
 
-export type CookieSnapshot = ReadonlyMap<string, StoredCookie>
-
-export function snapshotCookies(): CookieSnapshot {
-  return new Map(jar)
-}
-
 // Вернуть «браузер» к сохранённой сессии — без повторного входа.
-export function restoreCookies(snapshot: CookieSnapshot) {
+export function restoreCookies(snapshot: ReadonlyMap<string, StoredCookie>) {
   clearCookies()
   for (const [name, c] of snapshot) {
     jar.set(name, c)
