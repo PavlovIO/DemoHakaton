@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-import type { components } from '@/lib/api-schema'
+import type { components, operations } from '@/lib/api-schema'
 import { PAGE_SIZE, pagedList } from '@/lib/pagination'
 
 export type Application = components['schemas']['Application']
@@ -15,25 +15,25 @@ export function useMyApplications() {
     queryKey: [...APPLICATIONS_KEY, 'mine'],
     queryFn: ({ pageParam }) =>
       api.get<ApplicationPage>('/applications', { query: { page: pageParam, page_size: PAGE_SIZE } }),
-    ...pagedList<Application>(),
+    ...pagedList<ApplicationPage>(),
   })
 }
 
-export interface MarketplaceFilters {
-  target_country?: string
-  currency?: string
-  amount_min?: string
-}
+type ListApplicationsQuery = NonNullable<operations['listApplications']['parameters']['query']>
 
-// Кредитору бэкенд отдаёт только опубликованные заявки.
+// Бэкенд применяет amount_min только вместе с currency, без неё молча игнорирует.
+export type MarketplaceFilters = Pick<ListApplicationsQuery, 'target_country'> &
+  (Pick<ListApplicationsQuery, 'currency' | 'amount_min'> & { currency: string } | { currency?: undefined; amount_min?: never })
+
+// Без status кредитору приходят и заявки с его офферами в любом статусе (архив откликов).
 export function useMarketplace(filters: MarketplaceFilters = {}) {
   return useInfiniteQuery({
     queryKey: [...APPLICATIONS_KEY, 'marketplace', filters],
     queryFn: ({ pageParam }) =>
       api.get<ApplicationPage>('/applications', {
-        query: { ...filters, sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
+        query: { ...filters, status: ['published'], sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
       }),
-    ...pagedList<Application>(),
+    ...pagedList<ApplicationPage>(),
     // Пока грузится новый фильтр, показываем прежний список вместо «ничего не найдено».
     placeholderData: keepPreviousData,
   })
@@ -46,7 +46,7 @@ export function useModerationQueue() {
       api.get<ApplicationPage>('/applications', {
         query: { status: ['moderation'], sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
       }),
-    ...pagedList<Application>(),
+    ...pagedList<ApplicationPage>(),
   })
 }
 

@@ -11,6 +11,15 @@ import { LoadMore } from '@/components/ui/LoadMore'
 
 export function Offers() {
   const { user } = useAuth()
+
+  // Проверка роли до запросов: заёмщику GET /offers не нужен, у него входящие в карточке заявки.
+  if (user?.role === 'borrower') {
+    return <div className="p-6">Входящие предложения отображаются в карточке заявки.</div>
+  }
+  return <MyOffers />
+}
+
+function MyOffers() {
   const offersQuery = useMyOffers()
   const { data, isLoading } = offersQuery
   const offers = data?.items ?? []
@@ -33,11 +42,6 @@ export function Offers() {
       case 'rejected': return <Badge variant="danger">Отклонен</Badge>
       case 'withdrawn': return <Badge variant="default">Отозван</Badge>
     }
-  }
-
-  // Заемщик видит заглушку (для него эта страница не нужна, у него будут входящие)
-  if (user?.role === 'borrower') {
-    return <div className="p-6">Входящие предложения отображаются в карточке заявки.</div>
   }
 
   return (

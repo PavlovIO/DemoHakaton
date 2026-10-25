@@ -13,6 +13,6 @@ export function useDeals() {
   return useInfiniteQuery({
     queryKey: DEALS_KEY,
     queryFn: ({ pageParam }) => api.get<DealPage>('/deals', { query: { page: pageParam, page_size: PAGE_SIZE } }),
-    ...pagedList<Deal>(),
+    ...pagedList<DealPage>(),
   })
 }

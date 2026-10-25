@@ -48,8 +48,26 @@ const beneficiarySchema = z.object({
 export function KycStub() {
   const { organization, user } = useAuth()
 
-  if (!organization || !user) {
+  if (!user) {
     return <div className="p-6">Загрузка профиля...</div>
+  }
+
+  if (!organization) {
+    return (
+      <div className="mx-auto max-w-xl p-6">
+        <h1 className="text-2xl font-semibold">Профиль компании</h1>
+        <p className="mt-2 text-gray-600">
+          У вашей учётной записи пока нет компании. Заполните профиль,
+          чтобы получить доступ к заявкам и офферам.
+        </p>
+        <Link
+          to="/profile"
+          className="mt-4 inline-block rounded bg-blue-600 px-4 py-2 text-sm text-white"
+        >
+          Заполнить профиль
+        </Link>
+      </div>
+    )
   }
 
   const status = organization.kyc_status

@@ -10,7 +10,7 @@ import { Deals } from '@/pages/Deals'
 import { KycStub } from '@/pages/KycStub'
 import { ProfileStub } from '@/pages/ProfileStub'
 import { Marketplace } from '@/pages/Marketplace'
-import { AdminPanel } from '@/pages/AdminPanel' // <-- ДОБАВЛЕН ИМПОРТ АДМИНКИ
+import { AdminPanel } from '@/pages/AdminPanel'
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -36,10 +36,8 @@ const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <AdminPanel /> },
-      // Добавляем wildcard (*), чтобы ссылки из меню админа 
-      // (/admin/organizations, /admin/applications и т.д.) 
-      // не выдавали 404, а открывали нашу единую панель
-      { path: '*', element: <AdminPanel /> }, 
+      // Пункты меню админа (/admin/organizations, /admin/aml...) открывают ту же панель.
+      { path: '*', element: <AdminPanel /> },
     ],
   },
   {

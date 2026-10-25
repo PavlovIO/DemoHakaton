@@ -11,7 +11,8 @@ import {
 } from './useApplications'
 import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, LENDER, loginAs } from '@/test/integration/actors'
-import { ensureBorrowerApplications, submitApplication } from '@/test/integration/fixtures'
+import { ensureBorrowerApplications, publishApplication, sendOffer, submitApplication } from '@/test/integration/fixtures'
+import { api } from '@/lib/api-client'
 import { PAGE_SIZE } from '@/lib/pagination'
 
 describe('заявки против живого бэкенда', () => {
@@ -70,6 +71,33 @@ describe('заявки против живого бэкенда', () => {
         expect.objectContaining({ id: app.id, status: 'published' }),
       ),
     )
+  })
+})
+
+describe('витрина кредитора', () => {
+  it('согласованная заявка уходит с витрины, хотя по ней есть мой оффер', async () => {
+    const { app, offer } = await sendOffer()
+    loginAs(BORROWER)
+    await api.post('/offers/{offerId}/accept', undefined, { path: { offerId: offer.id } })
+
+    loginAs(LENDER)
+    const { result } = renderHook(() => useMarketplace({ currency: 'EUR' }), { wrapper: AppProviders })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data!.items.map((a) => a.id)).not.toContain(app.id)
+    expect(result.current.data!.items.every((a) => a.status === 'published')).toBe(true)
+  })
+
+  it('«сумма от» в валюте отсекает заявки меньше порога', async () => {
+    const app = await publishApplication() // 100 000,00 EUR
+
+    loginAs(LENDER)
+    const above = renderHook(() => useMarketplace({ currency: 'EUR', amount_min: '100000.01' }), { wrapper: AppProviders })
+    const atLeast = renderHook(() => useMarketplace({ currency: 'EUR', amount_min: '100000.00' }), { wrapper: AppProviders })
+    await waitFor(() => {
+      expect(above.result.current.isSuccess).toBe(true)
+      expect(atLeast.result.current.data?.items.map((a) => a.id)).toContain(app.id)
+    })
+    expect(above.result.current.data!.items.map((a) => a.id)).not.toContain(app.id)
   })
 })
 

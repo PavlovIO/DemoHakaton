@@ -16,7 +16,7 @@ export function useMyOffers() {
   return useInfiniteQuery({
     queryKey: [...OFFERS_KEY, 'mine'],
     queryFn: ({ pageParam }) => api.get<OfferPage>('/offers', { query: { page: pageParam, page_size: PAGE_SIZE } }),
-    ...pagedList<Offer>(),
+    ...pagedList<OfferPage>(),
   })
 }
 

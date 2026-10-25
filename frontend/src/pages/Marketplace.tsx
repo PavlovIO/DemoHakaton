@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/hooks/useAuth'
 import { useMarketplace, type Application } from '@/hooks/useApplications'
 import { useCreateOffer, type OfferCreate } from '@/hooks/useOffers'
 import { handleApiError } from '@/lib/api-errors'
@@ -9,16 +10,27 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
 
 export function Marketplace() {
+  const { user } = useAuth()
+
+  // Проверка роли до запросов: заёмщику GET /applications отдал бы его собственные заявки как витрину.
+  if (user?.role !== 'lender') {
+    return <div className="p-6">Доступно только для кредиторов.</div>
+  }
+  return <LenderMarketplace />
+}
+
+function LenderMarketplace() {
   const [filterCountry, setFilterCountry] = useState('')
   const [filterCurrency, setFilterCurrency] = useState('')
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
-  // Фильтрует бэкенд; пустые значения в запрос не уходят.
-  const marketplaceQuery = useMarketplace({
-    target_country: filterCountry || undefined,
-    currency: filterCurrency || undefined,
-    amount_min: filterAmountMin || undefined,
-  })
+  // Фильтрует бэкенд; пустые значения в запрос не уходят. Сумма без валюты не фильтрует.
+  const target_country = filterCountry || undefined
+  const marketplaceQuery = useMarketplace(
+    filterCurrency
+      ? { target_country, currency: filterCurrency, amount_min: filterAmountMin || undefined }
+      : { target_country },
+  )
   const { data, isLoading } = marketplaceQuery
   const filteredApps = data?.items ?? []
   const createOffer = useCreateOffer()
@@ -96,7 +108,7 @@ export function Marketplace() {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Сумма от</label>
-          <input type="number" value={filterAmountMin} onChange={e => setFilterAmountMin(e.target.value)} placeholder="0" className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+          <input type="number" value={filterAmountMin} onChange={e => setFilterAmountMin(e.target.value)} disabled={!filterCurrency} placeholder={filterCurrency ? '0' : 'Сначала выберите валюту'} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm disabled:bg-gray-100" />
         </div>
         <div className="flex items-end">
           <Button variant="outline" className="w-full" onClick={() => { setFilterCountry(''); setFilterCurrency(''); setFilterAmountMin(''); }}>Сбросить</Button>

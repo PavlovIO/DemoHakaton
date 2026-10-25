@@ -85,7 +85,7 @@ export function useKycQueue() {
       api.get<OrganizationPage>('/admin/organizations', {
         query: { kyc_status: ['under_review'], page: pageParam, page_size: PAGE_SIZE },
       }),
-    ...pagedList<Organization>(),
+    ...pagedList<OrganizationPage>(),
   })
 }
 

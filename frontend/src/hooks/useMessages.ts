@@ -11,9 +11,9 @@ const messagesKey = (offerId: string) => ['messages', offerId] as const
 // Максимум limit по API; бэкенд отдаёт сообщения по возрастанию id.
 const BATCH = 200
 
-// Вся история чата: листаем курсором after_id, пока не придёт неполная пачка.
-async function fetchAllMessages(offerId: string) {
-  const all: Message[] = []
+// Дозапрос после уже загруженных: листаем курсором after_id, пока не придёт неполная пачка.
+async function fetchMessagesAfter(offerId: string, loaded: readonly Message[]) {
+  const all = [...loaded]
   for (;;) {
     const batch = await api.get<Message[]>('/offers/{offerId}/messages', {
       path: { offerId },
@@ -25,10 +25,12 @@ async function fetchAllMessages(offerId: string) {
 }
 
 // Сообщения собеседника приходят без push — опрашиваем, пока чат открыт.
+// Каждый опрос забирает только новые сообщения после последнего в кэше.
 export function useMessages(offerId: string | undefined) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: messagesKey(offerId ?? ''),
-    queryFn: () => fetchAllMessages(offerId!),
+    queryFn: ({ queryKey }) => fetchMessagesAfter(offerId!, queryClient.getQueryData<Message[]>(queryKey) ?? []),
     enabled: !!offerId,
     refetchInterval: 5_000,
   })
