@@ -114,6 +114,30 @@ make backend-logs  # логи бэкенда (JSON)
 
 Как добавить реализацию операции API — см. комментарий в [`backend/internal/http/handler/handler.go`](backend/internal/http/handler/handler.go); образец — справочники (`dictionaries.go` + `dictionaries_test.go`). Сервер сгенерирован по пакету на тег (`backend/internal/http/api/<tag>api`), модели — общий пакет `api`, реализации — `backend/internal/http/handler/<tag>.go` ([ADR-0003](docs/adr/0003-server-package-per-tag.md)). Бизнес-логика — ядро `backend/internal/service` и пакеты доменов `auth`, `kyc`, `lending`, `notifications`, `dictionaries` ([ADR-0005](docs/adr/0005-service-packages-by-domain.md)).
 
+## Запуск фронтенда
+
+Нужны Node.js 20+ и npm. Фронтенд настроен на проксирование запросов `/api` на локальный бэкенд (`http://localhost:8080`), поэтому для полноценной работы **бэкенд должен быть запущен**.
+
+```sh
+cd frontend
+npm install          # установка зависимостей (один раз)
+npm run gen:api      # генерация строгих TS-типов из api/openapi.yaml (обязательно после изменений в бэке)
+npm run dev          # запуск Vite-сервера на http://localhost:5173
+```
+| Команда | Что делает |
+|---|---|
+| `npm run dev` | Запуск dev-сервера 
+| `npm run gen:api` | Генерация TypeScript-интерфейсов из OpenAPI-контракта через openapi-typescript
+| `npm run build` | Продакшен-сборка (TypeScript check + Vite build) в папку frontend/dist
+| `npm run preview` | Локальный просмотр собранного продакшен-билда
+| `npm run lint` | Проверка кода через ESLint (TypeScript + React правила)
+| `npm run test:integration` | Интеграционные тесты (`*.integration.test.ts(x)`, Vitest + jsdom) против живого бэкенда: сначала `make db && make backend-up` из корня; другой адрес — `INTEGRATION_API_URL`
+
+На странице логина введите специальные email-адреса, чтобы получить нужную роль: \
+`borrower@test.com` - войдёте как Заёмщик (с верифицированной компанией).\
+`lender@test.com `- войдёте как Кредитор.\
+`admin@test.com` - войдёте как Администратор.
+
 ## Для разработчиков
 
 Один раз после клонирования:
