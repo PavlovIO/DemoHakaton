@@ -1,31 +1,21 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useApproveApplication, useModerationQueue, useRejectApplication } from '@/hooks/useApplications'
+import { useApproveKyc, useKycQueue, useRejectKyc } from '@/hooks/useKyc'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
 
-interface KycOrg {
-  id: string
-  name: string
-  type: 'borrower' | 'lender'
-  country_code: string
-  registration_number: string
-  status: 'under_review' | 'verified'
-}
-
-const INITIAL_KYC: KycOrg[] = [
-  { id: '1', name: 'Альфа', type: 'borrower', country_code: 'RU', registration_number: '7700000001', status: 'under_review' },
-  { id: '2', name: 'Beta Corp', type: 'lender', country_code: 'CY', registration_number: 'CY-123456', status: 'under_review' },
-  { id: '3', name: 'Омега', type: 'borrower', country_code: 'RU', registration_number: '7700000002', status: 'under_review' }
-]
-
 export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'kyc' | 'apps'>('kyc')
   
-  const [kycQueue, setKycQueue] = useState<KycOrg[]>(INITIAL_KYC)
+  const kycQuery = useKycQueue()
+  const { data: kyc, isLoading: isKycLoading } = kycQuery
+  const kycQueue = kyc?.items ?? []
+  const approveKyc = useApproveKyc()
+  const rejectKyc = useRejectKyc()
   const moderationQuery = useModerationQueue()
   const { data: moderation, isLoading: isModerationLoading } = moderationQuery
   const appQueue = moderation?.items ?? []
@@ -33,13 +23,19 @@ export function AdminPanel() {
   const rejectApplication = useRejectApplication()
 
   const handleApproveKyc = (id: string) => {
-    setKycQueue(kycQueue.map(org => org.id === id ? { ...org, status: 'verified' } : org))
-    alert('Компания успешно верифицирована!')
+    approveKyc.mutate(id, {
+      onSuccess: () => toast.success('Компания верифицирована'),
+      onError: handleApiError,
+    })
   }
 
   const handleRejectKyc = (id: string) => {
-    setKycQueue(kycQueue.filter(org => org.id !== id))
-    alert('Верификация отклонена. Компания удалена из очереди.')
+    const reason = prompt('Причина отказа в верификации')?.trim()
+    if (!reason) return
+    rejectKyc.mutate({ id, reason }, {
+      onSuccess: () => toast.success('Верификация отклонена, компания получит причину'),
+      onError: handleApiError,
+    })
   }
 
   const handleApproveApp = (id: string) => {
@@ -74,7 +70,7 @@ export function AdminPanel() {
               activeTab === 'kyc' ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            Очередь KYC ({kycQueue.filter(o => o.status === 'under_review').length})
+            Очередь KYC ({kyc?.total ?? 0})
           </button>
           <button
             onClick={() => setActiveTab('apps')}
@@ -97,24 +93,21 @@ export function AdminPanel() {
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-semibold text-gray-900">{org.name}</span>
                     <Badge variant="default">{org.type === 'borrower' ? 'Заемщик' : 'Кредитор'}</Badge>
-                    <Badge variant={org.status === 'under_review' ? 'warning' : 'success'}>
-                      {org.status === 'under_review' ? 'На проверке' : 'Верифицирован'}
-                    </Badge>
+                    <Badge variant="warning">На проверке</Badge>
                   </div>
                   <p className="text-sm text-gray-500">
                     Страна: {org.country_code} | Рег. номер: {org.registration_number}
                   </p>
                 </div>
-                {org.status === 'under_review' && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => handleRejectKyc(org.id)}>Отклонить</Button>
-                    <Button onClick={() => handleApproveKyc(org.id)}>Одобрить KYC</Button>
-                  </div>
-                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" disabled={rejectKyc.isPending} onClick={() => handleRejectKyc(org.id)}>Отклонить</Button>
+                  <Button disabled={approveKyc.isPending} onClick={() => handleApproveKyc(org.id)}>Одобрить KYC</Button>
+                </div>
               </li>
             ))}
-            {kycQueue.length === 0 && <li className="p-6 text-center text-gray-500">Очередь пуста.</li>}
+            {!isKycLoading && kycQueue.length === 0 && <li className="p-6 text-center text-gray-500">Очередь пуста.</li>}
           </ul>
+          <LoadMore query={kycQuery} />
         </div>
       )}
 

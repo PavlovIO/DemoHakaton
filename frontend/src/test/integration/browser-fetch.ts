@@ -34,6 +34,33 @@ function storeSetCookie(header: string) {
   if (!httpOnly) document.cookie = `${name}=${value}; Path=/`
 }
 
+// node fetch шлёт FormData окружения jsdom как "[object FormData]", а File из jsdom
+// теряет при кодировании содержимое и имя. Собираем multipart сами, как браузер:
+// поля по порядку append, имя файла в UTF-8.
+async function encodeForm(form: FormData, headers: Headers) {
+  const boundary = `----integration-${crypto.randomUUID()}`
+  const chunks: Buffer[] = []
+  const entries: [string, FormDataEntryValue][] = []
+  form.forEach((value, name) => entries.push([name, value]))
+  for (const [name, value] of entries) {
+    if (typeof value === 'string') {
+      chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+    } else {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${name}"; filename="${value.name}"\r\n` +
+            `Content-Type: ${value.type || 'application/octet-stream'}\r\n\r\n`,
+        ),
+        Buffer.from(await value.arrayBuffer()),
+        Buffer.from('\r\n'),
+      )
+    }
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`))
+  headers.set('Content-Type', `multipart/form-data; boundary=${boundary}`)
+  return Buffer.concat(chunks)
+}
+
 export function installBrowserFetch() {
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' && input.startsWith('/') ? API_URL + input : input
@@ -41,7 +68,8 @@ export function installBrowserFetch() {
     if (jar.size > 0) {
       headers.set('Cookie', [...jar].map(([name, c]) => `${name}=${c.value}`).join('; '))
     }
-    const res = await nodeFetch(url, { ...init, headers })
+    const body = init?.body instanceof FormData ? await encodeForm(init.body, headers) : init?.body
+    const res = await nodeFetch(url, { ...init, headers, body })
     res.headers.getSetCookie().forEach(storeSetCookie)
     return res
   }
@@ -53,6 +81,11 @@ export function clearCookies() {
     if (!c.httpOnly) document.cookie = `${name}=; Max-Age=0; Path=/`
   }
   jar.clear()
+}
+
+// Запомнить текущую сессию, чтобы вернуться к ней после loginAs другого участника.
+export function snapshotCookies(): ReadonlyMap<string, StoredCookie> {
+  return new Map(jar)
 }
 
 // Вернуть «браузер» к сохранённой сессии — без повторного входа.

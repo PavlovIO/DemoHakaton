@@ -13,6 +13,7 @@ import {
 import { api, ApiError } from '@/lib/api-client'
 import { handleApiError } from '@/lib/api-errors'
 import type { components } from '@/lib/api-schema'
+import { ME_KEY } from './meKey'
 
 // Типы из OpenAPI
 export type Me = components['schemas']['Me']
@@ -39,7 +40,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-const ME_KEY = ['me'] as const
 
 const KYC_REQUIRED_ROLES: readonly UserRole[] = ['borrower', 'lender']
 

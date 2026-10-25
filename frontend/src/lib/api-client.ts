@@ -78,14 +78,17 @@ async function request<T>(path: keyof paths | string, options: RequestOptions = 
   if (unsafeMethods.includes(method)) {
     const csrf = getCookie('csrf_token')
     if (csrf) headers['X-CSRF-Token'] = csrf
-    if (body !== undefined) headers['Content-Type'] = 'application/json'
   }
+
+  // FormData (загрузка файлов) уходит как есть: boundary в Content-Type ставит fetch.
+  const isForm = body instanceof FormData
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
 
   const res = await fetch(url, {
     method,
     headers,
     credentials: 'include', // обязательно: шлём и принимаем cookie
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     signal,
   })
 
