@@ -7,18 +7,49 @@ PostgreSQL 16. Миграции лежат в `backend/migrations` в форма
 | `00001_init.sql` | Расширения, enum-типы, все таблицы, индексы, триггеры `updated_at` |
 | `00002_seed_dictionaries.sql` | Справочники: страны (с FATF и «недружественностью»), валюты, способы перевода |
 | `00003_notifications_feed_idx.sql` | Индекс ленты уведомлений с тай-брейком по `id` вместо `notifications_user_idx` |
+| `00004_aml_flags_match_key.sql` | Колонка `aml_flags.match_key` — ключ дедупликации AML-находок |
+| `00005_fatf_grey_transfer_methods.sql` | Серый список FATF и способы перевода `spfs`/`cips` |
+| `00006_app_role_grants.sql` | Права роли приложения `lp_app` на таблицы (см. «Роли и права») |
 | `testdata/invariants_test.sql` | Smoke-тест ограничений: 19 проверок, в том числе транзакция принятия оффера |
 
 ## Как запустить
 
+Роли создаёт суперпользователь до миграций (`make db-roles`, входит в `make db`); goose работает под `lp_migrator`.
+
 ```bash
+# роли и права на БД (идемпотентно)
+psql "postgres://lp:...@localhost:5432/liquidity_platform" -v ON_ERROR_STOP=1 \
+  -v app_password="$LP_APP_PASSWORD" -v migrator_password="$LP_MIGRATOR_PASSWORD" -f backend/db/roles.sql
 # применить
-goose -dir backend/migrations postgres "$DATABASE_URL" up
-# проверить инварианты (всё в транзакции, откатывается)
-psql "$DATABASE_URL" -f backend/migrations/testdata/invariants_test.sql
+goose -dir backend/migrations postgres "$MIGRATE_DATABASE_URL" up
+# проверить инварианты на чистой БД (всё в транзакции, откатывается)
+psql "$MIGRATE_DATABASE_URL" -f backend/migrations/testdata/invariants_test.sql
 # откатить всё
-goose -dir backend/migrations postgres "$DATABASE_URL" reset
+goose -dir backend/migrations postgres "$MIGRATE_DATABASE_URL" reset
 ```
+
+## Роли и права
+
+Приложение не должно уметь больше, чем делают его запросы: ошибка в коде или SQL-инъекция под `lp_app` не дают DDL, правки журнала аудита, изменения сделки или выполнения команд ОС (`COPY … PROGRAM`). Роли и настройки — в `backend/db/roles.sql`, права на таблицы — в миграциях.
+
+| Роль | Атрибуты | Для чего |
+|---|---|---|
+| `lp` (`POSTGRES_USER`) | superuser | только bootstrap ролей, `make psql`, сид и invariants-тест в dev |
+| `lp_migrator` | LOGIN, без SUPERUSER/CREATEDB/CREATEROLE/BYPASSRLS; владелец БД, поэтому и схемы `public` (`pg_database_owner`); `lock_timeout=10s` | goose, загрузчик санкционных списков. Расширения pgcrypto/citext/pg_trgm trusted — суперпользователь не нужен |
+| `lp_app` | LOGIN, без атрибутов, `CONNECTION LIMIT 50`; `statement_timeout=5s`, `lock_timeout=2s`, `idle_in_transaction_session_timeout=15s`, `search_path=public`, `pg_trgm.similarity_threshold=0.4` | приложение и интеграционные тесты |
+
+`CONNECT` к БД есть только у `lp_migrator` и `lp_app`, `TEMPORARY` у `PUBLIC` отозван. Права `lp_app` выведены из `backend/queries/*.sql`:
+
+| Права | Таблицы |
+|---|---|
+| `SELECT` | countries, currencies, transfer_methods, sanctions_entries |
+| `SELECT, INSERT` | audit_log, status_history, deals, messages, registry_checks |
+| `SELECT, INSERT, UPDATE` | organizations, users, applications (`FOR UPDATE` требует UPDATE), offers, notifications, aml_flags, message_reads (upsert) |
+| `SELECT, INSERT, UPDATE, DELETE` | sessions, kyc_documents, beneficiaries |
+
+**Новая таблица** получает права только явным `GRANT … TO lp_app` в своей же миграции: `ALTER DEFAULT PRIVILEGES` не используем, а таблицу без `SELECT` ловит `TestDBPrivilegesIntegration` (`backend/internal/service/db_privileges_integration_test.go`), недостающие `INSERT`/`UPDATE` — интеграционные тесты сервисов. Права на последовательности не нужны: `id` и номера — `uuid` или `GENERATED ALWAYS AS IDENTITY`, а identity не требует `USAGE` на свою последовательность.
+
+Сервер при старте пишет warning, если `DATABASE_URL` указывает на суперпользователя или на удалённый хост без TLS; на стенде `sslmode=require`/`verify-full` задаётся в `DATABASE_URL`, пароли ролей — переменными `LP_APP_PASSWORD` / `LP_MIGRATOR_PASSWORD` из секретов.
 
 sqlc читает goose-миграции напрямую: в `backend/sqlc.yaml` указано `schema: migrations`, `queries: queries`. Код генерируется в `backend/internal/repository/sqlc` (пакет `repository`, драйвер `pgx/v5`).
 
@@ -207,6 +238,8 @@ erDiagram
 | Деньги > 0, проценты в разумных пределах, длины строк | БД `CHECK` + валидация по OpenAPI |
 | Только PDF/PNG/JPEG, файлы ≤ 10 MB | **Сервис** (по содержимому) + БД |
 | Закрытый AML-флаг ⇔ есть кто и когда закрыл | БД |
+| `audit_log` только INSERT | БД (права `lp_app`: нет UPDATE/DELETE/TRUNCATE) |
+| Сделка неизменяема | БД (права `lp_app`: на `deals` только SELECT, INSERT) |
 | Доступ только к своим сущностям (IDOR) | **Репозиторий**: запросы `*Visible` с обязательными `viewer_role`/`viewer_org`; чужое и несуществующее → 0 строк → `404` |
 
 ## Ключевые запросы
@@ -358,6 +391,6 @@ Score — `max(JW(a, b), JW(sortTokens(a), sortTokens(b)))`: «Petrov Ivan» и 
 
 - **Мягкое удаление и версионирование заявок.** Достаточно `status_history`.
 - **Партиционирование `audit_log` и `messages`.** Объёмы демо этого не требуют.
-- **Row-Level Security.** IDOR закрываем в репозитории. RLS — хороший следующий шаг, если останется время.
+- **Row-Level Security.** IDOR закрываем в репозитории и HTTP-тестами; права роли `lp_app` защищают таблицы, но не строки. RLS по `organization_id` — возможная вторая линия защиты после M4.
 - **Конвертация валют.** Суммы и аналитика считаются по каждой валюте отдельно.
 - **Чистка старых уведомлений.** Строки `notifications` не удаляются: объёмы демо малы, ленту, включая сортировку `created_at DESC, id DESC`, покрывает индекс `notifications_feed_idx` (DECISIONS п. 39).

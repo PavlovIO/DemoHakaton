@@ -55,7 +55,8 @@ func TestSearchSanctionsThresholdIndependent(t *testing.T) {
 // сильнее организации, не вытесняют её из кандидатов, и компания получает флаг.
 func TestScreenOrganizationKindBeforeLimit(t *testing.T) {
 	ctx := context.Background()
-	tx := servicetest.BeginTx(t)
+	// Списки пишет загрузчик под владельцем схемы, у lp_app на sanctions_entries только SELECT.
+	tx := servicetest.BeginOwnerTx(t)
 	insert := func(id, kind, name string) {
 		t.Helper()
 		if _, err := tx.Exec(ctx, `INSERT INTO sanctions_entries (source, external_id, entity_kind, name, name_normalized)

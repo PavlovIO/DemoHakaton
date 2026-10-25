@@ -25,8 +25,8 @@ import (
 )
 
 // deleteCommittedOrgs удаляет закоммиченные данные компаний orgs (заявки, офферы, сделки,
-// история, аудит, пользователи) в порядке внешних ключей. Тест ходит владельцем схемы (lp из
-// DATABASE_URL), а не lp_app без DELETE, — иначе каждый прогон оставлял бы мусор в dev-БД.
+// история, аудит, пользователи) в порядке внешних ключей. pool — владельца схемы
+// (servicetest.NewOwnerPool): у lp_app нет DELETE, а без чистки каждый прогон оставлял бы мусор в dev-БД.
 func deleteCommittedOrgs(t *testing.T, pool *pgxpool.Pool, orgs ...uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
@@ -229,7 +229,8 @@ func TestAcceptOfferConcurrent(t *testing.T) {
 	borrower := servicetest.InsertVerifiedOrg(ctx, t, pool, repository.UserRoleBorrower, "Concurrent B")
 	lenderA := servicetest.InsertVerifiedOrg(ctx, t, pool, repository.UserRoleLender, "Concurrent LA")
 	lenderB := servicetest.InsertVerifiedOrg(ctx, t, pool, repository.UserRoleLender, "Concurrent LB")
-	t.Cleanup(func() { deleteCommittedOrgs(t, pool, *borrower.OrgID, *lenderA.OrgID, *lenderB.OrgID) })
+	owner := servicetest.NewOwnerPool(t)
+	t.Cleanup(func() { deleteCommittedOrgs(t, owner, *borrower.OrgID, *lenderA.OrgID, *lenderB.OrgID) })
 
 	// raceAccept — accept каждого id в своей горутине, старт одновременно.
 	raceAccept := func(ids ...uuid.UUID) []error {

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,7 +33,11 @@ import (
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/storage"
 )
 
-const dbConnectTimeout = 5 * time.Second
+const (
+	dbConnectTimeout = 5 * time.Second
+	// dbApplicationName — имя соединений сервера в pg_stat_activity.
+	dbApplicationName = "lp-backend"
+)
 
 func main() {
 	// Ctrl+C / SIGTERM (docker stop) → контекст отменяется → graceful shutdown.
@@ -161,6 +166,11 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 	if cfg.DBMaxConns > 0 {
 		poolCfg.MaxConns = cfg.DBMaxConns
 	}
+	// Своё имя из DATABASE_URL (например, чтобы различать реплики) не затираем.
+	if _, ok := poolCfg.ConnConfig.RuntimeParams["application_name"]; !ok {
+		poolCfg.ConnConfig.RuntimeParams["application_name"] = dbApplicationName
+	}
+	warnIfPlaintextRemote(poolCfg)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -173,6 +183,47 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 		pool.Close()
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
+	if err := warnIfPrivilegedRole(pingCtx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	slog.Info("database connected", "max_conns", poolCfg.MaxConns)
 	return pool, nil
+}
+
+// warnIfPrivilegedRole предупреждает, если DATABASE_URL указывает на суперпользователя или
+// владельца таблиц (lp_migrator из MIGRATE_DATABASE_URL): обоим GRANT не указ. Приложение
+// должно ходить под lp_app (backend/db/roles.sql): права БД — последняя линия защиты
+// audit_log и сделок. Не падаем, чтобы устаревший .env не ломал запуск.
+func warnIfPrivilegedRole(ctx context.Context, pool *pgxpool.Pool) error {
+	var superuser, owner bool
+	err := pool.QueryRow(ctx, `SELECT rolsuper,
+		EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tableowner = current_user)
+		FROM pg_roles WHERE rolname = current_user`).Scan(&superuser, &owner)
+	if err != nil {
+		return fmt.Errorf("check database role: %w", err)
+	}
+	switch {
+	case superuser:
+		slog.Warn("DATABASE_URL connects as a superuser; use the lp_app role (see .env.example)")
+	case owner:
+		slog.Warn("DATABASE_URL connects as the owner of the tables; use the lp_app role (see .env.example)")
+	}
+	return nil
+}
+
+// warnIfPlaintextRemote предупреждает о соединении с удалённой БД, которое может пойти без TLS:
+// sslmode=disable или allow/prefer (prefer — дефолт без sslmode: pgx откатывается на открытый
+// канал через Fallbacks). На стенде sslmode=require/verify-full задаётся в DATABASE_URL.
+func warnIfPlaintextRemote(poolCfg *pgxpool.Config) {
+	host := poolCfg.ConnConfig.Host
+	// Путь — unix-сокет, он не выходит за пределы машины.
+	isLocal := host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "/")
+	plaintext := poolCfg.ConnConfig.TLSConfig == nil
+	for _, fb := range poolCfg.ConnConfig.Fallbacks {
+		plaintext = plaintext || fb.TLSConfig == nil
+	}
+	if !isLocal && plaintext {
+		slog.Warn("database connection to a remote host is not encrypted; set sslmode=require or verify-full", "host", host)
+	}
 }

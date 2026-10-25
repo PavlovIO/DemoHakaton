@@ -17,7 +17,8 @@ import (
 // Журнал на заселённой БД: уникальный action отделяет записи теста от демо-сида.
 func TestListAuditLogIntegration(t *testing.T) {
 	ctx := context.Background()
-	tx := servicetest.BeginTx(t)
+	// Владелец схемы: сдвиг created_at ниже — UPDATE audit_log, у lp_app его нет.
+	tx := servicetest.BeginOwnerTx(t)
 	adm := insertAdmin(ctx, t, tx)
 	author := servicetest.InsertUser(ctx, t, tx, repository.UserRoleAdmin, nil)
 	other := servicetest.InsertUser(ctx, t, tx, repository.UserRoleAdmin, nil)

@@ -4,9 +4,14 @@
 include versions.env
 export
 
+# POSTGRES_USER — суперпользователь контейнера: только bootstrap ролей, psql, сид и invariants в dev.
 POSTGRES_USER ?= lp
 POSTGRES_DB   ?= liquidity_platform
-DATABASE_URL  ?= postgres://lp:lp_dev_password@localhost:5432/liquidity_platform?sslmode=disable
+# Роли из backend/db/roles.sql (make db-roles): приложение и тесты — lp_app, goose — lp_migrator.
+LP_APP_PASSWORD      ?= lp_app_dev_password
+LP_MIGRATOR_PASSWORD ?= lp_migrator_dev_password
+DATABASE_URL         ?= postgres://lp_app:$(LP_APP_PASSWORD)@localhost:5432/liquidity_platform?sslmode=disable
+MIGRATE_DATABASE_URL ?= postgres://lp_migrator:$(LP_MIGRATOR_PASSWORD)@localhost:5432/liquidity_platform?sslmode=disable
 PG_CONTAINER  ?= lp_postgres
 # Абсолютный путь: make run запускает сервер из backend/ (go -C backend), и относительный
 # storage/documents оказался бы в backend/storage — вне .gitignore.
@@ -26,11 +31,11 @@ VACUUM_NO_UPDATE_CHECK := true
 MSYS_NO_PATHCONV := 1
 PSQL          := docker exec -i $(PG_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -v ON_ERROR_STOP=1
 
-.PHONY: db db-reset up down logs ps backend-up backend-seed-files backend-logs migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
+.PHONY: db db-reset db-roles up down logs ps backend-up backend-seed-files backend-logs migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
 
-# Полный цикл: postgres + миграции + санкционный мок-список + проверка инвариантов + демо-данные.
+# Полный цикл: postgres + роли + миграции + санкционный мок-список + проверка инвариантов + демо-данные.
 # load-sanctions — раньше seed-demo: сид ссылается на запись мок-списка (BE-16).
-db: up migrate-up load-sanctions test-invariants seed-demo
+db: up db-roles migrate-up load-sanctions test-invariants seed-demo
 
 # То же самое с чистой базы (удаляет volume).
 db-reset:
@@ -70,20 +75,26 @@ load-sanctions:
 	go -C backend run ./cmd/loadsanctions -source=$(SANCTIONS_SOURCE) $(if $(SANCTIONS_FILE),-file=$(abspath $(SANCTIONS_FILE)))
 
 migrate-up:
-	$(GOOSE) -dir $(MIGRATIONS) postgres "$(DATABASE_URL)" up
+	$(GOOSE) -dir $(MIGRATIONS) postgres "$(MIGRATE_DATABASE_URL)" up
 
 migrate-down:
-	$(GOOSE) -dir $(MIGRATIONS) postgres "$(DATABASE_URL)" down
+	$(GOOSE) -dir $(MIGRATIONS) postgres "$(MIGRATE_DATABASE_URL)" down
 
 migrate-reset:
-	$(GOOSE) -dir $(MIGRATIONS) postgres "$(DATABASE_URL)" reset
+	$(GOOSE) -dir $(MIGRATIONS) postgres "$(MIGRATE_DATABASE_URL)" reset
 
 migrate-status:
-	$(GOOSE) -dir $(MIGRATIONS) postgres "$(DATABASE_URL)" status
+	$(GOOSE) -dir $(MIGRATIONS) postgres "$(MIGRATE_DATABASE_URL)" status
 
 migrate-create:
 	@echo "usage: make migrate-create name=<name>"
 	$(GOOSE) -dir $(MIGRATIONS) create $(name) sql
+
+# Роли lp_migrator/lp_app и права на БД; идемпотентно. На volume, созданном до ролей, таблицы
+# принадлежат lp и migrate-up под lp_migrator упадёт — нужен make db-reset (удаляет данные).
+db-roles:
+	docker cp backend/db/roles.sql $(PG_CONTAINER):/tmp/roles.sql
+	$(PSQL) -v "app_password=$(LP_APP_PASSWORD)" -v "migrator_password=$(LP_MIGRATOR_PASSWORD)" -f /tmp/roles.sql
 
 # Демо-данные (BE-16). SEED=b (по умолчанию) — сделка «Альфа ↔ Beta Corp» сразу и история
 # для аналитики; SEED=a — KYC с нуля. Варианты несовместимы на одной БД: смена варианта —

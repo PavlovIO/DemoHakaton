@@ -22,10 +22,14 @@
 
 ```sh
 cp .env.example .env   # один раз
-make db                # Postgres + миграции + мок-санкционный список + демо-данные (см. «Демо-данные»)
+make db                # Postgres + роли БД + миграции + мок-санкционный список + демо-данные (см. «Демо-данные»)
 make run               # API на http://localhost:8080/api/v1
 curl localhost:8080/api/v1/healthz
 ```
+
+Приложение и интеграционные тесты подключаются к Postgres под ролью `lp_app` (`DATABASE_URL`, только DML), миграции — под `lp_migrator` (`MIGRATE_DATABASE_URL`, владелец схемы); роли создаёт `make db-roles` (входит в `make db`). Подробнее — [docs/db/schema.md](docs/db/schema.md#роли-и-права).
+
+**Volume создан до появления ролей** (таблицы принадлежат `lp`, сервер пишет warning про суперпользователя): обнови `.env` из `.env.example` и пересоздай БД — `make db-reset` (удаляет данные).
 
 Переменные окружения — в `.env.example`. Для входа важны две: `SESSION_TTL` — срок жизни сессии (по умолчанию `24h`, не продлевается) и `COOKIE_SECURE` — флаг `Secure` у cookie (по умолчанию `true`; в `.env.example` — `false`, иначе браузер не сохранит cookie на `http://localhost`).
 `CORS_ALLOWED_ORIGINS` — origin фронта на другом хосте через запятую; по умолчанию пусто, CORS выключен: фронт ходит в API через тот же origin (Vite proxy).

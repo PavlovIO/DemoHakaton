@@ -29,8 +29,9 @@
       postgres:
         condition: service_healthy
     environment:
-      # Внутри сети compose Postgres — по имени сервиса, а не localhost из .env.
-      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgres://${POSTGRES_USER:-lp}:${POSTGRES_PASSWORD:-lp_dev_password}@postgres:5432/${POSTGRES_DB:-liquidity_platform}?sslmode=disable}
+      # Внутри сети compose Postgres — по имени сервиса, а не localhost из .env. Роль lp_app
+      # создаёт make db (db-roles), не суперпользователь: права БД защищают audit_log и сделки.
+      DATABASE_URL: ${BACKEND_DATABASE_URL:-postgres://lp_app:${LP_APP_PASSWORD:-lp_app_dev_password}@postgres:5432/${POSTGRES_DB:-liquidity_platform}?sslmode=disable}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       SESSION_TTL: ${SESSION_TTL:-24h}
       # false — локально по http://localhost; за HTTPS-прокси — true.
