@@ -1,6 +1,7 @@
 package service_test
 
-// Интеграционный тест прав роли приложения (backend/db/roles.sql + миграция 00006_app_role_grants).
+// Интеграционный тест прав роли приложения (backend/db/roles.sql + миграции 00006_app_role_grants,
+// 00007_app_role_column_updates).
 // DATABASE_URL должен указывать на lp_app: БД сама не даёт переписать audit_log, изменить сделку,
 // выполнить DDL или команду ОС. Положенные права проверяют остальные интеграционные тесты пакета.
 
@@ -41,8 +42,15 @@ func TestDBPrivilegesIntegration(t *testing.T) {
 		{"update deals", "UPDATE deals SET fee_amount = 0"},
 		{"insert countries", "INSERT INTO countries (code, name_ru, name_en) VALUES ('ZZ', 'x', 'x')"},
 		{"truncate sessions", "TRUNCATE sessions"},
+		// UPDATE по столбцам (00007): запросы эти столбцы не меняют.
+		{"update users.role", "UPDATE users SET role = 'admin'"},
+		{"update users.password_hash", "UPDATE users SET password_hash = 'x'"},
+		{"update organizations.type", "UPDATE organizations SET type = 'lender'"},
+		{"update offers.interest_rate_annual", "UPDATE offers SET interest_rate_annual = 0"},
+		{"update applications.borrower_organization_id", "UPDATE applications SET borrower_organization_id = gen_random_uuid()"},
 		{"copy to program", "COPY (SELECT 1) TO PROGRAM 'id'"},
-		{"copy from program", "COPY countries FROM PROGRAM 'id'"},
+		// В sessions у lp_app есть INSERT: 42501 здесь — только от отсутствия pg_execute_server_program.
+		{"copy from program", "COPY sessions FROM PROGRAM 'id'"},
 	}
 	for _, tc := range forbidden {
 		t.Run(tc.name, func(t *testing.T) {

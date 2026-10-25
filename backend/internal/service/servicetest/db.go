@@ -58,19 +58,16 @@ func InsertUser(ctx context.Context, t *testing.T, tx RowQuerier, role repositor
 
 func NewPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	return newPool(t, os.Getenv("DATABASE_URL"))
+	return newPool(t, "DATABASE_URL")
 }
 
-// NewOwnerPool — пул владельца схемы (lp_migrator из MIGRATE_DATABASE_URL; без него —
-// DATABASE_URL). Только для фикстур и очистки, которые lp_app запрещены: запись в
-// sanctions_entries, правка audit_log, DELETE закоммиченных данных, TEMP VIEW сида.
+// NewOwnerPool — пул владельца схемы (lp_migrator из MIGRATE_DATABASE_URL). Только для фикстур
+// и очистки, которые lp_app запрещены: запись в sanctions_entries, правка audit_log, DELETE
+// закоммиченных данных, TEMP VIEW сида. Без MIGRATE_DATABASE_URL тест пропускается: откат на
+// DATABASE_URL (lp_app) дал бы 42501 в фикстурах, а упавшая очистка — мусор в dev-БД.
 func NewOwnerPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := os.Getenv("MIGRATE_DATABASE_URL")
-	if dsn == "" {
-		dsn = os.Getenv("DATABASE_URL")
-	}
-	return newPool(t, dsn)
+	return newPool(t, "MIGRATE_DATABASE_URL")
 }
 
 // BeginOwnerTx — BeginTx на пуле владельца схемы (NewOwnerPool).
@@ -84,13 +81,14 @@ func BeginOwnerTx(t *testing.T) pgx.Tx {
 	return tx
 }
 
-func newPool(t *testing.T, dsn string) *pgxpool.Pool {
+func newPool(t *testing.T, env string) *pgxpool.Pool {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("integration test skipped in -short mode")
 	}
+	dsn := os.Getenv(env)
 	if dsn == "" {
-		t.Skip("DATABASE_URL is not set")
+		t.Skip(env + " is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

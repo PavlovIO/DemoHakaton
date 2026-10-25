@@ -10,7 +10,9 @@ POSTGRES_DB   ?= liquidity_platform
 # Роли из backend/db/roles.sql (make db-roles): приложение и тесты — lp_app, goose — lp_migrator.
 LP_APP_PASSWORD      ?= lp_app_dev_password
 LP_MIGRATOR_PASSWORD ?= lp_migrator_dev_password
-DATABASE_URL         ?= postgres://lp_app:$(LP_APP_PASSWORD)@localhost:5432/liquidity_platform?sslmode=disable
+# CONNECTION LIMIT lp_app — на все пулы сразу (сервер, тесты); не меньше суммы DB_MAX_CONNS.
+LP_APP_CONN_LIMIT    ?= 50
+DATABASE_URL        ?= postgres://lp_app:$(LP_APP_PASSWORD)@localhost:5432/liquidity_platform?sslmode=disable
 MIGRATE_DATABASE_URL ?= postgres://lp_migrator:$(LP_MIGRATOR_PASSWORD)@localhost:5432/liquidity_platform?sslmode=disable
 PG_CONTAINER  ?= lp_postgres
 # Абсолютный путь: make run запускает сервер из backend/ (go -C backend), и относительный
@@ -94,7 +96,8 @@ migrate-create:
 # принадлежат lp и migrate-up под lp_migrator упадёт — нужен make db-reset (удаляет данные).
 db-roles:
 	docker cp backend/db/roles.sql $(PG_CONTAINER):/tmp/roles.sql
-	$(PSQL) -v "app_password=$(LP_APP_PASSWORD)" -v "migrator_password=$(LP_MIGRATOR_PASSWORD)" -f /tmp/roles.sql
+	$(PSQL) -v "app_password=$(LP_APP_PASSWORD)" -v "migrator_password=$(LP_MIGRATOR_PASSWORD)" \
+		-v "app_conn_limit=$(LP_APP_CONN_LIMIT)" -f /tmp/roles.sql
 
 # Демо-данные (BE-16). SEED=b (по умолчанию) — сделка «Альфа ↔ Beta Corp» сразу и история
 # для аналитики; SEED=a — KYC с нуля. Варианты несовместимы на одной БД: смена варианта —

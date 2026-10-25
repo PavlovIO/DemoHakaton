@@ -233,6 +233,7 @@ func (a *actor) mustJSON(t *testing.T, method, path, body string, want int, out 
 
 type idorFixture struct {
 	pool                   *pgxpool.Pool
+	track                  func(orgID uuid.UUID) // servicetest.CleanupCommittedOrgs
 	a, b, l1, l2           *actor
 	c                      *actor // заёмщик с KYC в draft
 	draftApp, publishedApp string
@@ -246,7 +247,8 @@ type idorFixture struct {
 // чате, KYC-документ и уведомление о новом оффере.
 func newIDORFixture(t *testing.T, srv *httptest.Server, pool *pgxpool.Pool) *idorFixture {
 	t.Helper()
-	f := &idorFixture{pool: pool}
+	// Компании регистрируются через API и коммитятся; удаляет их владелец схемы в t.Cleanup.
+	f := &idorFixture{pool: pool, track: servicetest.CleanupCommittedOrgs(t)}
 	f.a = f.register(t, srv, "A", "borrower")
 	f.b = f.register(t, srv, "B", "borrower")
 	f.l1 = f.register(t, srv, "L1", "lender")
@@ -296,6 +298,7 @@ func (f *idorFixture) register(t *testing.T, srv *httptest.Server, name, role st
 		t.Fatalf("register %s: no organization id", name)
 	}
 	who.orgID = me.Organization.ID
+	f.track(uuid.MustParse(who.orgID))
 	return who
 }
 

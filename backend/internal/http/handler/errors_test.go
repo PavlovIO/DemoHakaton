@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/handler"
 )
@@ -33,6 +35,8 @@ func TestErrorMapping(t *testing.T) {
 		{apperr.Unavailable("db down", errors.New("dial")), 503, "UNAVAILABLE"},
 		{apperr.UpstreamUnavailable("registry down", errors.New("timeout")), 502, "UPSTREAM_UNAVAILABLE"},
 		{errors.New("boom"), 500, "INTERNAL"},
+		// lock_timeout роли lp_app в сервисе мимо pgerr.Map — повторяемый отказ, а не 500.
+		{fmt.Errorf("lock application: %w", &pgconn.PgError{Code: "55P03"}), 503, "UNAVAILABLE"},
 		// Доменная ошибка, обёрнутая через fmt.Errorf("...: %w"), всё равно распознаётся.
 		{wrap(apperr.NotFound("nope")), 404, "NOT_FOUND"},
 	}

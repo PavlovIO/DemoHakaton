@@ -10,6 +10,7 @@ PostgreSQL 16. Миграции лежат в `backend/migrations` в форма
 | `00004_aml_flags_match_key.sql` | Колонка `aml_flags.match_key` — ключ дедупликации AML-находок |
 | `00005_fatf_grey_transfer_methods.sql` | Серый список FATF и способы перевода `spfs`/`cips` |
 | `00006_app_role_grants.sql` | Права роли приложения `lp_app` на таблицы (см. «Роли и права») |
+| `00007_app_role_column_updates.sql` | `UPDATE` роли `lp_app` — только по столбцам, которые меняют запросы |
 | `testdata/invariants_test.sql` | Smoke-тест ограничений: 19 проверок, в том числе транзакция принятия оффера |
 
 ## Как запустить
@@ -36,7 +37,7 @@ goose -dir backend/migrations postgres "$MIGRATE_DATABASE_URL" reset
 |---|---|---|
 | `lp` (`POSTGRES_USER`) | superuser | только bootstrap ролей, `make psql`, сид и invariants-тест в dev |
 | `lp_migrator` | LOGIN, без SUPERUSER/CREATEDB/CREATEROLE/BYPASSRLS; владелец БД, поэтому и схемы `public` (`pg_database_owner`); `lock_timeout=10s` | goose, загрузчик санкционных списков. Расширения pgcrypto/citext/pg_trgm trusted — суперпользователь не нужен |
-| `lp_app` | LOGIN, без атрибутов, `CONNECTION LIMIT 50`; `statement_timeout=5s`, `lock_timeout=2s`, `idle_in_transaction_session_timeout=15s`, `search_path=public`, `pg_trgm.similarity_threshold=0.4` | приложение и интеграционные тесты |
+| `lp_app` | LOGIN, без атрибутов, `CONNECTION LIMIT` из `-v app_conn_limit` (по умолчанию 50, `LP_APP_CONN_LIMIT` в Makefile); `statement_timeout=5s`, `lock_timeout=2s`, `idle_in_transaction_session_timeout=15s`, `search_path=public`, `pg_trgm.similarity_threshold=0.4` | приложение и интеграционные тесты |
 
 `CONNECT` к БД есть только у `lp_migrator` и `lp_app`, `TEMPORARY` у `PUBLIC` отозван. Права `lp_app` выведены из `backend/queries/*.sql`:
 
@@ -44,12 +45,14 @@ goose -dir backend/migrations postgres "$MIGRATE_DATABASE_URL" reset
 |---|---|
 | `SELECT` | countries, currencies, transfer_methods, sanctions_entries |
 | `SELECT, INSERT` | audit_log, status_history, deals, messages, registry_checks |
-| `SELECT, INSERT, UPDATE` | organizations, users, applications (`FOR UPDATE` требует UPDATE), offers, notifications, aml_flags, message_reads (upsert) |
+| `SELECT, INSERT`, `UPDATE` по столбцам (00007) | organizations, users, applications (`FOR UPDATE` требует UPDATE), offers, notifications, aml_flags, message_reads (upsert) |
 | `SELECT, INSERT, UPDATE, DELETE` | sessions, kyc_documents, beneficiaries |
+
+`UPDATE` по столбцам — ровно те, что меняют `UPDATE`-запросы: нельзя поднять `users.role`, сменить `password_hash`, тип или страну компании, условия оффера. Новый `UPDATE` по другому столбцу требует `GRANT UPDATE (столбец)` в новой миграции, иначе интеграционный тест сервиса упадёт с 42501. `kyc_status` и `status` заявок/офферов остаются изменяемыми — их меняют сами сценарии, охрану переходов держат `WHERE` в запросах и сервис.
 
 **Новая таблица** получает права только явным `GRANT … TO lp_app` в своей же миграции: `ALTER DEFAULT PRIVILEGES` не используем, а таблицу без `SELECT` ловит `TestDBPrivilegesIntegration` (`backend/internal/service/db_privileges_integration_test.go`), недостающие `INSERT`/`UPDATE` — интеграционные тесты сервисов. Права на последовательности не нужны: `id` и номера — `uuid` или `GENERATED ALWAYS AS IDENTITY`, а identity не требует `USAGE` на свою последовательность.
 
-Сервер при старте пишет warning, если `DATABASE_URL` указывает на суперпользователя или на удалённый хост без TLS; на стенде `sslmode=require`/`verify-full` задаётся в `DATABASE_URL`, пароли ролей — переменными `LP_APP_PASSWORD` / `LP_MIGRATOR_PASSWORD` из секретов.
+Сервер при старте пишет warning, если роль `DATABASE_URL` — суперпользователь или имеет права владельца схемы (в том числе через членство в `lp_migrator`), если пул (`DB_MAX_CONNS`) больше `CONNECTION LIMIT` роли и если удалённый хост — без TLS (loopback, unix-сокет и имя без точки, как сервис compose `postgres`, считаются локальными); на стенде `sslmode=require`/`verify-full` задаётся в `DATABASE_URL`, пароли ролей — переменными `LP_APP_PASSWORD` / `LP_MIGRATOR_PASSWORD` из секретов.
 
 sqlc читает goose-миграции напрямую: в `backend/sqlc.yaml` указано `schema: migrations`, `queries: queries`. Код генерируется в `backend/internal/repository/sqlc` (пакет `repository`, драйвер `pgx/v5`).
 
