@@ -26,6 +26,17 @@ pre-commit:
       glob: ".github/workflows/*.{yml,yaml}"
       run: actionlint {staged_files}
 
+    - name: eslint
+      glob: "frontend/**/*.{ts,tsx}"
+      root: "frontend/"
+      run: npx eslint {staged_files}
+
+    - name: tsc
+      glob: "frontend/**/*.{ts,tsx}"
+      root: "frontend/"
+      # Типы проверяются по всему проекту: ошибка может быть в файле, который импортирует изменённый.
+      run: npx tsc -b
+
     - name: vacuum
       glob: "api/**/*.yaml"
       # Линтуем бандл, а не отдельные файлы: правила смотрят на документ целиком.
