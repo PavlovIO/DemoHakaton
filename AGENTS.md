@@ -53,7 +53,7 @@ MVP платформы ликвидности: SPA (React + Vite + TypeScript + 
 
 - Бизнес-логика (`internal/service`, `internal/aml`) — обязательно модульные тесты; статусные переходы — табличными тестами (одна функция переходов на сущность, ADR-0001).
 - Тесты хендлеров — через `httptest` с настоящим роутером и фейковым сервисом (образец: `handler/dictionaries_test.go`).
-- Интеграционные тесты с БД пропускаются при `testing.Short()` или без `DATABASE_URL` (образец: `service/dictionaries/dictionaries_integration_test.go`; БД и фикстуры — `service/servicetest`).
+- Интеграционные тесты с БД пропускаются при `testing.Short()` или без `DATABASE_URL` (образец: `service/dictionaries/dictionaries_integration_test.go`; БД и фикстуры — `service/servicetest`). Фикстуры и очистка, запрещённые `lp_app` (DELETE, правка журналов, запись в `sanctions_entries`), — через `servicetest.NewOwnerPool`/`BeginOwnerTx`, им нужен `MIGRATE_DATABASE_URL`; закоммиченные компании удаляет `servicetest.CleanupCommittedOrgs`.
 
 ```bash
 make test       # юнит-тесты, БД не нужна

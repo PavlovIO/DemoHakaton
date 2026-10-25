@@ -1,5 +1,7 @@
--- Smoke-тест инвариантов схемы. Запускать на ЧИСТОЙ БД после `goose up`:
---   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/testdata/invariants_test.sql
+-- Smoke-тест инвариантов схемы. Запускать на ЧИСТОЙ БД после `goose up` — make test-invariants
+-- (суперпользователь контейнера) или владельцем схемы:
+--   psql "$MIGRATE_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/testdata/invariants_test.sql
+-- Под lp_app (DATABASE_URL) не пройдёт: у него нет TEMPORARY для pg_temp.expect_fail и записи в справочники.
 -- Всё выполняется в транзакции и откатывается в конце — данные не остаются.
 -- Каждая проверка «должно упасть» реализована через DO-блок, который ловит ожидаемую ошибку
 -- и бросает исключение, если ошибки НЕ было.
