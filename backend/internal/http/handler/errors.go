@@ -11,6 +11,7 @@ import (
 
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/apperr"
 	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/http/api"
+	"github.com/MaxPastukhov15/Liquidity_platform/backend/internal/repository/pgerr"
 )
 
 // statusByCode — единственное место, где доменный код превращается в HTTP-статус.
@@ -42,9 +43,10 @@ func StatusOf(code apperr.Code) int {
 }
 
 // ErrorBody переводит ошибку в тело ответа из спеки.
-// Недоменные ошибки превращаются в INTERNAL без деталей — текст причины клиенту не уходит.
+// Недоменные ошибки превращаются в INTERNAL без деталей — текст причины клиенту не уходит;
+// временные отказы БД (таймауты роли lp_app, лимит соединений) — в UNAVAILABLE (pgerr.Transient).
 func ErrorBody(err error) (int, api.Error) {
-	e, ok := apperr.As(err)
+	e, ok := apperr.As(pgerr.Transient(err))
 	if !ok || e.Code == apperr.CodeInternal {
 		return http.StatusInternalServerError, api.Error{Error: api.ErrorBody{
 			Code:    string(apperr.CodeInternal),
