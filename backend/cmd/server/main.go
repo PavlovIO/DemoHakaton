@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -183,7 +184,7 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 		pool.Close()
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
-	if err := warnIfPrivilegedRole(pingCtx, pool); err != nil {
+	if err := warnIfPrivilegedRole(pingCtx, pool, poolCfg.MaxConns); err != nil {
 		pool.Close()
 		return nil, err
 	}
@@ -191,25 +192,51 @@ func newPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// warnIfPrivilegedRole предупреждает, если DATABASE_URL указывает на суперпользователя или
-// владельца таблиц (lp_migrator из MIGRATE_DATABASE_URL): обоим GRANT не указ. Приложение
-// должно ходить под lp_app (backend/db/roles.sql): права БД — последняя линия защиты
-// audit_log и сделок. Не падаем, чтобы устаревший .env не ломал запуск.
-func warnIfPrivilegedRole(ctx context.Context, pool *pgxpool.Pool) error {
-	var superuser, owner bool
+// dbRole — то, что роль DATABASE_URL может на самом деле, с учётом членства в других ролях.
+type dbRole struct {
+	superuser bool
+	// schemaOwner — CREATE в схеме public: владелец БД (pg_database_owner) или член lp_migrator.
+	schemaOwner bool
+	// rewritesAudit — UPDATE на audit_log, который lp_app запрещён миграцией 00006.
+	rewritesAudit bool
+	connLimit     int32 // rolconnlimit; -1 — без лимита
+}
+
+// warnIfPrivilegedRole предупреждает, если роль DATABASE_URL — суперпользователь или имеет права
+// владельца схемы (lp_migrator из MIGRATE_DATABASE_URL, член lp_migrator, владелец БД): им GRANT
+// не указ. Права проверяются через has_*_privilege, а не по имени владельца таблиц — так видно и
+// унаследованное членством, и владельца пустой схемы. Приложение должно ходить под lp_app
+// (backend/db/roles.sql): права БД — последняя линия защиты audit_log и сделок. Не падаем, чтобы
+// устаревший .env не ломал запуск.
+func warnIfPrivilegedRole(ctx context.Context, pool *pgxpool.Pool, maxConns int32) error {
+	var r dbRole
 	err := pool.QueryRow(ctx, `SELECT rolsuper,
-		EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tableowner = current_user)
-		FROM pg_roles WHERE rolname = current_user`).Scan(&superuser, &owner)
+		has_schema_privilege('public', 'CREATE'),
+		to_regclass('public.audit_log') IS NOT NULL AND has_table_privilege('public.audit_log', 'UPDATE'),
+		rolconnlimit
+		FROM pg_roles WHERE rolname = current_user`).Scan(&r.superuser, &r.schemaOwner, &r.rewritesAudit, &r.connLimit)
 	if err != nil {
 		return fmt.Errorf("check database role: %w", err)
 	}
-	switch {
-	case superuser:
-		slog.Warn("DATABASE_URL connects as a superuser; use the lp_app role (see .env.example)")
-	case owner:
-		slog.Warn("DATABASE_URL connects as the owner of the tables; use the lp_app role (see .env.example)")
+	for _, w := range roleWarnings(r, maxConns) {
+		slog.Warn(w)
 	}
 	return nil
+}
+
+func roleWarnings(r dbRole, maxConns int32) []string {
+	var warnings []string
+	switch {
+	case r.superuser:
+		warnings = append(warnings, "DATABASE_URL connects as a superuser; use the lp_app role (see .env.example)")
+	case r.schemaOwner || r.rewritesAudit:
+		warnings = append(warnings, "DATABASE_URL role has schema owner privileges (owner of the database or member of lp_migrator); use the lp_app role (see .env.example)")
+	}
+	// Лимит общий для всех реплик и тестов: пул больше лимита упрётся в 53300 под нагрузкой.
+	if r.connLimit >= 0 && maxConns > r.connLimit {
+		warnings = append(warnings, fmt.Sprintf("DB pool size %d exceeds CONNECTION LIMIT %d of the DATABASE_URL role; lower DB_MAX_CONNS or raise LP_APP_CONN_LIMIT (backend/db/roles.sql)", maxConns, r.connLimit))
+	}
+	return warnings
 }
 
 // warnIfPlaintextRemote предупреждает о соединении с удалённой БД, которое может пойти без TLS:
@@ -217,13 +244,23 @@ func warnIfPrivilegedRole(ctx context.Context, pool *pgxpool.Pool) error {
 // канал через Fallbacks). На стенде sslmode=require/verify-full задаётся в DATABASE_URL.
 func warnIfPlaintextRemote(poolCfg *pgxpool.Config) {
 	host := poolCfg.ConnConfig.Host
-	// Путь — unix-сокет, он не выходит за пределы машины.
-	isLocal := host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "/")
 	plaintext := poolCfg.ConnConfig.TLSConfig == nil
 	for _, fb := range poolCfg.ConnConfig.Fallbacks {
 		plaintext = plaintext || fb.TLSConfig == nil
 	}
-	if !isLocal && plaintext {
+	if !isLocalDBHost(host) && plaintext {
 		slog.Warn("database connection to a remote host is not encrypted; set sslmode=require or verify-full", "host", host)
 	}
+}
+
+// isLocalDBHost — соединение не выходит за пределы машины или сети docker-compose: loopback,
+// unix-сокет (путь) или имя без точки — сервис compose (postgres). Хост стенда — FQDN или IP.
+func isLocalDBHost(host string) bool {
+	if host == "localhost" || strings.HasPrefix(host, "/") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return !strings.Contains(host, ".")
 }

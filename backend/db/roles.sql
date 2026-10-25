@@ -2,8 +2,16 @@
 -- Права lp_app на таблицы выдают миграции (00006_app_role_grants.sql и следующие), здесь — только роли и БД.
 --
 -- Запускает суперпользователь (POSTGRES_USER контейнера), скрипт идемпотентен:
---   psql -v ON_ERROR_STOP=1 -v app_password=... -v migrator_password=... -f backend/db/roles.sql
+--   psql -v ON_ERROR_STOP=1 -v app_password=... -v migrator_password=... [-v app_conn_limit=N] -f backend/db/roles.sql
 -- Локально — make db-roles, в CI — шаг "db roles". Лежит вне migrations/: его не видят goose и sqlc.
+
+-- Лимит соединений lp_app — на все реплики, make run и пулы интеграционных тестов вместе. На стенде:
+-- не меньше суммы DB_MAX_CONNS реплик (сервер при старте предупреждает, если его пул больше лимита)
+-- и меньше max_connections сервера с запасом для lp_migrator и суперпользователя.
+\if :{?app_conn_limit}
+\else
+\set app_conn_limit 50
+\endif
 
 -- CREATE ROLE не умеет IF NOT EXISTS — создаём через \gexec только отсутствующие.
 SELECT 'CREATE ROLE lp_migrator LOGIN'
@@ -19,7 +27,7 @@ ALTER ROLE lp_migrator WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICAT
 ALTER ROLE lp_migrator SET lock_timeout = '10s';
 
 ALTER ROLE lp_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
-    CONNECTION LIMIT 50 PASSWORD :'app_password';
+    CONNECTION LIMIT :app_conn_limit PASSWORD :'app_password';
 -- Таймауты на роли, а не в коде: их нельзя забыть в новом соединении или пуле.
 ALTER ROLE lp_app SET statement_timeout = '5s';
 ALTER ROLE lp_app SET lock_timeout = '2s';
