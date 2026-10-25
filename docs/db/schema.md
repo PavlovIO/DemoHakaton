@@ -10,6 +10,7 @@ PostgreSQL 16. Миграции лежат в `backend/migrations` в форма
 | `00004_aml_flags_match_key.sql` | Колонка `aml_flags.match_key` — ключ дедупликации AML-находок |
 | `00005_fatf_grey_transfer_methods.sql` | Серый список FATF и способы перевода `spfs`/`cips` |
 | `00006_app_role_grants.sql` | Права роли приложения `lp_app` на таблицы (см. «Роли и права») |
+| `00007_app_role_column_updates.sql` | `UPDATE` роли `lp_app` — только по столбцам, которые меняют запросы |
 | `testdata/invariants_test.sql` | Smoke-тест ограничений: 19 проверок, в том числе транзакция принятия оффера |
 
 ## Как запустить
@@ -44,8 +45,10 @@ goose -dir backend/migrations postgres "$MIGRATE_DATABASE_URL" reset
 |---|---|
 | `SELECT` | countries, currencies, transfer_methods, sanctions_entries |
 | `SELECT, INSERT` | audit_log, status_history, deals, messages, registry_checks |
-| `SELECT, INSERT, UPDATE` | organizations, users, applications (`FOR UPDATE` требует UPDATE), offers, notifications, aml_flags, message_reads (upsert) |
+| `SELECT, INSERT`, `UPDATE` по столбцам (00007) | organizations, users, applications (`FOR UPDATE` требует UPDATE), offers, notifications, aml_flags, message_reads (upsert) |
 | `SELECT, INSERT, UPDATE, DELETE` | sessions, kyc_documents, beneficiaries |
+
+`UPDATE` по столбцам — ровно те, что меняют `UPDATE`-запросы: нельзя поднять `users.role`, сменить `password_hash`, тип или страну компании, условия оффера. Новый `UPDATE` по другому столбцу требует `GRANT UPDATE (столбец)` в новой миграции, иначе интеграционный тест сервиса упадёт с 42501. `kyc_status` и `status` заявок/офферов остаются изменяемыми — их меняют сами сценарии, охрану переходов держат `WHERE` в запросах и сервис.
 
 **Новая таблица** получает права только явным `GRANT … TO lp_app` в своей же миграции: `ALTER DEFAULT PRIVILEGES` не используем, а таблицу без `SELECT` ловит `TestDBPrivilegesIntegration` (`backend/internal/service/db_privileges_integration_test.go`), недостающие `INSERT`/`UPDATE` — интеграционные тесты сервисов. Права на последовательности не нужны: `id` и номера — `uuid` или `GENERATED ALWAYS AS IDENTITY`, а identity не требует `USAGE` на свою последовательность.
 
