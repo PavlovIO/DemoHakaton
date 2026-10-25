@@ -17,7 +17,7 @@ import type { components } from '@/lib/api-schema'
 // Типы из OpenAPI
 export type Me = components['schemas']['Me']
 export type User = NonNullable<Me>['user']
-export type Organization = NonNullable<Me>['organization']
+export type Organization = NonNullable<NonNullable<Me>['organization']>
 export type UserRole = User['role']
 export type KycStatus = Organization['kyc_status']
 export type RegisterPayload = components['schemas']['RegisterRequest']

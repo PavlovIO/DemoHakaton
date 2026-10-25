@@ -131,6 +131,7 @@ npm run dev          # запуск Vite-сервера на http://localhost:51
 | `npm run build` | Продакшен-сборка (TypeScript check + Vite build) в папку frontend/dist
 | `npm run preview` | Локальный просмотр собранного продакшен-билда
 | `npm run lint` | Проверка кода через ESLint (TypeScript + React правила)
+| `npm run test:integration` | Интеграционные тесты (`*.integration.test.ts(x)`, Vitest + jsdom) против живого бэкенда: сначала `make db && make backend-up` из корня; другой адрес — `INTEGRATION_API_URL`
 
 На странице логина введите специальные email-адреса, чтобы получить нужную роль: \
 `borrower@test.com` - войдёте как Заёмщик (с верифицированной компанией).\

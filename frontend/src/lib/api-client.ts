@@ -92,7 +92,7 @@ async function request<T>(path: keyof paths | string, options: RequestOptions = 
       }
     }
 
-    if (data && typeof data === 'object' && 'code' in data) {
+    if (data && typeof data === 'object' && 'error' in data) {
       throw new ApiError(res.status, data as ApiErrorBody)
     }
     throw new ApiError(res.status, {error: {

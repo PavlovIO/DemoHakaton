@@ -45,15 +45,16 @@ export function ProfileDropdown() {
 
   const { user, organization } = me
 
-  const initials = organization.name
+  // У админа организации нет (Me.organization = null) — без компании и KYC.
+  const initials = (organization?.name ?? user.email)
     .split(' ')
     .map((n) => n[0])
     .join('')
     .toUpperCase()
     .slice(0, 2)
 
-  const kyc = KYC_LABEL[organization.kyc_status] ?? KYC_LABEL.draft
-  const isKycVerified = organization.kyc_status === 'verified'
+  const kyc = organization ? (KYC_LABEL[organization.kyc_status] ?? KYC_LABEL.draft) : null
+  const isKycVerified = organization?.kyc_status === 'verified'
 
   const go = (path: string) => {
     setIsOpen(false)
@@ -81,42 +82,48 @@ export function ProfileDropdown() {
         >
           {/* Шапка */}
           <div className="border-b border-gray-200 px-4 py-3">
-            <p className="truncate text-sm font-medium text-gray-900">
-              {organization.name}
-            </p>
+            {organization && (
+              <p className="truncate text-sm font-medium text-gray-900">
+                {organization.name}
+              </p>
+            )}
             <p className="truncate text-xs text-gray-500">{user.email}</p>
 
             <div className="mt-2 flex flex-wrap gap-1.5">
               <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
                 {ROLE_LABEL[user.role] ?? user.role}
               </span>
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${kyc.className}`}
-              >
-                {isKycVerified ? (
-                  <ShieldCheck className="h-3 w-3" />
-                ) : (
-                  <ShieldAlert className="h-3 w-3" />
-                )}
-                {kyc.text}
-              </span>
+              {kyc && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${kyc.className}`}
+                >
+                  {isKycVerified ? (
+                    <ShieldCheck className="h-3 w-3" />
+                  ) : (
+                    <ShieldAlert className="h-3 w-3" />
+                  )}
+                  {kyc.text}
+                </span>
+              )}
             </div>
           </div>
 
           {/* Пункты меню */}
           <div className="py-1">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => go('/profile')}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-            >
-              <Building className="h-4 w-4" />
-              Профиль компании
-            </button>
+            {organization && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => go('/profile')}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <Building className="h-4 w-4" />
+                Профиль компании
+              </button>
+            )}
 
             {/* Если KYC не пройден — подсвечиваем пункт, ведущий к верификации */}
-            {!isKycVerified && (
+            {organization && !isKycVerified && (
               <button
                 type="button"
                 role="menuitem"
