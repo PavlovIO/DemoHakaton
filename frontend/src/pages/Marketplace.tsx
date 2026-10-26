@@ -4,6 +4,8 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { useMarketplace, type Application } from '@/hooks/useApplications'
 import { useCreateOffer, type OfferCreate } from '@/hooks/useOffers'
+import { useCountries, useCurrencies } from '@/hooks/useDictionaries'
+import type { components } from '@/lib/api-schema'
 import { NOTIFICATIONS_KEY } from '@/hooks/useNotifications'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney, MAX_MONEY, MAX_PERCENT } from '@/lib/money'
@@ -11,6 +13,8 @@ import { REPAYMENT_SCHEDULE_LABEL } from '@/lib/labels'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
+
+type CountryCode = components['schemas']['CountryCode']
 
 export function Marketplace() {
   const { user } = useAuth()
@@ -27,8 +31,16 @@ function LenderMarketplace() {
   const [filterCurrency, setFilterCurrency] = useState('')
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
+  // Справочники из БД (/dictionaries/*) вместо хардкода: страна и валюта
+  // фильтруют на бэкенде, коды совпадают с паттернами контракта (^[A-Z]{2}$ / ^[A-Z]{3}$).
+  const countriesQuery = useCountries()
+  const currenciesQuery = useCurrencies()
+  const countryOptions = countriesQuery.data ?? []
+  const currencyOptions = currenciesQuery.data ?? []
+
   // Фильтрует бэкенд; пустые значения в запрос не уходят. Сумма без валюты не фильтрует.
-  const target_country = filterCountry || undefined
+  // target_country по контракту — массив кодов (несколько значений — ИЛИ).
+  const target_country = filterCountry ? [filterCountry as CountryCode] : undefined
   const marketplaceQuery = useMarketplace(
     filterCurrency
       ? { target_country, currency: filterCurrency, amount_min: filterAmountMin || undefined }
@@ -99,17 +111,20 @@ function LenderMarketplace() {
           <label className="block text-xs font-medium text-gray-700 mb-1">Страна</label>
           <select value={filterCountry} onChange={e => setFilterCountry(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
             <option value="">Все страны</option>
-            <option value="DE">Германия (DE)</option>
-            <option value="CN">Китай (CN)</option>
-            <option value="TR">Турция (TR)</option>
+            {countryOptions.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name_ru} ({c.code}){c.fatf_high_risk ? ' — FATF: повышенный риск' : ''}
+              </option>
+            ))}
           </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Валюта</label>
           <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
             <option value="">Любая</option>
-            <option value="EUR">EUR</option>
-            <option value="USD">USD</option>
+            {currencyOptions.map((c) => (
+              <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+            ))}
           </select>
         </div>
         <div>
