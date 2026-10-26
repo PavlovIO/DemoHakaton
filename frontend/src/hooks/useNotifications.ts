@@ -5,7 +5,7 @@ import type { components } from '@/lib/api-schema'
 export type Notification = components['schemas']['Notification']
 type NotificationPage = components['schemas']['NotificationPage']
 
-const NOTIFICATIONS_KEY = ['notifications'] as const
+export const NOTIFICATIONS_KEY = ['notifications'] as const
 
 // Уведомления создаёт бэкенд по событиям сделки — опрашиваем для колокольчика.
 export function useNotifications() {
