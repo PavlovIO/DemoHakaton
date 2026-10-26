@@ -32,7 +32,7 @@ export function Deals() {
                   <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
                     <span className="font-medium text-gray-900">{formatMoney(deal.amount, deal.currency)}</span>
                     <span>Ставка: {formatPercent(deal.interest_rate_annual)}</span>
-                    <span>Комиссия: {formatPercent(deal.fee_percent)}</span>
+                    <span>Комиссия площадки (фиксированная): {formatPercent(deal.fee_percent)}</span>
                     <span>Дата: {new Date(deal.agreed_at).toLocaleDateString('ru-RU')}</span>
                   </div>
                 </div>

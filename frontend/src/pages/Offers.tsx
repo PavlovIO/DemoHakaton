@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useMyOffers, useWithdrawOffer, type Offer } from '@/hooks/useOffers'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney, formatPercent } from '@/lib/money'
+import { repaymentScheduleLabel } from '@/lib/labels'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ChatModal } from '@/components/ChatModal'
@@ -64,7 +65,7 @@ function MyOffers() {
                     Вы предложили: <span className="font-medium">{formatMoney(offer.amount, offer.currency)}</span> под <span className="font-medium">{formatPercent(offer.interest_rate_annual)}</span> годовых
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Комиссия: {formatPercent(offer.fee_percent)} | График: {offer.repayment_schedule === 'bullet' ? 'В конце срока' : offer.repayment_schedule}
+                    Комиссия: {formatPercent(offer.fee_percent)} | График: {repaymentScheduleLabel(offer.repayment_schedule)}
                   </p>
                 </div>
                 <div className="flex gap-2">

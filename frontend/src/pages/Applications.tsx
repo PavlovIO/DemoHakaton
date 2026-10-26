@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useCreateApplication, useMyApplications, useSubmitApplication, type Application } from '@/hooks/useApplications'
 import { useAcceptOffer, useApplicationOffers, type Offer } from '@/hooks/useOffers'
 import { handleApiError } from '@/lib/api-errors'
-import { formatMoney, formatPercent } from '@/lib/money'
+import { formatMoney, formatPercent, MAX_MONEY } from '@/lib/money'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -153,7 +153,7 @@ function BorrowerApplications() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Сумма и валюта</label>
                 <div className="mt-1 flex gap-2">
-                  <input required type="number" min="1" step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="500000.00" />
+                  <input required type="number" min="1" max={MAX_MONEY} step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="500000.00" />
                   <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as Application['currency']})} className="rounded-md border-gray-300 shadow-sm p-2 border">
                     <option value="EUR">EUR</option><option value="USD">USD</option><option value="RUB">RUB</option>
                   </select>
@@ -217,8 +217,9 @@ function BorrowerApplications() {
                         Сумма: <span className="font-medium">{formatMoney(offer.amount, offer.currency)}</span>
                       </p>
                       <p className="text-sm text-gray-600">
-                        Ставка: <span className="font-medium">{formatPercent(offer.interest_rate_annual)}</span> | Комиссия: {formatPercent(offer.fee_percent)}
+                        Ставка: <span className="font-medium">{formatPercent(offer.interest_rate_annual)}</span> | Комиссия площадки: {formatPercent(offer.fee_percent)}
                       </p>
+                      <p className="text-xs text-gray-400">Комиссия платформы фиксирована и не может быть изменена.</p>
                     </div>
                     <div className="flex gap-2">
                       <Button variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
