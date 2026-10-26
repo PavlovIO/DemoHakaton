@@ -28,3 +28,13 @@ export function sanitizeDecimalInput(raw: string): string {
     .replace(/(\..*)\./g, '$1')
     .replace(/(\.\d{2})\d+/, '$1')
 }
+
+//верхние пороги чиселоввых полей
+export const MAX_PERCENT = 1_000_000
+export const MAX_MONEY = 1_000_000_000_000_000 // 10^15
+
+export function clampNumber(value: number | string | null | undefined, min = 0, max = MAX_MONEY): number | null {
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  if (num === null || num === undefined || Number.isNaN(num)) return null
+  return Math.min(Math.max(num, min), max)
+}
