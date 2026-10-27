@@ -5,6 +5,7 @@ import { PAGE_SIZE, pagedList } from '@/lib/pagination'
 
 export type Application = components['schemas']['Application']
 export type ApplicationCreate = components['schemas']['ApplicationCreate']
+export type ApplicationUpdate = components['schemas']['ApplicationUpdate']
 type ApplicationPage = components['schemas']['ApplicationPage']
 
 export const APPLICATIONS_KEY = ['applications'] as const
@@ -72,6 +73,18 @@ export function useCreateApplication() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload: ApplicationCreate) => api.post<Application>('/applications', payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
+  })
+}
+
+// PATCH /applications/{id} — бэкенд разрешает только владельцу и только в
+// draft/rejected; при гонке статусов отвечает 409 INVALID_STATUS_TRANSITION
+// (маппинг — в handleApiError).
+export function useUpdateApplication() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ApplicationUpdate }) =>
+      api.patch<Application>('/applications/{applicationId}', payload, { path: { applicationId: id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
   })
 }
