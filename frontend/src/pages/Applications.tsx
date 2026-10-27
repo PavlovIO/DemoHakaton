@@ -3,8 +3,10 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { useCreateApplication, useMyApplications, useSubmitApplication, type Application } from '@/hooks/useApplications'
 import { useAcceptOffer, useApplicationOffers, type Offer } from '@/hooks/useOffers'
+import { useCountries, useCurrencies, useTransferMethods, pickDefaultOption, type Country, type Currency } from '@/hooks/useDictionaries'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney, formatPercent, MAX_MONEY } from '@/lib/money'
+import { FALLBACK_TRANSFER_METHOD_NAME } from '@/lib/labels'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -31,6 +33,19 @@ const EMPTY_FORM = {
   term_months: '6',
 }
 
+// fallback-варианты на случай недоступности /dictionaries/* (сервис справочников
+// живёт отдельно от основного запроса списка заявок).
+const FALLBACK_COUNTRIES: Country[] = [
+  { code: 'DE', name_en: 'Germany', name_ru: 'Германия', fatf_high_risk: false },
+  { code: 'CN', name_en: 'China', name_ru: 'Китай', fatf_high_risk: false },
+  { code: 'TR', name_en: 'Turkey', name_ru: 'Турция', fatf_high_risk: false },
+]
+const FALLBACK_CURRENCIES: Currency[] = [
+  { code: 'EUR', name: 'Евро' },
+  { code: 'USD', name: 'Доллар США' },
+  { code: 'RUB', name: 'Российский рубль' },
+]
+
 export function Applications() {
   const { user } = useAuth()
 
@@ -48,6 +63,26 @@ function BorrowerApplications() {
   const submitApplication = useSubmitApplication()
   const acceptOffer = useAcceptOffer()
 
+  // Справочники из БД (/dictionaries/*). В contract-first проекте CountryCode —
+  // паттерн ^[A-Z]{2}$ без enum (см. api/schemas/primitives.yaml), поэтому
+  // любые страны из словаря валидны для ApplicationCreate; список стран в БД
+  // шире прежнего хардкода (13+ стран с FATF-флагами вместо трёх).
+  const countriesQuery = useCountries()
+  const currenciesQuery = useCurrencies()
+  const transferMethodsQuery = useTransferMethods()
+
+  const countryOptions = countriesQuery.data ?? FALLBACK_COUNTRIES
+  const currencyOptions = currenciesQuery.data ?? FALLBACK_CURRENCIES
+  // TransferMethod в контракте — enum ([swift, sepa, spfs, cips, other]),
+  // справочник может содержать коды шире него — показываем только валидные для заявки.
+  const TRANSFER_METHOD_VALUES: Application['transfer_method'][] = ['swift', 'sepa', 'spfs', 'cips', 'other']
+  const transferMethodOptions = (transferMethodsQuery.data ?? []).filter((m) =>
+    TRANSFER_METHOD_VALUES.includes(m.code as Application['transfer_method']),
+  )
+  const fallbackTransferMethodOptions = Object.entries(FALLBACK_TRANSFER_METHOD_NAME)
+    .filter(([code]) => TRANSFER_METHOD_VALUES.includes(code as Application['transfer_method']))
+    .map(([code, name]) => ({ code, name }))
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [selectedAppForOffers, setSelectedAppForOffers] = useState<Application | null>(null)
   const { data: currentAppOffers = [] } = useApplicationOffers(selectedAppForOffers?.id)
@@ -55,6 +90,21 @@ function BorrowerApplications() {
   const [chatOffer, setChatOffer] = useState<Offer | null>(null)
 
   const [formData, setFormData] = useState(EMPTY_FORM)
+
+  // При открытии формы подставляем значения по умолчанию (EUR/DE/swift), а если
+  // их нет в актуальном справочнике — первую доступную опцию.
+  const openCreateModal = () => {
+    const currency = pickDefaultOption(currencyOptions, EMPTY_FORM.currency)
+    const country = pickDefaultOption(countryOptions, EMPTY_FORM.target_country_code)
+    const method = pickDefaultOption(transferMethodOptions, EMPTY_FORM.transfer_method)
+    setFormData({
+      ...EMPTY_FORM,
+      currency: (currency?.code ?? EMPTY_FORM.currency) as Application['currency'],
+      target_country_code: country?.code ?? EMPTY_FORM.target_country_code,
+      transfer_method: (method?.code ?? EMPTY_FORM.transfer_method) as Application['transfer_method'],
+    })
+    setIsCreateModalOpen(true)
+  }
 
   const handleSubmit = (id: string) => {
     submitApplication.mutate(id, {
@@ -72,7 +122,6 @@ function BorrowerApplications() {
       {
         onSuccess: (draft) => {
           setIsCreateModalOpen(false)
-          setFormData(EMPTY_FORM)
           handleSubmit(draft.id)
         },
         onError: handleApiError,
@@ -94,7 +143,7 @@ function BorrowerApplications() {
     <div className="space-y-6 relative">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Мои заявки</h1>
-        <Button onClick={() => setIsCreateModalOpen(true)}>+ Создать заявку</Button>
+        <Button onClick={openCreateModal}>+ Создать заявку</Button>
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -155,20 +204,28 @@ function BorrowerApplications() {
                 <div className="mt-1 flex gap-2">
                   <input required type="number" min="1" max={MAX_MONEY} step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="500000.00" />
                   <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as Application['currency']})} className="rounded-md border-gray-300 shadow-sm p-2 border">
-                    <option value="EUR">EUR</option><option value="USD">USD</option><option value="RUB">RUB</option>
+                    {currencyOptions.map((c) => (
+                      <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Целевая юрисдикция</label>
                 <select value={formData.target_country_code} onChange={e => setFormData({...formData, target_country_code: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                  <option value="DE">Германия (DE)</option><option value="CN">Китай (CN)</option><option value="TR">Турция (TR)</option>
+                  {countryOptions.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name_ru} ({c.code}){c.fatf_high_risk ? ' — FATF: повышенный риск' : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Способ перевода</label>
                 <select value={formData.transfer_method} onChange={e => setFormData({...formData, transfer_method: e.target.value as Application['transfer_method']})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                  <option value="swift">SWIFT</option><option value="sepa">SEPA</option><option value="other">Другое</option>
+                  {(transferMethodOptions.length > 0 ? transferMethodOptions : fallbackTransferMethodOptions).map((m) => (
+                    <option key={m.code} value={m.code}>{m.name}</option>
+                  ))}
                 </select>
               </div>
               <div>
