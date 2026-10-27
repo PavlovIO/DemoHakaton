@@ -7,7 +7,7 @@ import { KycStub } from './KycStub'
 import { PrivateRoute } from '@/components/PrivateRoute'
 import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, loginAs } from '@/test/integration/actors'
-import { fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, waitFor, within } from '@testing-library/react'
 import { type Application } from '@/hooks/useApplications'
 import { publishApplication } from '@/test/integration/fixtures'
 import { api } from '@/lib/api-client'
@@ -69,9 +69,9 @@ async function createDraft(): Promise<Application> {
   })
 }
 
-function requestBodyOf(method: 'PATCH' | 'POST'): unknown {
+function requestBodyOf(method: 'PATCH' | 'POST', path: string): unknown {
   const call = fetchSpy.mock.calls.find(
-    ([input, init]) => new URL(String(input), 'http://localhost').pathname === '/api/v1/applications' && init?.method === method,
+    ([input, init]) => new URL(String(input), 'http://localhost').pathname === `/api/v1${path}` && init?.method === method,
   )
   return call ? JSON.parse(String(call[1]?.body)) : undefined
 }
@@ -82,11 +82,10 @@ describe('редактирование заявки (шаг 2C)', () => {
     const newPurpose = `${app.purpose} — исправлено`
 
     renderPage(<Applications />)
-    await screen.findByText(app.purpose)
-
-
-    const editButton = screen.getByRole('button', { name: 'Редактировать' })
-    expect(screen.getByRole('button', { name: 'Отправить на модерацию' })).toBeTruthy()
+    // У BORROWER есть и другие черновики (пагинация в useApplications): кнопки ищем в строке своей заявки.
+    const row = (await screen.findByText(app.purpose)).closest('li') as HTMLElement
+    const editButton = within(row).getByRole('button', { name: 'Редактировать' })
+    expect(within(row).getByRole('button', { name: 'Отправить на модерацию' })).toBeTruthy()
 
     fireEvent.click(editButton)
 
@@ -99,7 +98,7 @@ describe('редактирование заявки (шаг 2C)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
 
-    await waitFor(() => expect(requestBodyOf('PATCH')).toEqual({
+    await waitFor(() => expect(requestBodyOf('PATCH', `/applications/${app.id}`)).toEqual({
       amount: '120000.00',
       currency: 'EUR',
       target_country_code: 'DE',
