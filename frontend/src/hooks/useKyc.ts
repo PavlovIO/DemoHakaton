@@ -13,6 +13,7 @@ type OrganizationPage = components['schemas']['OrganizationPage']
 const DOCUMENTS_KEY = ['kyc-documents'] as const
 const ORGANIZATION_KEY = ['my-organization'] as const
 const KYC_QUEUE_KEY = ['kyc-queue'] as const
+export { KYC_QUEUE_KEY }
 
 export function useMyDocuments() {
   return useQuery({
@@ -86,6 +87,8 @@ export function useKycQueue() {
         query: { kyc_status: ['under_review'], page: pageParam, page_size: PAGE_SIZE },
       }),
     ...pagedList<OrganizationPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 }
 

@@ -49,7 +49,7 @@ export type paths = {
         put?: never;
         /**
          * Верифицировать компанию (under_review → verified)
-         * @description 409, если у компании есть открытые AML-флаги с severity=high.
+         * @description 409 `CONFLICT` — у компании есть открытые AML-флаги с severity=high; 409 `INVALID_STATUS_TRANSITION` — компания не в статусе under_review.
          */
         post: operations["adminApproveKyc"];
         delete?: never;
@@ -137,7 +137,10 @@ export type paths = {
         };
         get?: never;
         put?: never;
-        /** Заблокировать пользователя (инвалидирует все его сессии) */
+        /**
+         * Заблокировать пользователя (инвалидирует все его сессии)
+         * @description 403 `FORBIDDEN` — нельзя заблокировать администратора, в том числе себя. Повторная блокировка идемпотентна.
+         */
         post: operations["adminBlockUser"];
         delete?: never;
         options?: never;
@@ -154,6 +157,7 @@ export type paths = {
         };
         get?: never;
         put?: never;
+        /** @description 403 `FORBIDDEN` — статус администратора не меняется: администратора нельзя заблокировать, поэтому и разблокировать нечего. Повторная разблокировка идемпотентна. */
         post: operations["adminUnblockUser"];
         delete?: never;
         options?: never;
@@ -241,6 +245,7 @@ export type paths = {
          *     - `lender` — только `published` + заявки, по которым у компании есть оффер (для архива);
          *     - `admin` — все заявки.
          *     Фильтр по сумме (`amount_min`/`amount_max`) применяется только вместе с `currency`.
+         *     Витрина кредитора — `status=published&sort=published_at_desc`, архив его откликов — `has_my_offer=true`.
          */
         get: operations["listApplications"];
         put?: never;
@@ -461,7 +466,7 @@ export type paths = {
         get: operations["listMessages"];
         put?: never;
         /**
-         * Написать в чат (стороны оффера; оффер в статусе sent или accepted)
+         * Написать в чат (стороны оффера; оффер в статусе sent или accepted; admin — только чтение, 403)
          * @description Текст хранится как есть и рендерится фронтом только как текст (никакого HTML).
          */
         post: operations["sendMessage"];
@@ -478,7 +483,10 @@ export type paths = {
             path?: never;
             cookie?: never;
         };
-        /** Сделки (role-scoped — стороны сделки или admin) */
+        /**
+         * Сделки (role-scoped — стороны сделки или admin)
+         * @description Период `created_from`/`created_to` фильтрует по `agreed_at`.
+         */
         get: operations["listDeals"];
         put?: never;
         post?: never;
@@ -735,6 +743,10 @@ export type paths = {
          *     Тип определяется по содержимому (magic bytes), а не по расширению.
          *     Файл хранится вне веб-корня под случайным именем.
          *     Только в статусах организации draft / rejected.
+         *     Поле `doc_type` передаётся в форме до `file`: сервер читает форму потоком
+         *     и проверяет тип документа до приёма файла (браузерный `FormData` сохраняет
+         *     порядок `append`). Иначе — 400 `VALIDATION_ERROR` с `field: doc_type`.
+         *     Файл больше 10 MB — 413 `FILE_TOO_LARGE`.
          */
         post: operations["uploadMyDocument"];
         delete?: never;
@@ -791,8 +803,11 @@ export type paths = {
          * @description `draft|rejected → under_review`. Проверяет, что загружены обязательные документы:
          *     - все: `charter`, `registration_certificate`, `address_proof`, `beneficiaries_register`;
          *     - кредитор дополнительно: `source_of_funds`.
+         *     Нужен хотя бы один бенефициар, иначе 400 `VALIDATION_ERROR` с `field: beneficiaries`.
          *     При переходе бэкенд запускает AML-скрининг (санкционные списки, FATF-юрисдикции)
          *     и создаёт `AmlFlag` при совпадениях. Админ получает уведомление.
+         *     Реквизиты (`registration_number`, `lei`, страна) изменились параллельно со сверкой
+         *     с реестром — 409 `CONFLICT`, отправку нужно повторить.
          */
         post: operations["submitKyc"];
         delete?: never;
@@ -809,8 +824,8 @@ export type paths = {
             cookie?: never;
         };
         /**
-         * Автозаполнение по реестру (ЕГРЮЛ через DaData для RU, GLEIF по LEI для остальных)
-         * @description Доступно без логина на шаге регистрации; жёсткий rate limit.
+         * Автозаполнение по реестру (ИНН/ОГРН для RU, LEI для остальных)
+         * @description Доступно без логина на шаге регистрации. В MVP реестр — мок на фикстурах демо-компаний. Rate limit: 10 запросов в минуту с IP и 60 в минуту всего (429).
          */
         get: operations["registryLookup"];
         put?: never;
@@ -922,7 +937,7 @@ export type components = {
              * @example APP-000123
              */
             number: string;
-            /** @description Только для владельца и admin; для lender — null */
+            /** @description Все офферы заявки в любом статусе; только для владельца и admin, для lender — null */
             offers_count?: number | null;
             /** Format: date-time */
             published_at?: string | null;
@@ -959,6 +974,7 @@ export type components = {
             target_country_code?: components["schemas"]["CountryCode"];
             term_months?: number;
             transfer_method?: components["schemas"]["TransferMethod"];
+            /** @description `""` очищает комментарий; отсутствие поля или `null` — оставить как есть */
             transfer_method_comment?: string | null;
         };
         AuditLogEntry: {
@@ -1245,6 +1261,7 @@ export type components = {
         OrganizationUpdate: {
             beneficiaries?: components["schemas"]["Beneficiary"][];
             legal_address?: string;
+            /** @description `""` очищает LEI; отсутствие поля или `null` — оставить как есть. */
             lei?: string | null;
             name?: string;
             registration_number?: string;
@@ -1274,8 +1291,11 @@ export type components = {
             registration_number?: string | null;
             /** @description Статус в реестре (active, liquidating, liquidated, ...) */
             registry_status?: string | null;
-            /** @enum {string} */
-            source: "egrul_dadata" | "gleif";
+            /**
+             * @description Источник ответа. `mock` — сверка по встроенным фикстурам демо-компаний (в MVP реестр только мок).
+             * @enum {string}
+             */
+            source: "egrul_dadata" | "gleif" | "mock";
         };
         /**
          * @description bullet — всё в конце срока; annuity — равные платежи;
@@ -1300,7 +1320,7 @@ export type components = {
             to_status: string;
         };
         /** @enum {string} */
-        TransferMethod: "swift" | "sepa" | "other";
+        TransferMethod: "swift" | "sepa" | "spfs" | "cips" | "other";
         User: {
             /** Format: date-time */
             created_at: string;
@@ -1638,6 +1658,7 @@ export interface operations {
                     "application/json": components["schemas"]["User"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1674,6 +1695,8 @@ export interface operations {
                 status?: components["schemas"]["AmlFlagStatus"];
                 severity?: components["schemas"]["AmlSeverity"];
                 organization_id?: string;
+                /** @description Флаги конкретной заявки (экран модерации) */
+                application_id?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -1753,6 +1776,7 @@ export interface operations {
                     "application/json": components["schemas"]["AnalyticsSummary"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
@@ -1784,6 +1808,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuditLogPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
@@ -1792,7 +1817,15 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["ApplicationStatus"][];
-                target_country?: components["schemas"]["CountryCode"];
+                /** @description Целевая юрисдикция (куда нужны деньги); несколько значений — ИЛИ */
+                target_country?: components["schemas"]["CountryCode"][];
+                /** @description Способ перевода; несколько значений — ИЛИ */
+                transfer_method?: components["schemas"]["TransferMethod"][];
+                /**
+                 * @description Только для lender: `true` — только заявки, по которым у моей компании есть оффер (архив откликов);
+                 *     `false` — только без моего оффера. Для других ролей игнорируется.
+                 */
+                has_my_offer?: boolean;
                 currency?: components["schemas"]["CurrencyCode"];
                 amount_min?: string;
                 amount_max?: string;
@@ -1803,7 +1836,7 @@ export interface operations {
                 borrower_organization_id?: string;
                 created_from?: components["parameters"]["CreatedFrom"];
                 created_to?: components["parameters"]["CreatedTo"];
-                sort?: "created_at_desc" | "created_at_asc" | "amount_desc" | "amount_asc" | "term_asc" | "term_desc";
+                sort?: "created_at_desc" | "created_at_asc" | "published_at_desc" | "published_at_asc" | "amount_desc" | "amount_asc" | "term_asc" | "term_desc";
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -1824,6 +1857,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     createApplication: {
@@ -1874,6 +1908,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -1903,6 +1938,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -1928,6 +1964,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -1953,6 +1990,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -1980,6 +2018,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -2005,6 +2044,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2031,6 +2071,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2138,6 +2179,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getMe: {
@@ -2159,6 +2201,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMessages: {
@@ -2186,6 +2229,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2215,6 +2259,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
             429: components["responses"]["RateLimited"];
@@ -2223,6 +2268,10 @@ export interface operations {
     listDeals: {
         parameters: {
             query?: {
+                /** @description Только для admin */
+                borrower_organization_id?: string;
+                /** @description Только для admin */
+                lender_organization_id?: string;
                 created_from?: components["parameters"]["CreatedFrom"];
                 created_to?: components["parameters"]["CreatedTo"];
                 page?: components["parameters"]["Page"];
@@ -2244,6 +2293,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getDeal: {
@@ -2267,6 +2317,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2353,6 +2404,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     markNotificationRead: {
@@ -2374,6 +2426,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2394,6 +2447,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listOffers: {
@@ -2426,6 +2480,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getOffer: {
@@ -2449,6 +2504,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2473,6 +2529,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -2504,6 +2561,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -2529,6 +2587,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -2579,6 +2638,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["InvalidTransition"];
         };
     };
@@ -2601,6 +2661,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     uploadMyDocument: {
@@ -2631,6 +2692,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["InvalidTransition"];
             /** @description Файл слишком большой */
             413: {
@@ -2662,6 +2724,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["InvalidTransition"];
         };
@@ -2680,6 +2743,10 @@ export interface operations {
             /** @description Файл (Content-Disposition attachment) */
             200: {
                 headers: {
+                    /** @description `attachment` с исходным именем файла (RFC 2231 для не-ASCII) */
+                    "Content-Disposition"?: string;
+                    /** @description Браузер не угадывает тип содержимого */
+                    "X-Content-Type-Options"?: "nosniff";
                     [name: string]: unknown;
                 };
                 content: {
@@ -2687,6 +2754,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2710,6 +2778,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["InvalidTransition"];
         };
     };

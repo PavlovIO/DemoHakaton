@@ -17,6 +17,8 @@ export function useMyOffers() {
     queryKey: [...OFFERS_KEY, 'mine'],
     queryFn: ({ pageParam }) => api.get<OfferPage>('/offers', { query: { page: pageParam, page_size: PAGE_SIZE } }),
     ...pagedList<OfferPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 }
 
