@@ -13,6 +13,7 @@ type OrganizationPage = components['schemas']['OrganizationPage']
 const DOCUMENTS_KEY = ['kyc-documents'] as const
 const ORGANIZATION_KEY = ['my-organization'] as const
 const KYC_QUEUE_KEY = ['kyc-queue'] as const
+export { KYC_QUEUE_KEY }
 
 export function useMyDocuments() {
   return useQuery({

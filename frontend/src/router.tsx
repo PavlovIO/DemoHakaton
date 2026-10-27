@@ -10,7 +10,10 @@ import { Deals } from '@/pages/Deals'
 import { KycStub } from '@/pages/KycStub'
 import { ProfileStub } from '@/pages/ProfileStub'
 import { Marketplace } from '@/pages/Marketplace'
-import { AdminPanel } from '@/pages/AdminPanel'
+import { AdminPanel, AdminIndexRedirect } from '@/pages/AdminPanel'
+import { KycQueueTab } from '@/pages/admin/KycQueueTab'
+import { ApplicationsModerationTab } from '@/pages/admin/ApplicationsModerationTab'
+import { AmlComingSoon, UsersComingSoon, AnalyticsComingSoon } from '@/pages/admin/ComingSoon'
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -35,9 +38,21 @@ const router = createBrowserRouter([
       </PrivateRoute>
     ),
     children: [
-      { index: true, element: <AdminPanel /> },
-      // Пункты меню админа (/admin/organizations, /admin/aml...) открывают ту же панель.
-      { path: '*', element: <AdminPanel /> },
+      // Layout панели: заголовок + вкладки-маршруты.
+      {
+        element: <AdminPanel />,
+        children: [
+          { index: true, element: <AdminIndexRedirect /> },
+          // Вкладки — отдельные маршруты (шаг 3B). Пункты левого меню ведут сюда.
+          { path: 'kyc', element: <KycQueueTab /> },
+          { path: 'applications', element: <ApplicationsModerationTab /> },
+          { path: 'aml', element: <AmlComingSoon /> },
+          { path: 'users', element: <UsersComingSoon /> },
+          { path: 'analytics', element: <AnalyticsComingSoon /> },
+          // Неизвестный путь внутри /admin — редирект на первую вкладку.
+          { path: '*', element: <AdminIndexRedirect /> },
+        ],
+      },
     ],
   },
   {
