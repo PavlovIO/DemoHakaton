@@ -14,5 +14,7 @@ export function useDeals() {
     queryKey: DEALS_KEY,
     queryFn: ({ pageParam }) => api.get<DealPage>('/deals', { query: { page: pageParam, page_size: PAGE_SIZE } }),
     ...pagedList<DealPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 }

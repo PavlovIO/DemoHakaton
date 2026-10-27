@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
-import { useCreateApplication, useMyApplications, useSubmitApplication, type Application } from '@/hooks/useApplications'
+import {
+  useCreateApplication,
+  useMyApplications,
+  useSubmitApplication,
+  useUpdateApplication,
+  type Application,
+  type ApplicationUpdate,
+} from '@/hooks/useApplications'
 import { useAcceptOffer, useApplicationOffers, type Offer } from '@/hooks/useOffers'
 import { useCountries, useCurrencies, useTransferMethods, pickDefaultOption, type Country, type Currency } from '@/hooks/useDictionaries'
 import { handleApiError } from '@/lib/api-errors'
@@ -57,6 +64,7 @@ function BorrowerApplications() {
   const applicationsQuery = useMyApplications()
   const { data: applications, isLoading } = applicationsQuery
   const createApplication = useCreateApplication()
+  const updateApplication = useUpdateApplication()
   const submitApplication = useSubmitApplication()
   const acceptOffer = useAcceptOffer()
 
@@ -75,6 +83,7 @@ function BorrowerApplications() {
     .map(([code, name]) => ({ code, name }))
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingApp, setEditingApp] = useState<Application | null>(null)
   const [selectedAppForOffers, setSelectedAppForOffers] = useState<Application | null>(null)
   const { data: currentAppOffers = [] } = useApplicationOffers(selectedAppForOffers?.id)
 
@@ -92,7 +101,25 @@ function BorrowerApplications() {
       target_country_code: country?.code ?? EMPTY_FORM.target_country_code,
       transfer_method: (method?.code ?? EMPTY_FORM.transfer_method) as Application['transfer_method'],
     })
+    setEditingApp(null)
     setIsCreateModalOpen(true)
+  }
+
+  const openEditModal = (app: Application) => {
+    setFormData({
+      amount: app.amount,
+      currency: app.currency,
+      target_country_code: app.target_country_code,
+      transfer_method: app.transfer_method,
+      purpose: app.purpose,
+      term_months: String(app.term_months),
+    })
+    setEditingApp(app)
+    setIsCreateModalOpen(true)
+  }
+  const closeFormModal = () => {
+    setIsCreateModalOpen(false)
+    setEditingApp(null)
   }
 
   const handleSubmit = (id: string) => {
@@ -108,8 +135,31 @@ function BorrowerApplications() {
       { ...formData, term_months: Number(formData.term_months) },
       {
         onSuccess: (draft) => {
-          setIsCreateModalOpen(false)
+          closeFormModal()
           handleSubmit(draft.id)
+        },
+        onError: handleApiError,
+      },
+    )
+  }
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingApp) return
+    const payload: ApplicationUpdate = {
+      amount: formData.amount,
+      currency: formData.currency,
+      target_country_code: formData.target_country_code,
+      transfer_method: formData.transfer_method,
+      purpose: formData.purpose,
+      term_months: Number(formData.term_months),
+    }
+    updateApplication.mutate(
+      { id: editingApp.id, payload },
+      {
+        onSuccess: () => {
+          toast.success('Заявка обновлена')
+          closeFormModal()
         },
         onError: handleApiError,
       },
@@ -157,10 +207,15 @@ function BorrowerApplications() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {app.status === 'draft' && (
-                      <Button disabled={submitApplication.isPending} onClick={() => handleSubmit(app.id)}>
-                        Отправить на модерацию
-                      </Button>
+                    {(app.status === 'draft' || app.status === 'rejected') && (
+                      <>
+                        <Button variant="outline" disabled={updateApplication.isPending} onClick={() => openEditModal(app)}>
+                          Редактировать
+                        </Button>
+                        <Button disabled={submitApplication.isPending} onClick={() => handleSubmit(app.id)}>
+                          Отправить на модерацию
+                        </Button>
+                      </>
                     )}
                     <Button
                       variant={appOffersCount > 0 && app.status === 'published' ? 'primary' : 'outline'}
@@ -184,8 +239,8 @@ function BorrowerApplications() {
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-            <h2 className="text-xl font-semibold mb-4">Создание заявки</h2>
-            <form onSubmit={handleCreate} className="space-y-4">
+            <h2 className="text-xl font-semibold mb-4">{editingApp ? 'Редактирование заявки' : 'Создание заявки'}</h2>
+            <form onSubmit={editingApp ? handleSaveEdit : handleCreate} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Сумма и валюта</label>
                 <div className="mt-1 flex gap-2">
@@ -224,8 +279,12 @@ function BorrowerApplications() {
                 <textarea required rows={3} value={formData.purpose} onChange={e => setFormData({...formData, purpose: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Закупка оборудования..."></textarea>
               </div>
               <div className="flex justify-end gap-3 mt-6">
-                <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>Отмена</Button>
-                <Button type="submit" disabled={createApplication.isPending}>Отправить на модерацию</Button>
+                <Button type="button" variant="outline" onClick={closeFormModal}>Отмена</Button>
+                {editingApp ? (
+                  <Button type="submit" disabled={updateApplication.isPending}>Сохранить</Button>
+                ) : (
+                  <Button type="submit" disabled={createApplication.isPending}>Отправить на модерацию</Button>
+                )}
               </div>
             </form>
           </div>
