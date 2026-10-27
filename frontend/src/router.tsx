@@ -13,7 +13,9 @@ import { Marketplace } from '@/pages/Marketplace'
 import { AdminPanel, AdminIndexRedirect } from '@/pages/AdminPanel'
 import { KycQueueTab } from '@/pages/admin/KycQueueTab'
 import { ApplicationsModerationTab } from '@/pages/admin/ApplicationsModerationTab'
-import { AmlComingSoon, UsersComingSoon, AnalyticsComingSoon } from '@/pages/admin/ComingSoon'
+import { AmlFlagsTab } from '@/pages/admin/AmlFlagsTab'
+import { UsersTab } from '@/pages/admin/UsersTab'
+import { AnalyticsTab } from '@/pages/admin/AnalyticsTab'
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -46,9 +48,10 @@ const router = createBrowserRouter([
           // Вкладки — отдельные маршруты (шаг 3B). Пункты левого меню ведут сюда.
           { path: 'kyc', element: <KycQueueTab /> },
           { path: 'applications', element: <ApplicationsModerationTab /> },
-          { path: 'aml', element: <AmlComingSoon /> },
-          { path: 'users', element: <UsersComingSoon /> },
-          { path: 'analytics', element: <AnalyticsComingSoon /> },
+          // Шаг 3C–3E: AML-флаги, Пользователи, Аналитика — вместо ComingSoon.
+          { path: 'aml', element: <AmlFlagsTab /> },
+          { path: 'users', element: <UsersTab /> },
+          { path: 'analytics', element: <AnalyticsTab /> },
           // Неизвестный путь внутри /admin — редирект на первую вкладку.
           { path: '*', element: <AdminIndexRedirect /> },
         ],
