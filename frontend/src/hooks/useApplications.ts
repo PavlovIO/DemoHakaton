@@ -5,6 +5,7 @@ import { PAGE_SIZE, pagedList } from '@/lib/pagination'
 
 export type Application = components['schemas']['Application']
 export type ApplicationCreate = components['schemas']['ApplicationCreate']
+export type ApplicationUpdate = components['schemas']['ApplicationUpdate']
 type ApplicationPage = components['schemas']['ApplicationPage']
 
 export const APPLICATIONS_KEY = ['applications'] as const
@@ -16,6 +17,8 @@ export function useMyApplications() {
     queryFn: ({ pageParam }) =>
       api.get<ApplicationPage>('/applications', { query: { page: pageParam, page_size: PAGE_SIZE } }),
     ...pagedList<ApplicationPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -36,6 +39,8 @@ export function useMarketplace(filters: MarketplaceFilters = {}) {
     ...pagedList<ApplicationPage>(),
     // Пока грузится новый фильтр, показываем прежний список вместо «ничего не найдено».
     placeholderData: keepPreviousData,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -47,6 +52,8 @@ export function useModerationQueue() {
         query: { status: ['moderation'], sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
       }),
     ...pagedList<ApplicationPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -72,6 +79,15 @@ export function useCreateApplication() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload: ApplicationCreate) => api.post<Application>('/applications', payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
+  })
+}
+
+export function useUpdateApplication() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ApplicationUpdate }) =>
+      api.patch<Application>('/applications/{applicationId}', payload, { path: { applicationId: id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY }),
   })
 }

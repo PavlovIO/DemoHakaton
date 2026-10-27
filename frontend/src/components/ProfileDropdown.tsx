@@ -134,6 +134,7 @@ export function ProfileDropdown() {
                 Пройти верификацию (KYC)
               </button>
             )}
+
           </div>
 
           {/* Выход */}

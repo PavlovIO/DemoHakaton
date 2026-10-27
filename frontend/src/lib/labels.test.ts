@@ -4,7 +4,6 @@ import { countryLabel, repaymentScheduleLabel, transferMethodLabel } from './lab
 describe('метки справочников', () => {
   it('countryLabel: известный код — «Название (CODE)», неизвестный — сам код', () => {
     expect(countryLabel('DE')).toBe('Германия (DE)')
-    // Fallback без сети: список из /dictionaries/countries может не загрузиться.
     expect(countryLabel('XX')).toBe('XX')
   })
 

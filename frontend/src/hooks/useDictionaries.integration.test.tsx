@@ -3,13 +3,11 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { useCountries, useCurrencies, useTransferMethods, pickDefaultOption } from './useDictionaries'
 import { AppProviders } from '@/test/integration/render'
 
-// Справочники читаются без авторизации (security: [] в контракте) — логин не нужен.
 describe('справочники против живого бэкенда', () => {
   it('список стран шире прежнего хардкода и содержит DE с флагом FATF', async () => {
     const { result } = renderHook(() => useCountries(), { wrapper: AppProviders })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     const countries = result.current.data!
-    // Было три страны в хардкоде — из БД приходит весь сидер (миграции 00002/00005).
     expect(countries.length).toBeGreaterThan(3)
     const de = countries.find((c) => c.code === 'DE')
     expect(de).toMatchObject({ code: 'DE', name_ru: expect.any(String) })
