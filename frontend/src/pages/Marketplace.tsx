@@ -1,13 +1,20 @@
 import { useState } from 'react'
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { useMarketplace, type Application } from '@/hooks/useApplications'
 import { useCreateOffer, type OfferCreate } from '@/hooks/useOffers'
+import { useCountries, useCurrencies } from '@/hooks/useDictionaries'
+import type { components } from '@/lib/api-schema'
+import { NOTIFICATIONS_KEY } from "@/hooks/useNotifications"
 import { handleApiError } from '@/lib/api-errors'
-import { formatMoney } from '@/lib/money'
+import { formatMoney, MAX_MONEY, MAX_PERCENT } from '@/lib/money'
+import { REPAYMENT_SCHEDULE_LABEL } from '@/lib/labels'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
+
+type CountryCode = components['schemas']['CountryCode']
 
 export function Marketplace() {
   const { user } = useAuth()
@@ -24,8 +31,13 @@ function LenderMarketplace() {
   const [filterCurrency, setFilterCurrency] = useState('')
   const [filterAmountMin, setFilterAmountMin] = useState('')
 
+  const countriesQuery = useCountries()
+  const currenciesQuery = useCurrencies()
+  const countryOptions = countriesQuery.data ?? []
+  const currencyOptions = currenciesQuery.data ?? []
+
   // Фильтрует бэкенд; пустые значения в запрос не уходят. Сумма без валюты не фильтрует.
-  const target_country = filterCountry || undefined
+  const target_country = filterCountry ? [filterCountry as CountryCode] : undefined
   const marketplaceQuery = useMarketplace(
     filterCurrency
       ? { target_country, currency: filterCurrency, amount_min: filterAmountMin || undefined }
@@ -34,6 +46,7 @@ function LenderMarketplace() {
   const { data, isLoading } = marketplaceQuery
   const filteredApps = data?.items ?? []
   const createOffer = useCreateOffer()
+  const queryClient = useQueryClient()
 
   const [selectedApp, setSelectedApp] = useState<Application | null>(null)
   const [offerData, setOfferData] = useState({
@@ -73,6 +86,7 @@ function LenderMarketplace() {
       },
       {
         onSuccess: () => {
+          void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY })
           toast.success('Оффер отправлен заемщику')
           setSelectedApp(null)
         },
@@ -93,17 +107,20 @@ function LenderMarketplace() {
           <label className="block text-xs font-medium text-gray-700 mb-1">Страна</label>
           <select value={filterCountry} onChange={e => setFilterCountry(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
             <option value="">Все страны</option>
-            <option value="DE">Германия (DE)</option>
-            <option value="CN">Китай (CN)</option>
-            <option value="TR">Турция (TR)</option>
+            {countryOptions.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name_ru} ({c.code}){c.fatf_high_risk ? ' — FATF: повышенный риск' : ''}
+              </option>
+            ))}
           </select>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Валюта</label>
           <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
             <option value="">Любая</option>
-            <option value="EUR">EUR</option>
-            <option value="USD">USD</option>
+            {currencyOptions.map((c) => (
+              <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -163,25 +180,26 @@ function LenderMarketplace() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Сумма ({selectedApp.currency})</label>
-                  <input required type="number" max={selectedApp.amount} step="0.01" value={offerData.amount} onChange={e => setOfferData({...offerData, amount: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                  <input required type="number" min="1" max={Math.min(parseFloat(selectedApp.amount), MAX_MONEY)} step="0.01" value={offerData.amount} onChange={e => setOfferData({...offerData, amount: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Ставка (% годовых)</label>
-                  <input required type="number" step="0.1" value={offerData.interest_rate_annual} onChange={e => setOfferData({...offerData, interest_rate_annual: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                  <input required type="number" min="0" max={MAX_PERCENT} step="0.1" value={offerData.interest_rate_annual} onChange={e => setOfferData({...offerData, interest_rate_annual: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Комиссия за организацию (%)</label>
-                  <input type="number" step="0.1" value={offerData.fee_percent} onChange={e => setOfferData({...offerData, fee_percent: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Комиссия площадки (%)</label>
+                  <input type="number" min="0" max={MAX_PERCENT} step="0.1" value={offerData.fee_percent} onChange={e => setOfferData({...offerData, fee_percent: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm" />
+                  <p className="mt-1 text-xs text-gray-500">Комиссия платформы фиксирована и не может быть изменена.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">График погашения</label>
                   <select value={offerData.repayment_schedule} onChange={e => setOfferData({...offerData, repayment_schedule: e.target.value as OfferCreate['repayment_schedule']})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
-                    <option value="bullet">В конце срока (Bullet)</option>
-                    <option value="annuity">Аннуитетный</option>
-                    <option value="interest_monthly_principal_bullet">Проценты ежемесячно, тело в конце</option>
+                    {(Object.keys(REPAYMENT_SCHEDULE_LABEL) as OfferCreate['repayment_schedule'][]).filter((v) => v !== 'custom').map((v) => (
+                      <option key={v} value={v}>{REPAYMENT_SCHEDULE_LABEL[v]}</option>
+                    ))}
                   </select>
                 </div>
               </div>
