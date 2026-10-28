@@ -16,12 +16,12 @@
       timeout: 3s
       retries: 10
 
-  # Бэкенд (Dockerfile.backend). Схему и демо-данные готовит make db с хоста, поэтому
+  # Бэкенд (docker/Dockerfile.backend). Схему и демо-данные готовит make db с хоста, поэтому
   # порядок: make db → make backend-up (он же кладёт demo-PDF в volume документов).
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: docker/Dockerfile.backend
       target: runtime
     image: liquidity-platform/backend:dev
     container_name: lp_backend
@@ -49,12 +49,36 @@
       retries: 10
     restart: unless-stopped
 
+  # Фронтенд (docker/Dockerfile.frontend): статика под nginx, /api проксируется на backend —
+  # один origin, как у Vite dev-сервера. Порядок: make db → make frontend-up (поднимет и бэкенд).
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      target: runtime
+    image: liquidity-platform/frontend:dev
+    container_name: lp_frontend
+    depends_on:
+      # nginx резолвит upstream при старте: без живого backend контейнер не поднимется.
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # Одноразовый: demo-PDF сида BE-16 в volume документов (make backend-seed-files).
   # Профиль seed — docker compose up его не запускает.
   seed-files:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: docker/Dockerfile.backend
       target: seed-files
     image: liquidity-platform/backend-seed-files:dev
     profiles: [seed]

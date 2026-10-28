@@ -52,7 +52,7 @@ curl localhost:8080/api/v1/healthz
 
 ### Бэкенд в Docker
 
-Вместо `make run` бэкенд можно поднять контейнером (`Dockerfile.backend` в корне, сервис `backend` в `docker-compose.yml`). Схему, санкции и SQL-сид по-прежнему готовит `make db` с хоста:
+Вместо `make run` бэкенд можно поднять контейнером (`docker/Dockerfile.backend`, сервис `backend` в `docker-compose.yml`). Схему, санкции и SQL-сид по-прежнему готовит `make db` с хоста:
 
 ```sh
 make db        # Postgres + миграции + санкции + демо-данные
@@ -69,6 +69,25 @@ make backend-logs  # логи бэкенда (JSON)
 | Настройки | `LOG_LEVEL`, `SESSION_TTL`, `COOKIE_SECURE` (по умолчанию `false` — локальный http), `CORS_ALLOWED_ORIGINS`, `DB_MAX_CONNS` — из `.env`; `LOG_FORMAT=json` |
 
 `make down` останавливает и бэкенд, и Postgres. CI (`backend.yml`, джоба `docker`) собирает оба образа и поднимает compose до healthy.
+
+### Приложение целиком в Docker
+
+Фронтенд тоже собирается в образ (`docker/Dockerfile.frontend`, сервис `frontend`): Vite-сборка отдаётся nginx, а `/api` nginx проксирует на `backend` — фронт и API на одном origin, как у `npm run dev`, CORS не нужен.
+
+```sh
+make db            # Postgres + миграции + санкции + демо-данные
+make frontend-up   # demo-PDF, сборка образов бэкенда и фронта, приложение на http://localhost:3000
+make frontend-logs # логи nginx
+```
+
+| Что | Как |
+|---|---|
+| Образ | Сборка на `node:22`, рантайм `nginx-unprivileged` (uid 101, порт 8080 в контейнере), не root |
+| Маршруты | неизвестный путь → `index.html` (react-router); `/assets/*` кэшируются навсегда, `index.html` — `no-cache` |
+| Порт | `FRONTEND_PORT` (по умолчанию `3000`) |
+| Бэкенд | `BACKEND_URL` (по умолчанию `http://backend:8080`); `frontend` стартует после healthy `backend` |
+
+CI (`frontend.yml`, джоба `docker`) собирает образы, поднимает compose до healthy и проверяет SPA, ассеты и прокси `/api` через порт фронта.
 
 ### Демо-данные
 
