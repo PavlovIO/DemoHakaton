@@ -33,7 +33,7 @@ VACUUM_NO_UPDATE_CHECK := true
 MSYS_NO_PATHCONV := 1
 PSQL          := docker exec -i $(PG_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -v ON_ERROR_STOP=1
 
-.PHONY: db db-reset db-roles up down logs ps backend-up backend-seed-files backend-logs migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
+.PHONY: db db-reset db-roles up down logs ps backend-up backend-seed-files backend-logs frontend-up frontend-logs migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
 
 # Полный цикл: postgres + роли + миграции + санкционный мок-список + проверка инвариантов + демо-данные.
 # load-sanctions — раньше seed-demo: сид ссылается на запись мок-списка (BE-16).
@@ -54,7 +54,7 @@ down:
 logs:
 	docker compose logs -f postgres
 
-# Бэкенд в контейнере (Dockerfile.backend) — после make db: схему и SQL-сид готовит он.
+# Бэкенд в контейнере (docker/Dockerfile.backend) — после make db: схему и SQL-сид готовит он.
 # Сначала demo-PDF в volume документов, иначе документы сида не скачаются.
 backend-up: backend-seed-files
 	docker compose up -d --build --wait backend
@@ -64,6 +64,14 @@ backend-seed-files:
 
 backend-logs:
 	docker compose logs -f backend
+
+# Фронтенд в контейнере (docker/Dockerfile.frontend) — после make db. Поднимает и бэкенд
+# (depends_on): приложение целиком на http://localhost:3000 (FRONTEND_PORT).
+frontend-up: backend-seed-files
+	docker compose up -d --build --wait frontend
+
+frontend-logs:
+	docker compose logs -f frontend
 
 ps:
 	docker compose ps

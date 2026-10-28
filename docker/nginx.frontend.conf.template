@@ -1,0 +1,41 @@
+# Конфиг nginx образа фронтенда (Dockerfile.frontend). ${BACKEND_URL} подставляет envsubst
+# при старте контейнера; остальные $-переменные — nginx.
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    server_tokens off;
+
+    # API — на бэкенд без переписывания пути (/api/v1/... как есть), как proxy в vite.config.ts.
+    # X-Forwarded-Proto: по нему бэкенд решает про HSTS (middleware/headers.go).
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Загрузка документа: 10 МБ файла + multipart-обёртка (maxBodyUpload в handler/validate.go).
+        # Точный лимит держит бэкенд, здесь — только чтобы nginx не отрезал раньше него.
+        client_max_body_size 11m;
+        # uploadTimeout бэкенда — 60 с.
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+    }
+
+    # Ассеты Vite с хэшем в имени — неизменяемы, кэшируются надолго.
+    location /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Content-Type-Options "nosniff";
+    }
+
+    # SPA: неизвестный путь — index.html, маршрут разбирает react-router. index.html
+    # не кэшируется, чтобы после деплоя браузер сразу взял новые хэши ассетов.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache";
+        add_header X-Content-Type-Options "nosniff";
+        add_header X-Frame-Options "DENY";
+        add_header Referrer-Policy "strict-origin-when-cross-origin";
+    }
+}

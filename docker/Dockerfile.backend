@@ -1,5 +1,5 @@
-# Образ бэкенда (backend/cmd/server). Контекст сборки — корень репо (рядом будет
-# Dockerfile.frontend); что попадает в контекст — Dockerfile.backend.dockerignore.
+# Образ бэкенда (backend/cmd/server). Контекст сборки — корень репо (как у
+# Dockerfile.frontend); что попадает в контекст — Dockerfile.backend.dockerignore рядом.
 #   docker compose build backend     # или make backend-up
 #
 # Цели:

@@ -7,8 +7,8 @@ on:
       - "api/**"
       - "Makefile"
       - "versions.env"
-      - "Dockerfile.backend"
-      - "Dockerfile.backend.dockerignore"
+      - "docker/Dockerfile.backend"
+      - "docker/Dockerfile.backend.dockerignore"
       - "docker-compose.yml"
       - ".github/workflows/backend.yml"
 
@@ -205,7 +205,7 @@ jobs:
       - name: build
         run: go -C backend build -o bin/server ./cmd/server
 
-  # Образ бэкенда (INF-01): сборка обеих целей Dockerfile.backend через compose и смоук —
+  # Образ бэкенда (INF-01): сборка обеих целей docker/Dockerfile.backend через compose и смоук —
   # compose поднимает Postgres и бэкенд до healthy (/healthz пингует БД), seed-files
   # кладёт demo-PDF в volume под пользователем сервера. Схема не нужна: /healthz её не читает.
   docker:
@@ -213,8 +213,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # Только образы бэкенда: frontend собирает и проверяет frontend.yml (джоба docker).
       - name: build
-        run: docker compose --profile seed build
+        run: docker compose --profile seed build backend seed-files
       # Бэкенд ходит под lp_app — роли до его старта, как make db-roles.
       - name: db roles
         run: |
