@@ -8,7 +8,7 @@ on:
       - "backend/**"
       - "Makefile"
       - "versions.env"
-      - "Dockerfile.backend"
+      - "docker/**"
       - "docker-compose.yml"
       - ".github/workflows/frontend.yml"
 
@@ -67,3 +67,53 @@ jobs:
         if: always()
         working-directory: .
         run: docker compose --profile seed down -v
+
+  # Образ фронтенда (INF-02): приложение целиком в compose — Postgres, бэкенд и nginx со
+  # статикой. Смоук через порт фронта: SPA и fallback на index.html, ассеты, прокси /api на
+  # бэкенд (/healthz пингует БД), non-root. Схема и сид не нужны: в браузер здесь не ходим.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: docker compose build backend frontend
+      # Бэкенд ходит под lp_app — роли до его старта, как make db-roles.
+      - name: db roles
+        run: |
+          docker compose up -d --wait --wait-timeout 60 postgres
+          docker compose exec -T postgres psql -U lp -d liquidity_platform -v ON_ERROR_STOP=1 \
+            -v app_password=lp_app_dev_password -v migrator_password=lp_migrator_dev_password \
+            -f - < backend/db/roles.sql
+      # depends_on: frontend стартует только после healthy backend.
+      - name: up
+        run: docker compose up -d --wait --wait-timeout 120 frontend
+      - name: non-root
+        run: |
+          uid="$(docker exec lp_frontend id -u)"
+          if [ "$uid" = "0" ]; then
+            echo "::error::nginx фронтенда запущен от root"
+            exit 1
+          fi
+      - name: smoke
+        run: |
+          base=http://localhost:3000
+          curl -fsS "$base/" | grep -q 'id="root"'
+          # Маршрут react-router: nginx должен отдать index.html, а не 404.
+          curl -fsS "$base/deals/smoke" | grep -q 'id="root"'
+          asset="$(curl -fsS "$base/" | grep -o '/assets/[^"]*\.js' | head -1)"
+          if [ -z "$asset" ]; then
+            echo "::error::В index.html нет JS-ассета"
+            exit 1
+          fi
+          curl -fsS -o /dev/null "$base$asset"
+          curl -fsS "$base/api/v1/healthz"
+      - name: logs
+        if: failure()
+        run: docker compose logs
+      - name: down
+        if: always()
+        run: docker compose down -v
