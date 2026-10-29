@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+<rect width="1440" height="900" fill="#F4F7F3"/>
+<polygon points="-200,900 260,900 1240,-80 780,-80" fill="#EFF4EF"/>
+<circle cx="1110" cy="250" r="290" fill="#F5F0E6"/>
+<circle cx="1110" cy="250" r="360" fill="none" stroke="#E3EBE4" stroke-width="1.5"/>
+<line x1="-60" y1="120" x2="560" y2="-500" stroke="#E3EBE4" stroke-width="1.5"/>
+<line x1="-34" y1="146" x2="586" y2="-474" stroke="#E3EBE4" stroke-width="1.5"/>
+<line x1="-8" y1="172" x2="612" y2="-448" stroke="#E3EBE4" stroke-width="1.5"/>
+<circle cx="96" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="124" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="152" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="180" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="208" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="236" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="264" cy="96" r="3" fill="#E8EFE9"/>
+<circle cx="96" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="124" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="152" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="180" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="208" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="236" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="264" cy="124" r="3" fill="#E8EFE9"/>
+<circle cx="96" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="124" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="152" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="180" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="208" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="236" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="264" cy="152" r="3" fill="#E8EFE9"/>
+<circle cx="96" cy="180" r="3" fill="#E8EFE9"/>
+<circle cx="124" cy="180" r="3" fill="#E8EFE9"/>
+<circle cx="152" cy="180" r="3" fill="#E8EFE9"/>
+<circle cx="180" cy="180" r="3" fill="#E8EFE9"/>
+<circle cx="208" cy="180" r="3" fill="#E8EFE9"/>
+<circle cx="236" cy="180" r="3" fill="#E8EFE9"/>
+<circle cx="264" cy="180" r="3" fill="#E8EFE9"/>
+<rect x="1290" y="560" width="72" height="72" fill="#F0E9DC" transform="rotate(-18 1326 596)"/>
+<circle cx="300" cy="420" r="26" fill="#F0E9DC"/>
+<rect x="163" y="712" width="866" height="8" fill="#E8EFE9"/>
+<rect x="53" y="746" width="638" height="8" fill="#E8EFE9"/>
+<rect x="538" y="786" width="745" height="8" fill="#E8EFE9"/>
+<rect x="514" y="822" width="327" height="8" fill="#E8EFE9"/>
+<rect x="-67" y="857" width="740" height="8" fill="#E8EFE9"/>
+<rect x="484" y="887" width="499" height="8" fill="#E8EFE9"/>
+<path d="M560 700 H900 V748 H560 Z M571.9 748 A30.6 30.6 0 0 1 633.1 748 Z M656.9 748 A30.6 30.6 0 0 1 718.1 748 Z M741.9 748 A30.6 30.6 0 0 1 803.1 748 Z M826.9 748 A30.6 30.6 0 0 1 888.1 748 Z" fill="#ECE7DC" fill-rule="evenodd"/>
+<path d="M1020 700 H1360 V748 H1020 Z M1031.9 748 A30.6 30.6 0 0 1 1093.1 748 Z M1116.9 748 A30.6 30.6 0 0 1 1178.1 748 Z M1201.9 748 A30.6 30.6 0 0 1 1263.1 748 Z M1286.9 748 A30.6 30.6 0 0 1 1348.1 748 Z" fill="#E6EDE7" fill-rule="evenodd"/>
+<polygon points="900,700 911,700 951,572 940,569" fill="#ECE7DC"/>
+<polygon points="1020,700 1009,700 969,572 980,569" fill="#E6EDE7"/>
+</svg>

@@ -60,7 +60,7 @@ export function Navigation() {
               'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
               isActive
                 ? 'bg-primary-50 text-primary-700'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                : 'text-gray-700 hover:bg-white/50 hover:text-gray-900'
             )
           }
         >

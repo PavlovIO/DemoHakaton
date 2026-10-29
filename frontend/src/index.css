@@ -12,6 +12,9 @@
   --color-primary-800: oklch(0.38 0.14 240);
   --color-primary-900: oklch(0.30 0.10 240);
 
+  /* Шапка и подвал — базовый тон фона (public/bg-constructivist.svg). */
+  --color-chrome: #f4f7f3;
+
   --color-success: oklch(0.72 0.19 150);
   --color-warning: oklch(0.85 0.18 85);
   --color-danger: oklch(0.65 0.22 25);
@@ -27,8 +30,10 @@
 }
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply text-gray-900 antialiased;
   font-family: var(--font-sans);
+  /* Фон фиксирован к окну: при прокрутке длинных списков узор не растягивается и не повторяется. */
+  background: #f4f7f3 url('/bg-constructivist.svg') center / cover no-repeat fixed;
 }
 
 @utility status-draft {

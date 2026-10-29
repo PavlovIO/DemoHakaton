@@ -41,12 +41,12 @@ export function Breadcrumbs() {
   ]
 
   return (
-    <nav className="flex items-center gap-1 text-sm text-gray-500">
+    <nav className="flex items-center gap-1 text-sm text-gray-700">
       {breadcrumbs.map((breadcrumb, index) => (
         <div key={breadcrumb.href || breadcrumb.label} className="flex items-center gap-1">
           {index > 0 && <ChevronRight className="h-4 w-4" />}
           {breadcrumb.href ? (
-            <Link to={breadcrumb.href} className="hover:text-gray-700">
+            <Link to={breadcrumb.href} className="hover:text-gray-900">
               {index === 0 ? <Home className="h-4 w-4" /> : breadcrumb.label}
             </Link>
           ) : (
