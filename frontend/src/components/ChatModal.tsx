@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { useMessages, useSendMessage } from '@/hooks/useMessages'
 import { handleApiError } from '@/lib/api-errors'
+import { currentLocale } from '@/i18n'
 
 interface ChatModalProps {
   isOpen: boolean
@@ -12,6 +14,7 @@ interface ChatModalProps {
 }
 
 export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyName }: ChatModalProps) {
+  const { t } = useTranslation()
   const { data: messages = [] } = useMessages(isOpen ? offerId : undefined)
   const sendMessage = useSendMessage(offerId)
   const [newMessage, setNewMessage] = useState('')
@@ -40,19 +43,19 @@ export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyN
 
         <div className="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-lg">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Чат по офферу</h3>
-            <p className="text-xs text-gray-500">Заявка: {offerNumber}</p>
+            <h3 className="text-lg font-semibold text-gray-900">{t('chat.title')}</h3>
+            <p className="text-xs text-gray-500">{t('chat.application', { number: offerNumber })}</p>
             {counterpartyName && (
-              <p className="text-xs text-gray-500 font-medium">Собеседник: {counterpartyName}</p>
+              <p className="text-xs text-gray-500 font-medium">{t('chat.counterparty', { name: counterpartyName })}</p>
             )}
           </div>
-          <Button variant="outline" onClick={onClose}>Закрыть</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.close')}</Button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
           {messages.length === 0 && (
             <div className="text-center text-gray-500 text-sm mt-10">
-              Напишите первое сообщение, чтобы обсудить детали сделки.
+              {t('chat.empty')}
             </div>
           )}
           {messages.map((m) => {
@@ -67,7 +70,7 @@ export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyN
                   {/* Plain text по контракту API: только текстовый узел, без HTML. */}
                   <p className="whitespace-pre-wrap break-words">{m.text}</p>
                   <span className={`text-[10px] block mt-1 ${isMine ? 'text-primary-200' : 'text-gray-400'}`}>
-                    {m.author_organization.name} · {new Date(m.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    {m.author_organization.name} · {new Date(m.created_at).toLocaleTimeString(currentLocale(), { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </div>
@@ -81,10 +84,10 @@ export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyN
             type="text"
             value={newMessage}
             onChange={e => setNewMessage(e.target.value)}
-            placeholder="Напишите сообщение..."
+            placeholder={t('chat.placeholder')}
             className="flex-1 rounded-md border-gray-300 shadow-sm p-2 border text-sm focus:border-primary-500 focus:ring-primary-500"
           />
-          <Button type="submit" disabled={sendMessage.isPending}>Отправить</Button>
+          <Button type="submit" disabled={sendMessage.isPending}>{t('chat.send')}</Button>
         </form>
 
       </div>

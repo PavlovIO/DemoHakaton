@@ -1,8 +1,10 @@
+import { currentLocale } from '@/i18n'
+
 export function formatMoney(value: string | number | null | undefined, currency = 'RUB'): string {
   if (value === null || value === undefined || value === '') return '—'
   const num = typeof value === 'string' ? parseFloat(value) : value
   if (Number.isNaN(num)) return '—'
-  return new Intl.NumberFormat('ru-RU', {
+  return new Intl.NumberFormat(currentLocale(), {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
@@ -14,7 +16,7 @@ export function formatPercent(value: string | number | null | undefined): string
   if (value === null || value === undefined || value === '') return '—'
   const num = typeof value === 'string' ? parseFloat(value) : value
   if (Number.isNaN(num)) return '—'
-  return new Intl.NumberFormat('ru-RU', {
+  return new Intl.NumberFormat(currentLocale(), {
     style: 'percent',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

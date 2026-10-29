@@ -12,6 +12,8 @@ import {
   ScrollText,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 
 interface NavItem {
   to: string
@@ -19,18 +21,19 @@ interface NavItem {
   icon: React.ReactNode
 }
 
-const navigationConfig: Record<UserRole, NavItem[]> = {
+// Функция, а не константа: подписи клиентов берутся из словаря на текущем языке.
+const navigationConfig = (t: TFunction): Record<UserRole, NavItem[]> => ({
   borrower: [
-    { to: '/dashboard', label: 'Дашборд', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { to: '/applications', label: 'Мои заявки', icon: <FileText className="h-4 w-4" /> },
-    { to: '/offers', label: 'Предложения', icon: <MessageSquare className="h-4 w-4" /> },
-    { to: '/deals', label: 'Сделки', icon: <Briefcase className="h-4 w-4" /> },
+    { to: '/dashboard', label: t('nav.dashboard'), icon: <LayoutDashboard className="h-4 w-4" /> },
+    { to: '/applications', label: t('nav.applications'), icon: <FileText className="h-4 w-4" /> },
+    { to: '/offers', label: t('nav.offers'), icon: <MessageSquare className="h-4 w-4" /> },
+    { to: '/deals', label: t('nav.deals'), icon: <Briefcase className="h-4 w-4" /> },
   ],
   lender: [
-    { to: '/dashboard', label: 'Дашборд', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { to: '/marketplace', label: 'Витрина заявок', icon: <FileText className="h-4 w-4" /> },
-    { to: '/offers', label: 'Мои предложения', icon: <MessageSquare className="h-4 w-4" /> },
-    { to: '/deals', label: 'Сделки', icon: <Briefcase className="h-4 w-4" /> },
+    { to: '/dashboard', label: t('nav.dashboard'), icon: <LayoutDashboard className="h-4 w-4" /> },
+    { to: '/marketplace', label: t('nav.marketplace'), icon: <FileText className="h-4 w-4" /> },
+    { to: '/offers', label: t('nav.myOffers'), icon: <MessageSquare className="h-4 w-4" /> },
+    { to: '/deals', label: t('nav.deals'), icon: <Briefcase className="h-4 w-4" /> },
   ],
   admin: [
     { to: '/admin/analytics', label: 'Аналитика', icon: <BarChart3 className="h-4 w-4" /> },
@@ -40,14 +43,15 @@ const navigationConfig: Record<UserRole, NavItem[]> = {
     { to: '/admin/users', label: 'Пользователи', icon: <Users className="h-4 w-4" /> },
     { to: '/admin/audit', label: 'Аудит', icon: <ScrollText className="h-4 w-4" /> },
   ],
-}
+})
 
 export function Navigation() {
   const { user } = useAuth()
+  const { t } = useTranslation()
 
   if (!user) return null
 
-  const navItems = navigationConfig[user.role]
+  const navItems = navigationConfig(t)[user.role]
 
   return (
     <nav className="flex items-center gap-1">

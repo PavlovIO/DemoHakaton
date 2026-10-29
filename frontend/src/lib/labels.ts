@@ -1,4 +1,5 @@
 import type { components } from '@/lib/api-schema'
+import { currentLanguage, i18n } from '@/i18n'
 
 type RepaymentSchedule = components['schemas']['RepaymentSchedule']
 type CountryCode = components['schemas']['CountryCode']
@@ -11,6 +12,7 @@ type Role = components['schemas']['Role']
 type UserStatus = components['schemas']['UserStatus']
 type ApplicationStatus = components['schemas']['ApplicationStatus']
 type KycStatus = components['schemas']['KycStatus']
+type OfferStatus = components['schemas']['OfferStatus']
 
 // --- Справочники подписей для админ-вкладок (шаги 3C–3E). Ключи — строго из api-schema. ---
 
@@ -34,31 +36,9 @@ export const AML_FLAG_STATUS_LABEL: Record<AmlFlagStatus, string> = {
   confirmed: 'Подтверждён',
 }
 
-export const ROLE_LABEL: Record<Role, string> = {
-  admin: 'Администратор',
-  borrower: 'Заёмщик',
-  lender: 'Кредитор',
-}
-
 export const USER_STATUS_LABEL: Record<UserStatus, string> = {
   active: 'Активен',
   blocked: 'Заблокирован',
-}
-
-export const APPLICATION_STATUS_LABEL: Record<ApplicationStatus, string> = {
-  draft: 'Черновик',
-  moderation: 'На модерации',
-  rejected: 'Отклонена',
-  published: 'Опубликована',
-  agreed: 'Согласована',
-  cancelled: 'Отменена',
-}
-
-export const KYC_STATUS_LABEL: Record<KycStatus, string> = {
-  draft: 'Черновик',
-  under_review: 'На проверке',
-  verified: 'Подтверждена',
-  rejected: 'Отклонена',
 }
 
 export function amlRuleLabel(rule: AmlRule | string): string {
@@ -73,8 +53,10 @@ export function amlFlagStatusLabel(status: AmlFlagStatus | string): string {
   return AML_FLAG_STATUS_LABEL[status as AmlFlagStatus] ?? status
 }
 
+// Роли и статусы проверки компании видят клиенты — подписи из словаря i18n.
 export function roleLabel(role: Role | string): string {
-  return ROLE_LABEL[role as Role] ?? role
+  const key = `labels.role.${role as Role}` as const
+  return i18n.t(key, { defaultValue: role })
 }
 
 export function userStatusLabel(status: UserStatus | string): string {
@@ -82,11 +64,18 @@ export function userStatusLabel(status: UserStatus | string): string {
 }
 
 export function applicationStatusLabel(status: ApplicationStatus | string): string {
-  return APPLICATION_STATUS_LABEL[status as ApplicationStatus] ?? status
+  const key = `labels.applicationStatus.${status as ApplicationStatus}` as const
+  return i18n.t(key, { defaultValue: status })
+}
+
+export function offerStatusLabel(status: OfferStatus | string): string {
+  const key = `labels.offerStatus.${status as OfferStatus}` as const
+  return i18n.t(key, { defaultValue: status })
 }
 
 export function kycStatusLabel(status: KycStatus | string): string {
-  return KYC_STATUS_LABEL[status as KycStatus] ?? status
+  const key = `labels.kycStatus.${status as KycStatus}` as const
+  return i18n.t(key, { defaultValue: status })
 }
 
 const FALLBACK_COUNTRY_NAME_RU: Partial<Record<CountryCode, string>> = {
@@ -103,15 +92,32 @@ export const FALLBACK_TRANSFER_METHOD_NAME: Record<TransferMethod, string> = {
   other: 'Другое (указать в комментарии)',
 }
 
-export const REPAYMENT_SCHEDULE_LABEL: Record<RepaymentSchedule, string> = {
-  bullet: 'В конце срока',
-  annuity: 'Аннуитетный',
-  interest_monthly_principal_bullet: 'Проценты ежемесячно, тело в конце',
-  custom: 'Индивидуальный',
-}
+// Порядок вариантов в форме оффера; подписи — labels.repaymentSchedule.* в словаре.
+export const REPAYMENT_SCHEDULES: RepaymentSchedule[] = [
+  'bullet',
+  'annuity',
+  'interest_monthly_principal_bullet',
+  'custom',
+]
 
 export function repaymentScheduleLabel(schedule: RepaymentSchedule | string): string {
-  return REPAYMENT_SCHEDULE_LABEL[schedule as RepaymentSchedule] ?? schedule
+  const key = `labels.repaymentSchedule.${schedule as RepaymentSchedule}` as const
+  return i18n.t(key, { defaultValue: schedule })
+}
+
+// Справочник стран отдаёт оба названия — берём на языке интерфейса.
+export function countryName(country: { name_ru: string; name_en: string }): string {
+  return currentLanguage() === 'en' ? country.name_en : country.name_ru
+}
+
+// В справочнике валют название только русское; английское — из Intl по ISO-коду.
+export function currencyName(currency: { code: string; name: string }): string {
+  if (currentLanguage() !== 'en') return currency.name
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'currency' }).of(currency.code) ?? currency.name
+  } catch {
+    return currency.name
+  }
 }
 
 export function countryLabel(code: CountryCode, countries?: { code: string; name_ru: string }[]): string {

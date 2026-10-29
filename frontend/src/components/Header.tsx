@@ -1,9 +1,13 @@
 import { Navigation } from './Navigation'
 import { NotificationsDropdown } from './NotificationsDropdown'
 import { ProfileDropdown } from './ProfileDropdown'
-import { Breadcrumbs } from './Breadcrumbs'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { useAuth } from '@/hooks/useAuth'
+import { canChooseLanguage } from '@/i18n'
 
 export function Header() {
+  const { user } = useAuth()
+
   return (
     <header className="sticky top-0 z-40 border-b border-green-300 bg-chrome">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -29,13 +33,11 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Английский — только кредиторам (#102), см. canChooseLanguage. */}
+          {canChooseLanguage(user?.role) && <LanguageSwitcher className="mr-2" />}
           <NotificationsDropdown />
           <ProfileDropdown />
         </div>
-      </div>
-
-      <div className="mx-auto max-w-7xl px-4 py-2 sm:px-6 lg:px-8">
-        <Breadcrumbs />
       </div>
     </header>
   )

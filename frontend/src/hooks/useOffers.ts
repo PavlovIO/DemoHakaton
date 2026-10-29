@@ -26,7 +26,7 @@ export function useApplicationOffers(applicationId: string | undefined) {
   return useQuery({
     queryKey: [...OFFERS_KEY, 'application', applicationId],
     queryFn: () =>
-      api.get<Offer[]>('/applications/{applicationId}/offers', { path: { applicationId } }),
+      api.get<Offer[]>('/applications/{applicationId}/offers', { path: { applicationId: applicationId! } }),
     enabled: !!applicationId,
   })
 }

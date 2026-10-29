@@ -2,22 +2,26 @@ import { useForm, useWatch } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth, type RegisterPayload } from '@/hooks/useAuth'
+import { validationMessage } from '@/i18n'
 import { Button } from '@/components/ui/Button'
+import { FieldError } from '@/components/ui/FieldError'
 import { Input } from '@/components/ui/Input'
+import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 
 const baseSchema = z.object({
-  email: z.string().email('Некорректный email'),
-  password: z.string().min(8, 'Минимум 8 символов'),
+  email: z.string().email(validationMessage('validation.email')),
+  password: z.string().min(8, validationMessage('validation.passwordMin8')),
   role: z.enum(['borrower', 'lender']),
   organization: z.object({
-    name: z.string().min(2, 'Укажите название компании'),
+    name: z.string().min(2, validationMessage('validation.companyName')),
     country_code: z
       .string()
-      .length(2, 'Код страны — 2 буквы (ISO 3166-1 alpha-2)')
+      .length(2, validationMessage('validation.countryCode'))
       .toUpperCase(),
-    legal_address: z.string().min(5, 'Укажите юридический адрес'),
-    registration_number: z.string().min(3, 'Укажите регистрационный номер'),
+    legal_address: z.string().min(5, validationMessage('validation.legalAddress')),
+    registration_number: z.string().min(3, validationMessage('validation.registrationNumber')),
     lei: z.string().optional(),
   }),
 })
@@ -27,14 +31,14 @@ const schema = baseSchema.superRefine((data, ctx) => {
     ctx.addIssue({
       code: 'custom', // вместо z.ZodIssueCode.custom
       path: ['organization', 'country_code'],
-      message: 'Заёмщик должен быть из России (RU)',
+      message: validationMessage('validation.borrowerFromRu'),
     })
   }
   if (data.role === 'lender' && data.organization.country_code === 'RU') {
     ctx.addIssue({
       code: 'custom',
       path: ['organization', 'country_code'],
-      message: 'Зарубежный кредитор не может быть из России',
+      message: validationMessage('validation.lenderNotFromRu'),
     })
   }
 })
@@ -42,6 +46,7 @@ const schema = baseSchema.superRefine((data, ctx) => {
 type RegisterForm = z.infer<typeof schema>
 
 export function Register() {
+  const { t } = useTranslation()
   const { register: registerApi } = useAuth()
   const navigate = useNavigate()
 
@@ -86,12 +91,13 @@ export function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <LanguageSwitcher className="absolute right-4 top-4" />
       <form
         onSubmit={handleSubmit(onSubmit)}
         className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow"
       >
-        <h1 className="text-xl font-semibold">Регистрация</h1>
+        <h1 className="text-xl font-semibold">{t('auth.register.title')}</h1>
 
         {/* Выбор роли */}
         <div className="flex gap-2">
@@ -104,7 +110,7 @@ export function Register() {
                 : 'border-gray-300 text-gray-600'
             }`}
           >
-            Заёмщик (РФ)
+            {t('auth.register.borrower')}
           </button>
           <button
             type="button"
@@ -115,29 +121,27 @@ export function Register() {
                 : 'border-gray-300 text-gray-600'
             }`}
           >
-            Кредитор (зарубежный)
+            {t('auth.register.lender')}
           </button>
         </div>
 
         {/* Данные компании */}
         <fieldset className="space-y-3 rounded border border-gray-200 p-3">
           <legend className="px-2 text-sm font-medium text-gray-700">
-            Данные компании
+            {t('auth.register.company')}
           </legend>
 
           <div>
-            <label className="text-sm">Название компании</label>
+            <label className="text-sm">{t('auth.register.companyName')}</label>
             <Input {...register('organization.name')} />
-            {errors.organization?.name && (
-              <p className="mt-1 text-xs text-red-600">{errors.organization.name.message}</p>
-            )}
+            <FieldError message={errors.organization?.name?.message} />
           </div>
 
           <div>
             <label className="text-sm">
-              Код страны (ISO 3166-1 alpha-2){' '}
+              {t('auth.register.countryCode')}{' '}
               <span className="text-gray-500">
-                {role === 'borrower' ? '— только RU' : '— не RU'}
+                {role === 'borrower' ? t('auth.register.countryOnlyRu') : t('auth.register.countryNotRu')}
               </span>
             </label>
             <Input
@@ -146,36 +150,24 @@ export function Register() {
               disabled={role === 'borrower'}
               className="uppercase"
             />
-            {errors.organization?.country_code && (
-              <p className="mt-1 text-xs text-red-600">
-                {errors.organization.country_code.message}
-              </p>
-            )}
+            <FieldError message={errors.organization?.country_code?.message} />
           </div>
 
           <div>
-            <label className="text-sm">Юридический адрес</label>
+            <label className="text-sm">{t('auth.register.legalAddress')}</label>
             <Input {...register('organization.legal_address')} />
-            {errors.organization?.legal_address && (
-              <p className="mt-1 text-xs text-red-600">
-                {errors.organization.legal_address.message}
-              </p>
-            )}
+            <FieldError message={errors.organization?.legal_address?.message} />
           </div>
 
           <div>
-            <label className="text-sm">Регистрационный номер</label>
+            <label className="text-sm">{t('auth.register.registrationNumber')}</label>
             <Input {...register('organization.registration_number')} />
-            {errors.organization?.registration_number && (
-              <p className="mt-1 text-xs text-red-600">
-                {errors.organization.registration_number.message}
-              </p>
-            )}
+            <FieldError message={errors.organization?.registration_number?.message} />
           </div>
 
           <div>
             <label className="text-sm">
-              LEI <span className="text-gray-500">(опционально)</span>
+              {t('auth.register.lei')} <span className="text-gray-500">{t('auth.register.optional')}</span>
             </label>
             <Input {...register('organization.lei')} />
           </div>
@@ -184,34 +176,30 @@ export function Register() {
         {/* Данные пользователя */}
         <fieldset className="space-y-3 rounded border border-gray-200 p-3">
           <legend className="px-2 text-sm font-medium text-gray-700">
-            Учётная запись
+            {t('auth.register.account')}
           </legend>
 
           <div>
-            <label className="text-sm">Email</label>
+            <label className="text-sm">{t('auth.email')}</label>
             <Input {...register('email')} type="email" autoComplete="email" />
-            {errors.email && (
-              <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>
-            )}
+            <FieldError message={errors.email?.message} />
           </div>
 
           <div>
-            <label className="text-sm">Пароль</label>
+            <label className="text-sm">{t('auth.password')}</label>
             <Input {...register('password')} type="password" autoComplete="new-password" />
-            {errors.password && (
-              <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
-            )}
+            <FieldError message={errors.password?.message} />
           </div>
         </fieldset>
 
         <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? 'Регистрация…' : 'Создать аккаунт'}
+          {isSubmitting ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>
 
         <p className="text-center text-sm text-gray-600">
-          Уже есть аккаунт?{' '}
+          {t('auth.register.haveAccount')}{' '}
           <Link to="/login" className="text-blue-600 hover:underline">
-            Войти
+            {t('auth.register.toLogin')}
           </Link>
         </p>
       </form>

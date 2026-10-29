@@ -1,7 +1,14 @@
-import { AuthProvider } from '@/hooks/useAuth'
+import { AuthProvider, useAuth } from '@/hooks/useAuth'
 import { AppRouter } from '@/router'
 import { useEffect } from 'react'
 import { api } from '@/lib/api-client'
+import { useRoleLanguage } from '@/i18n'
+
+function RoleLanguage() {
+  const { user } = useAuth()
+  useRoleLanguage(user?.role)
+  return null
+}
 
 function App() {
   useEffect(() => {
@@ -12,6 +19,7 @@ function App() {
 
   return (
     <AuthProvider>
+      <RoleLanguage />
       <AppRouter />
     </AuthProvider>
   )

@@ -3,6 +3,7 @@ import { useCountries } from '@/hooks/useDictionaries'
 import { applicationStatusLabel, countryLabel } from '@/lib/labels'
 import { formatMoney } from '@/lib/money'
 import type { components } from '@/lib/api-schema'
+import { currentLocale } from '@/i18n'
 
 type Schemas = components['schemas']
 
@@ -29,7 +30,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
     <div className="bg-white shadow sm:rounded-md p-5">
       <dt className="text-sm font-medium text-gray-500">{label}</dt>
       <dd className="mt-1 text-3xl font-semibold tracking-tight text-gray-900">
-        {value.toLocaleString('ru-RU')}
+        {value.toLocaleString(currentLocale())}
       </dd>
     </div>
   )
@@ -149,7 +150,7 @@ export function AnalyticsTab() {
                 {summary.amounts_by_currency.map((c: Schemas['CurrencyStat']) => (
                   <tr key={c.currency}>
                     <td className="py-2 font-medium text-gray-900">{c.currency}</td>
-                    <td className="py-2 text-right text-gray-600">{c.count.toLocaleString('ru-RU')}</td>
+                    <td className="py-2 text-right text-gray-600">{c.count.toLocaleString(currentLocale())}</td>
                     <td className="py-2 text-right text-gray-600">{formatMoney(c.total_amount, c.currency)}</td>
                     <td className="py-2 text-right text-gray-600">{formatMoney(c.average_amount, c.currency)}</td>
                   </tr>
