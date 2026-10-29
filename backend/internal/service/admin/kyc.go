@@ -35,7 +35,7 @@ func (a *Admin) ApproveKyc(ctx context.Context, p service.Principal, orgID uuid.
 		comment: optionalComment(comment),
 		audit:   AuditKycApprove,
 		notice:  repository.NotificationTypeKycApproved,
-		title:   "KYC пройден: компания верифицирована",
+		title:   "Компания подтверждена",
 		check: func(ctx context.Context, q repository.Querier) error {
 			// Открытый high-флаг — риск, который админ ещё не разобрал (BE-13): верифицировать
 			// до решения по флагу нельзя. Флаги ниже high видны в карточке, решение за админом.
@@ -65,7 +65,7 @@ func (a *Admin) RejectKyc(ctx context.Context, p service.Principal, orgID uuid.U
 		audit:   AuditKycReject,
 		meta:    map[string]any{"reason": reason},
 		notice:  repository.NotificationTypeKycRejected,
-		title:   "KYC отклонён: " + reason,
+		title:   "Проверка компании не пройдена: " + reason,
 		update: func(ctx context.Context, q repository.Querier) error {
 			_, err := q.RejectKyc(ctx, repository.RejectKycParams{
 				ID: orgID, KycRejectReason: pgtype.Text{String: reason, Valid: true},

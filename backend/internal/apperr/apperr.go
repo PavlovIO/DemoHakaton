@@ -96,7 +96,7 @@ func Unauthorized(msg string) *Error { return New(CodeUnauthorized, msg) }
 func Forbidden(msg string) *Error    { return New(CodeForbidden, msg) }
 func CSRFInvalid() *Error            { return New(CodeCSRFInvalid, "Некорректный CSRF-токен") }
 func KYCNotVerified() *Error {
-	return New(CodeKYCNotVerified, "Компания не прошла KYC")
+	return New(CodeKYCNotVerified, "Компания не прошла проверку")
 }
 func NotFound(msg string) *Error { return New(CodeNotFound, msg) }
 func Conflict(msg string) *Error { return New(CodeConflict, msg) }

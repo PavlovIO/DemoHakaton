@@ -52,12 +52,12 @@ SELECT v.user_id, v.type::notification_type, v.title, 'organization', k.org_id::
 FROM demo_kyc k
 JOIN LATERAL (VALUES
     ('aaaaaaaa-0000-0000-0000-000000000001'::uuid, 'kyc_submitted',
-     'Компания отправлена на проверку KYC: ' || k.name, k.submitted_at),
+     'Компания отправлена на проверку: ' || k.name, k.submitted_at),
     ('aaaaaaaa-0000-0000-0000-000000000001'::uuid, CASE WHEN k.flags > 0 THEN 'aml_flag_created' END,
      'AML: ' || k.flags || ' новых флагов — ' || k.name, k.submitted_at),
     (k.user_id, CASE k.decision WHEN 'verified' THEN 'kyc_approved' WHEN 'rejected' THEN 'kyc_rejected' END,
-     CASE k.decision WHEN 'verified' THEN 'KYC пройден: компания верифицирована'
-                     ELSE 'KYC отклонён: ' || k.reject_reason END, k.decided_at)
+     CASE k.decision WHEN 'verified' THEN 'Компания подтверждена'
+                     ELSE 'Проверка компании не пройдена: ' || k.reject_reason END, k.decided_at)
 ) AS v(user_id, type, title, created_at) ON v.type IS NOT NULL
 WHERE NOT EXISTS (SELECT 1 FROM notifications n
                   WHERE n.user_id = v.user_id AND n.type = v.type::notification_type AND n.entity_id = k.org_id::text);

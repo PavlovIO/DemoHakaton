@@ -7,7 +7,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   UNAUTHORIZED: 'Требуется вход в систему',
   FORBIDDEN: 'У вас нет прав для этого действия',
   CSRF_INVALID: 'Сессия устарела. Обновите страницу и попробуйте снова',
-  KYC_NOT_VERIFIED: 'Сначала пройдите верификацию компании',
+  KYC_NOT_VERIFIED: 'Сначала пройдите проверку компании',
   NOT_FOUND: 'Запись не найдена',
   CONFLICT: 'Операция невозможна: данные уже изменились',
   INVALID_STATUS_TRANSITION: 'Переход в этот статус невозможен',

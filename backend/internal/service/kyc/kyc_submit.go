@@ -209,7 +209,7 @@ func (k *Kyc) recordSubmit(ctx context.Context, q repository.Querier, p service.
 		return err
 	}
 	if err := k.notifier.NotifyAdmins(ctx, q, organizationNotification(
-		repository.NotificationTypeKycSubmitted, "Компания отправлена на проверку KYC: "+org.Name, org.ID)); err != nil {
+		repository.NotificationTypeKycSubmitted, "Компания отправлена на проверку: "+org.Name, org.ID)); err != nil {
 		return err
 	}
 	if len(flags) == 0 {

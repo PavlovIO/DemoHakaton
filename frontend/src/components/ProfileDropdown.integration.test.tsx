@@ -35,6 +35,6 @@ describe('ProfileDropdown против живого бэкенда', () => {
     const menu = await screen.findByRole('menu')
     expect(menu.textContent).toContain('Вектор')
     expect(menu.textContent).toContain('Заёмщик')
-    expect(menu.textContent).toContain('Подтверждено')
+    expect(menu.textContent).toContain('Подтверждена')
   })
 })

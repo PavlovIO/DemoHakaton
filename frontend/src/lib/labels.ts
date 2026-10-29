@@ -57,7 +57,7 @@ export const APPLICATION_STATUS_LABEL: Record<ApplicationStatus, string> = {
 export const KYC_STATUS_LABEL: Record<KycStatus, string> = {
   draft: 'Черновик',
   under_review: 'На проверке',
-  verified: 'Верифицирована',
+  verified: 'Подтверждена',
   rejected: 'Отклонена',
 }
 
