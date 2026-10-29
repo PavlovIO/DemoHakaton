@@ -1,7 +1,7 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components, operations } from '@/lib/api-schema'
-import { PAGE_SIZE, pagedList } from '@/lib/pagination'
+import { OBSERVE_ONLY, PAGE_SIZE, pagedList } from '@/lib/pagination'
 
 export type Application = components['schemas']['Application']
 export type ApplicationCreate = components['schemas']['ApplicationCreate']
@@ -46,7 +46,8 @@ export function useMarketplace(filters: MarketplaceFilters = {}) {
 
 const MODERATION_FILTER = { status: ['moderation'] }
 
-export function useModerationQueue() {
+// observeOnly — бейдж в меню на странице очереди: читает total из её списка, не опрашивая.
+export function useModerationQueue({ observeOnly = false } = {}) {
   return useInfiniteQuery({
     queryKey: [...APPLICATIONS_KEY, 'moderation'],
     queryFn: ({ pageParam }) =>
@@ -56,6 +57,7 @@ export function useModerationQueue() {
     ...pagedList<ApplicationPage>(),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
+    ...(observeOnly && OBSERVE_ONLY),
   })
 }
 

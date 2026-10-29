@@ -1,7 +1,7 @@
 import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
-import { PAGE_SIZE, pagedList } from '@/lib/pagination'
+import { OBSERVE_ONLY, PAGE_SIZE, pagedList } from '@/lib/pagination'
 import { ME_KEY } from './meKey'
 
 export type KycDocument = components['schemas']['KycDocument']
@@ -94,7 +94,8 @@ export function useSubmitKyc() {
 // Компании, ждущие решения администратора; счётчик в меню считает тем же фильтром.
 const KYC_QUEUE_FILTER = { kyc_status: ['under_review'] }
 
-export function useKycQueue() {
+// observeOnly — бейдж в меню на странице очереди: читает total из её списка, не опрашивая.
+export function useKycQueue({ observeOnly = false } = {}) {
   return useInfiniteQuery({
     queryKey: KYC_QUEUE_KEY,
     queryFn: ({ pageParam }) =>
@@ -104,6 +105,7 @@ export function useKycQueue() {
     ...pagedList<OrganizationPage>(),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
+    ...(observeOnly && OBSERVE_ONLY),
   })
 }
 

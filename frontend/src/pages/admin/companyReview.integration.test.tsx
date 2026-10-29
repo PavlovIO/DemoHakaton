@@ -13,6 +13,7 @@ import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, loginAs } from '@/test/integration/actors'
 import { kycSubmittedApplicant, submitApplication } from '@/test/integration/fixtures'
 import { api } from '@/lib/api-client'
+import { PAGE_SIZE } from '@/lib/pagination'
 import type { components } from '@/lib/api-schema'
 
 type Schemas = components['schemas']
@@ -238,6 +239,19 @@ describe('меню админа: размер очередей', () => {
     const moderationLink = await screen.findByRole('link', { name: /Модерация заявок/ })
     await waitFor(() => expect(within(moderationLink).getByText(/^\d+$/)).toBeTruthy())
     expect(screen.getByRole('link', { name: 'Модерация заявок' })).toBe(moderationLink)
+  })
+
+  it('на странице очереди проверки бейдж берёт total из самой очереди, без второго запроса', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    renderAdmin('/admin/kyc', { withMenu: true })
+
+    const kycMenuLink = await screen.findByRole('link', { name: 'Проверка компаний' })
+    expect(await within(kycMenuLink).findByText(/^\d+$/)).toBeTruthy()
+    const queueRequests = fetchSpy.mock.calls
+      .map(([input]) => new URL(String(input), 'http://localhost'))
+      .filter((url) => url.pathname === '/api/v1/admin/organizations')
+    fetchSpy.mockRestore()
+    expect(queueRequests.map((url) => url.searchParams.get('page_size'))).toEqual([String(PAGE_SIZE)])
   })
 
   it('у заёмщика меню не запрашивает очереди админа', async () => {
