@@ -79,14 +79,30 @@ export function useSubmitKyc() {
   })
 }
 
+// Компании, ждущие решения администратора; счётчик в меню считает тем же фильтром.
+const KYC_QUEUE_FILTER = { kyc_status: ['under_review'] }
+
 export function useKycQueue() {
   return useInfiniteQuery({
     queryKey: KYC_QUEUE_KEY,
     queryFn: ({ pageParam }) =>
       api.get<OrganizationPage>('/admin/organizations', {
-        query: { kyc_status: ['under_review'], page: pageParam, page_size: PAGE_SIZE },
+        query: { ...KYC_QUEUE_FILTER, page: pageParam, page_size: PAGE_SIZE },
       }),
     ...pagedList<OrganizationPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+// Размер очереди: total считает бэкенд, строки не нужны. Ключ под KYC_QUEUE_KEY —
+// решения по компаниям сбрасывают и его.
+export function useKycQueueCount() {
+  return useQuery({
+    queryKey: [...KYC_QUEUE_KEY, 'count'],
+    queryFn: () =>
+      api.get<OrganizationPage>('/admin/organizations', { query: { ...KYC_QUEUE_FILTER, page_size: 1 } }),
+    select: (page) => page.total,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   })

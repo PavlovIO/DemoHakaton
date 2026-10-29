@@ -12,6 +12,7 @@ import {
   ScrollText,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { QueueCountBadge } from './QueueCountBadge'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
@@ -19,6 +20,7 @@ interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
+  badge?: React.ReactNode
 }
 
 // Функция, а не константа: подписи клиентов берутся из словаря на текущем языке.
@@ -37,8 +39,9 @@ const navigationConfig = (t: TFunction): Record<UserRole, NavItem[]> => ({
   ],
   admin: [
     { to: '/admin/analytics', label: 'Аналитика', icon: <BarChart3 className="h-4 w-4" /> },
-    { to: '/admin/kyc', label: 'Проверка компаний', icon: <CheckCircle className="h-4 w-4" /> },
-    { to: '/admin/applications', label: 'Модерация заявок', icon: <FileText className="h-4 w-4" /> },
+    // Бейдж монтируется только у админа: у других ролей запросов счётчиков нет.
+    { to: '/admin/kyc', label: 'Проверка компаний', icon: <CheckCircle className="h-4 w-4" />, badge: <QueueCountBadge queue="kyc" /> },
+    { to: '/admin/applications', label: 'Модерация заявок', icon: <FileText className="h-4 w-4" />, badge: <QueueCountBadge queue="moderation" /> },
     { to: '/admin/aml', label: 'AML-флаги', icon: <AlertTriangle className="h-4 w-4" /> },
     { to: '/admin/users', label: 'Пользователи', icon: <Users className="h-4 w-4" /> },
     { to: '/admin/audit', label: 'Аудит', icon: <ScrollText className="h-4 w-4" /> },
@@ -68,7 +71,10 @@ export function Navigation() {
             )
           }
         >
-          {item.icon}
+          <span className="relative">
+            {item.icon}
+            {item.badge}
+          </span>
           <span className="hidden lg:inline">{item.label}</span>
         </NavLink>
       ))}
