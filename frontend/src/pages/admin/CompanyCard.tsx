@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { type OrganizationDetails, useCompanyCard } from '@/hooks/useKyc'
 import { kycStatusLabel, kycStatusVariant, roleLabel, userStatusLabel } from '@/lib/labels'
 import { formatPercent } from '@/lib/money'
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { DocumentList } from '@/components/kyc/DocumentList'
 import { AmlFlagList } from './AmlFlagsTab'
 import { CompanyDecision } from './CompanyDecision'
+import { companyCardOrigin } from './paths'
 
 type RegistryCheck = NonNullable<OrganizationDetails['registry_check']>
 
@@ -51,6 +52,7 @@ function RegistryCheckView({ check }: { check: RegistryCheck | null }) {
 // Карточка компании: всё, что администратор смотрит перед решением по проверке компании.
 export function CompanyCard() {
   const { organizationId = '' } = useParams()
+  const back = companyCardOrigin(useLocation().state)
   const { data: company, isLoading, error } = useCompanyCard(organizationId)
 
   if (isLoading) return <p className="text-gray-500">Загрузка…</p>
@@ -63,7 +65,7 @@ export function CompanyCard() {
 
   return (
     <div className="space-y-4">
-      <Link to="/admin/kyc" className="text-sm text-gray-600 hover:text-gray-900">← Очередь проверки</Link>
+      <Link to={back.to} className="text-sm text-gray-600 hover:text-gray-900">← {back.label}</Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4">
         <div>

@@ -157,6 +157,20 @@ describe('карточка компании', () => {
     const links = await screen.findAllByRole('link', { name: 'АО «Вектор»' })
     expect(links[0].getAttribute('href')).toBe('/admin/organizations/66666666-6666-6666-6666-666666666666')
   })
+
+  it('карточка, открытая из модерации заявок, ведёт назад в модерацию', async () => {
+    renderAdmin('/admin/applications')
+    fireEvent.click((await screen.findAllByRole('link', { name: 'АО «Вектор»' }))[0])
+
+    const back = await screen.findByRole('link', { name: '← Модерация заявок' })
+    expect(back.getAttribute('href')).toBe('/admin/applications')
+  })
+
+  it('карточка, открытая по прямой ссылке, ведёт назад в очередь проверки', async () => {
+    renderAdmin('/admin/organizations/66666666-6666-6666-6666-666666666666')
+    const back = await screen.findByRole('link', { name: '← Очередь проверки' })
+    expect(back.getAttribute('href')).toBe('/admin/kyc')
+  })
 })
 
 describe('меню админа: размер очередей', () => {

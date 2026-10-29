@@ -3,7 +3,7 @@ import { useKycQueue } from '@/hooks/useKyc'
 import { kycStatusLabel, roleLabel } from '@/lib/labels'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
-import { companyCardPath } from './paths'
+import { companyCardLink } from './paths'
 
 // Вкладка «Проверка компаний» — очередь проверки. Решение принимается в карточке компании,
 // где видны документы: подтвердить компанию, не открыв их, нельзя.
@@ -18,7 +18,7 @@ export function KycQueueTab() {
         {kycQueue.map(org => (
           <li key={org.id} className="p-4 hover:bg-gray-50">
             <div className="flex items-center gap-3 mb-1">
-              <Link to={companyCardPath(org.id)} className="font-semibold text-blue-600 hover:underline">
+              <Link {...companyCardLink(org.id, 'kyc')} className="font-semibold text-blue-600 hover:underline">
                 {org.name}
               </Link>
               <Badge variant="default">{roleLabel(org.type)}</Badge>

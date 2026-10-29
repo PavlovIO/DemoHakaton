@@ -6,7 +6,7 @@ import { formatMoney } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
-import { companyCardPath } from './paths'
+import { companyCardLink } from './paths'
 
 // Вкладка «Модерация заявок» — перенесена из AdminPanel 1:1 (логика не менялась).
 export function ApplicationsModerationTab() {
@@ -40,7 +40,7 @@ export function ApplicationsModerationTab() {
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <span className="font-mono text-sm text-gray-500">{app.number}</span>
-                <Link to={companyCardPath(app.borrower.id)} className="font-semibold text-blue-600 hover:underline">
+                <Link {...companyCardLink(app.borrower.id, 'moderation')} className="font-semibold text-blue-600 hover:underline">
                   {app.borrower.name}
                 </Link>
                 <Badge variant="warning">На модерации</Badge>

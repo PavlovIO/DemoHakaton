@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { currentLocale } from '@/i18n'
-import { companyCardPath } from './paths'
+import { companyCardLink } from './paths'
 
 type Schemas = components['schemas']
 type AmlResolution = 'false_positive' | 'confirmed' // enum requestBody adminResolveAmlFlag
@@ -196,7 +196,7 @@ export function AmlFlagsTab() {
             {flags.map((flag) => (
               <tr key={flag.id} className="hover:bg-gray-50 align-top">
                 <td className="px-4 py-3">
-                  <Link to={companyCardPath(flag.organization.id)} className="font-medium text-blue-600 hover:underline">
+                  <Link {...companyCardLink(flag.organization.id, 'aml')} className="font-medium text-blue-600 hover:underline">
                     {flag.organization.name}
                   </Link>
                   <div className="text-xs text-gray-500">{flag.organization.country_code}</div>
