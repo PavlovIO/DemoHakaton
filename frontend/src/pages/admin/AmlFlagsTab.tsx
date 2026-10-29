@@ -134,11 +134,16 @@ function ResolveFlagModal({ flag, onClose }: ResolveModalProps) {
 
 // Вкладка «AML-флаги» : таблица со severity-бейджами, фильтры status/severity,
 // снятие открытого флага через модалку с обязательным комментарием. Из карточки компании
-// вкладка открывается с organization_id в URL — только флаги этой компании.
+// вкладка открывается с organization_id в URL — только флаги этой компании, в любом
+// статусе, как в карточке. key сбрасывает фильтры при смене компании или сбросе на все.
 export function AmlFlagsTab() {
   const [searchParams] = useSearchParams()
   const organizationId = searchParams.get(AML_ORGANIZATION_PARAM) ?? undefined
-  const [status, setStatus] = useState<'' | Schemas['AmlFlagStatus']>('open')
+  return <AmlFlagsList key={organizationId ?? ''} organizationId={organizationId} />
+}
+
+function AmlFlagsList({ organizationId }: { organizationId?: string }) {
+  const [status, setStatus] = useState<'' | Schemas['AmlFlagStatus']>(organizationId ? '' : 'open')
   const [severity, setSeverity] = useState<'' | Schemas['AmlSeverity']>('')
   const [resolvingFlag, setResolvingFlag] = useState<AmlFlag | null>(null)
 

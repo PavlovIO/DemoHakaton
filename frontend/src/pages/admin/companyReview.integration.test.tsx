@@ -205,6 +205,15 @@ describe('карточка компании', () => {
     )
   })
 
+  // Сид: у «Омеги» только закрытый флаг — карточка его показывает, вкладка тоже должна.
+  it('из карточки AML-флаги компании видны в любом статусе, не только открытые', async () => {
+    renderAdmin('/admin/organizations/99999999-9999-9999-9999-999999999999')
+    fireEvent.click(await screen.findByRole('link', { name: /Разобрать на вкладке AML-флагов/ }))
+
+    expect(await screen.findByRole('link', { name: 'ООО «Омега»' })).toBeTruthy()
+    expect(screen.getByText(/^Только ООО «Омега»/)).toBeTruthy()
+  })
+
   it('карточка, открытая по прямой ссылке, ведёт назад в очередь проверки', async () => {
     renderAdmin('/admin/organizations/66666666-6666-6666-6666-666666666666')
     const back = await screen.findByRole('link', { name: '← Очередь проверки' })
