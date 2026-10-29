@@ -4,6 +4,7 @@ import { type OrganizationDetails, useCompanyCard } from '@/hooks/useKyc'
 import { kycStatusLabel, roleLabel, userStatusLabel } from '@/lib/labels'
 import { formatPercent } from '@/lib/money'
 import { currentLocale } from '@/i18n'
+import { ApiError } from '@/lib/api-client'
 import { Badge } from '@/components/ui/Badge'
 import { DocumentList } from '@/components/kyc/DocumentList'
 import { AmlFlagList } from './AmlFlagsTab'
@@ -57,10 +58,15 @@ function RegistryCheckView({ check }: { check: RegistryCheck | null }) {
 // Карточка компании: всё, что администратор смотрит перед решением по проверке компании.
 export function CompanyCard() {
   const { organizationId = '' } = useParams()
-  const { data: company, isLoading } = useCompanyCard(organizationId)
+  const { data: company, isLoading, error } = useCompanyCard(organizationId)
 
   if (isLoading) return <p className="text-gray-500">Загрузка…</p>
-  if (!company) return <p className="text-gray-500">Компания не найдена.</p>
+  if (!company) {
+    if (error instanceof ApiError && error.status === 404) {
+      return <p className="text-gray-500">Компания не найдена.</p>
+    }
+    return <p className="text-danger">Не удалось загрузить карточку компании.</p>
+  }
 
   return (
     <div className="space-y-4">

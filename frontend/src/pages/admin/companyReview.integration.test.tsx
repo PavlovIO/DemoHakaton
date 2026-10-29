@@ -108,6 +108,17 @@ describe('карточка компании', () => {
     expect(screen.queryByRole('button', { name: 'Отклонить' })).toBeNull()
   })
 
+  it('несуществующая компания: «Компания не найдена»', async () => {
+    renderAdmin('/admin/organizations/00000000-0000-0000-0000-000000000000')
+    expect(await screen.findByText('Компания не найдена.')).toBeTruthy()
+  })
+
+  it('ошибка загрузки карточки не выдаётся за «не найдена»', async () => {
+    renderAdmin('/admin/organizations/not-a-uuid')
+    expect(await screen.findByText('Не удалось загрузить карточку компании.')).toBeTruthy()
+    expect(screen.queryByText('Компания не найдена.')).toBeNull()
+  })
+
   it('в модерации заявок название заёмщика ведёт в его карточку', async () => {
     renderAdmin('/admin/applications')
     const links = await screen.findAllByRole('link', { name: 'АО «Вектор»' })
