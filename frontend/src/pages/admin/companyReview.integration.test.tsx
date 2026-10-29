@@ -167,6 +167,17 @@ describe('меню админа: размер очередей', () => {
     expect(await within(moderationLink).findByText(String(moderation.total))).toBeTruthy()
   })
 
+  // Ниже lg подпись скрыта CSS, которого в jsdom нет: проверяем, что имя ссылки —
+  // ровно подпись пункта, а не видимый текст вместе с числом бейджа.
+  it('имя ссылки в меню — подпись пункта, без числа бейджа', async () => {
+    loginAs(ADMIN)
+    render(<Navigation />, { wrapper: AppProviders })
+
+    const moderationLink = await screen.findByRole('link', { name: /Модерация заявок/ })
+    await waitFor(() => expect(within(moderationLink).getByText(/^\d+$/)).toBeTruthy())
+    expect(screen.getByRole('link', { name: 'Модерация заявок' })).toBe(moderationLink)
+  })
+
   it('у заёмщика меню не запрашивает очереди админа', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     loginAs(BORROWER)
