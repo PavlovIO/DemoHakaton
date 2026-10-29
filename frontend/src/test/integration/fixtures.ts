@@ -10,6 +10,13 @@ type Me = components['schemas']['Me']
 
 // Подготовка через API: проверяемое поведение — в тестах хуков, не здесь.
 
+// Цель тестовой заявки. Тесты пишут в общую dev-БД: метка «[тест …]» отличает их заявки
+// от настоящих в админке, а короткий случайный код делает текст уникальным — UI-тесты
+// ищут свою заявку в списке по нему.
+export function testPurpose(text: string) {
+  return `[тест ${Math.random().toString(36).slice(2, 8)}] ${text}`
+}
+
 // Новая компания-заёмщик в draft; сессия остаётся у неё, resume() возвращает к ней
 // после loginAs. Сидовые не годятся: одобрение KYC необратимо. Лимит — 10 регистраций
 // с IP в час, поэтому регистраций в прогоне — по одной на сценарий, не на тест.
@@ -42,7 +49,7 @@ export async function ensureBorrowerApplications(n: number) {
       target_country_code: 'DE',
       term_months: 3,
       transfer_method: 'sepa',
-      purpose: `Черновик для пагинации ${crypto.randomUUID()}`,
+      purpose: testPurpose('Черновик для пагинации'),
     })
   }
 }
@@ -55,7 +62,7 @@ export async function submitApplication() {
     target_country_code: 'DE',
     term_months: 12,
     transfer_method: 'sepa',
-    purpose: `Пополнение оборотных средств ${crypto.randomUUID()}`,
+    purpose: testPurpose('Пополнение оборотных средств'),
   })
   return api.post<Application>('/applications/{applicationId}/submit', undefined, { path: { applicationId: draft.id } })
 }
