@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LoadMore } from '@/components/ui/LoadMore'
+import { currentLocale } from '@/i18n'
 
 type Schemas = components['schemas']
 
@@ -181,7 +182,7 @@ export function UsersTab() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-gray-500">
-                    {new Date(u.created_at).toLocaleDateString('ru-RU')}
+                    {new Date(u.created_at).toLocaleDateString(currentLocale())}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {u.status === 'active' ? (

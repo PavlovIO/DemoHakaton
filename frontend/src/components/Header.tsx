@@ -2,8 +2,12 @@ import { Navigation } from './Navigation'
 import { NotificationsDropdown } from './NotificationsDropdown'
 import { ProfileDropdown } from './ProfileDropdown'
 import { Breadcrumbs } from './Breadcrumbs'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { useAuth } from '@/hooks/useAuth'
 
 export function Header() {
+  const { user } = useAuth()
+
   return (
     <header className="sticky top-0 z-40 border-b border-green-300 bg-chrome">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -29,6 +33,8 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Админка остаётся на русском (#102) — переключатель только клиентам. */}
+          {user?.role !== 'admin' && <LanguageSwitcher className="mr-2" />}
           <NotificationsDropdown />
           <ProfileDropdown />
         </div>

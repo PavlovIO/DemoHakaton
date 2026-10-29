@@ -7,6 +7,7 @@ import type { components } from '@/lib/api-schema'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadMore } from '@/components/ui/LoadMore'
+import { currentLocale } from '@/i18n'
 
 type Schemas = components['schemas']
 type AmlResolution = 'false_positive' | 'confirmed' // enum requestBody adminResolveAmlFlag
@@ -217,7 +218,7 @@ export function AmlFlagsTab() {
                   <Badge variant={statusVariant(flag.status)}>{amlFlagStatusLabel(flag.status)}</Badge>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-gray-500">
-                  {new Date(flag.created_at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                  {new Date(flag.created_at).toLocaleString(currentLocale(), { dateStyle: 'short', timeStyle: 'short' })}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {flag.status === 'open' ? (
@@ -227,7 +228,7 @@ export function AmlFlagsTab() {
                   ) : (
                     <span className="text-xs text-gray-400">
                       {flag.resolved_at
-                        ? `Закрыт ${new Date(flag.resolved_at).toLocaleDateString('ru-RU')}`
+                        ? `Закрыт ${new Date(flag.resolved_at).toLocaleDateString(currentLocale())}`
                         : 'Закрыт'}
                     </span>
                   )}

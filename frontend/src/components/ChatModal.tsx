@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { useMessages, useSendMessage } from '@/hooks/useMessages'
 import { handleApiError } from '@/lib/api-errors'
+import { currentLocale } from '@/i18n'
 
 interface ChatModalProps {
   isOpen: boolean
@@ -67,7 +68,7 @@ export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyN
                   {/* Plain text по контракту API: только текстовый узел, без HTML. */}
                   <p className="whitespace-pre-wrap break-words">{m.text}</p>
                   <span className={`text-[10px] block mt-1 ${isMine ? 'text-primary-200' : 'text-gray-400'}`}>
-                    {m.author_organization.name} · {new Date(m.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    {m.author_organization.name} · {new Date(m.created_at).toLocaleTimeString(currentLocale(), { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </div>

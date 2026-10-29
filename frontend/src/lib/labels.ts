@@ -1,4 +1,5 @@
 import type { components } from '@/lib/api-schema'
+import { i18n } from '@/i18n'
 
 type RepaymentSchedule = components['schemas']['RepaymentSchedule']
 type CountryCode = components['schemas']['CountryCode']
@@ -34,12 +35,6 @@ export const AML_FLAG_STATUS_LABEL: Record<AmlFlagStatus, string> = {
   confirmed: 'Подтверждён',
 }
 
-export const ROLE_LABEL: Record<Role, string> = {
-  admin: 'Администратор',
-  borrower: 'Заёмщик',
-  lender: 'Кредитор',
-}
-
 export const USER_STATUS_LABEL: Record<UserStatus, string> = {
   active: 'Активен',
   blocked: 'Заблокирован',
@@ -54,13 +49,6 @@ export const APPLICATION_STATUS_LABEL: Record<ApplicationStatus, string> = {
   cancelled: 'Отменена',
 }
 
-export const KYC_STATUS_LABEL: Record<KycStatus, string> = {
-  draft: 'Черновик',
-  under_review: 'На проверке',
-  verified: 'Подтверждена',
-  rejected: 'Отклонена',
-}
-
 export function amlRuleLabel(rule: AmlRule | string): string {
   return AML_RULE_LABEL[rule as AmlRule] ?? rule
 }
@@ -73,8 +61,10 @@ export function amlFlagStatusLabel(status: AmlFlagStatus | string): string {
   return AML_FLAG_STATUS_LABEL[status as AmlFlagStatus] ?? status
 }
 
+// Роли и статусы проверки компании видят клиенты — подписи из словаря i18n.
 export function roleLabel(role: Role | string): string {
-  return ROLE_LABEL[role as Role] ?? role
+  const key = `labels.role.${role as Role}` as const
+  return i18n.t(key, { defaultValue: role })
 }
 
 export function userStatusLabel(status: UserStatus | string): string {
@@ -86,7 +76,8 @@ export function applicationStatusLabel(status: ApplicationStatus | string): stri
 }
 
 export function kycStatusLabel(status: KycStatus | string): string {
-  return KYC_STATUS_LABEL[status as KycStatus] ?? status
+  const key = `labels.kycStatus.${status as KycStatus}` as const
+  return i18n.t(key, { defaultValue: status })
 }
 
 const FALLBACK_COUNTRY_NAME_RU: Partial<Record<CountryCode, string>> = {

@@ -3,6 +3,7 @@ import { Bell, CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMarkAllNotificationsRead, useNotifications } from '@/hooks/useNotifications'
 import { handleApiError } from '@/lib/api-errors'
+import { currentLocale } from '@/i18n'
 
 export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false)
@@ -71,7 +72,7 @@ export function NotificationsDropdown() {
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{notification.title}</p>
                     </div>
-                    <span className="shrink-0 text-xs text-gray-400">{new Date(notification.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="shrink-0 text-xs text-gray-400">{new Date(notification.created_at).toLocaleTimeString(currentLocale(), { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 </div>
               ))

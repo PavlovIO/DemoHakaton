@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { LogOut, Building, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { kycStatusLabel, roleLabel } from '@/lib/labels'
@@ -12,6 +13,7 @@ const KYC_BADGE_CLASS: Record<string, string> = {
 }
 
 export function ProfileDropdown() {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -118,7 +120,7 @@ export function ProfileDropdown() {
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
               >
                 <Building className="h-4 w-4" />
-                Профиль компании
+                {t('profileMenu.companyProfile')}
               </button>
             )}
 
@@ -131,7 +133,7 @@ export function ProfileDropdown() {
                 className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-medium text-amber-700 hover:bg-amber-50"
               >
                 <ShieldAlert className="h-4 w-4" />
-                Пройти проверку компании
+                {t('profileMenu.startVerification')}
               </button>
             )}
 
@@ -149,7 +151,7 @@ export function ProfileDropdown() {
               className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-danger hover:bg-gray-100"
             >
               <LogOut className="h-4 w-4" />
-              Выйти
+              {t('profileMenu.logout')}
             </button>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { useDeals } from '@/hooks/useDeals'
 import { formatMoney, formatPercent } from '@/lib/money'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
+import { currentLocale } from '@/i18n'
 
 export function Deals() {
   const { user } = useAuth()
@@ -33,7 +34,7 @@ export function Deals() {
                     <span className="font-medium text-gray-900">{formatMoney(deal.amount, deal.currency)}</span>
                     <span>Ставка: {formatPercent(deal.interest_rate_annual)}</span>
                     <span>Комиссия площадки (фиксированная): {formatPercent(deal.fee_percent)}</span>
-                    <span>Дата: {new Date(deal.agreed_at).toLocaleDateString('ru-RU')}</span>
+                    <span>Дата: {new Date(deal.agreed_at).toLocaleDateString(currentLocale())}</span>
                   </div>
                 </div>
               </div>
