@@ -5,8 +5,9 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { companyCardLink } from './paths'
 
-// Вкладка «Проверка компаний» — очередь проверки. Решение принимается в карточке компании,
-// где видны документы: подтвердить компанию, не открыв их, нельзя.
+// Вкладка «Проверка компаний» — очередь проверки. Кнопок решения в строках нет: решение
+// принимается в карточке компании, рядом с её документами. Это правило интерфейса —
+// бэкенд подтверждение без просмотра документов не запрещает.
 export function KycQueueTab() {
   const kycQuery = useKycQueue()
   const { data: kyc, isLoading: isKycLoading } = kycQuery
