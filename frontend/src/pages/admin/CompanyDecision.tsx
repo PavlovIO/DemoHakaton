@@ -85,7 +85,7 @@ export function CompanyDecision({ company }: { company: Organization }) {
 
   return (
     <div className="flex gap-2">
-      <Button variant="outline" onClick={() => setIsRejecting(true)}>Отклонить</Button>
+      <Button variant="outline" disabled={approveKyc.isPending} onClick={() => setIsRejecting(true)}>Отклонить</Button>
       <Button disabled={approveKyc.isPending} onClick={handleApprove}>Подтвердить компанию</Button>
       {isRejecting && <RejectCompanyModal org={company} onClose={() => setIsRejecting(false)} />}
     </div>

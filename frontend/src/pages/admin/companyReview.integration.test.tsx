@@ -79,6 +79,29 @@ describe('карточка компании', () => {
     expect(within(row).queryByRole('button')).toBeNull()
   })
 
+  // Ответ на подтверждение держим, затем обрываем сетевой ошибкой: до бэкенда запрос
+  // не доходит, компания остаётся на проверке для следующего теста.
+  it('пока подтверждение в пути, «Отклонить» неактивна', async () => {
+    const realFetch = globalThis.fetch
+    let dropApprove = () => {}
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) =>
+      String(input).endsWith('/kyc/approve')
+        ? new Promise((_, reject) => {
+            dropApprove = () => reject(new TypeError('Failed to fetch'))
+          })
+        : realFetch(input, init),
+    )
+    try {
+      renderAdmin(`/admin/organizations/${applicant.organization.id}`)
+      fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить компанию' }))
+      const reject = screen.getByRole<HTMLButtonElement>('button', { name: 'Отклонить' })
+      await waitFor(() => expect(reject.disabled).toBe(true))
+    } finally {
+      dropApprove()
+      fetchSpy.mockRestore()
+    }
+  })
+
   it('подтверждение в карточке: статус «Подтверждена», кнопок решения больше нет', async () => {
     renderAdmin(`/admin/organizations/${applicant.organization.id}`)
     fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить компанию' }))
