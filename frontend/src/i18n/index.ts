@@ -54,11 +54,19 @@ export function currentLocale(): string {
   return LOCALE[currentLanguage()]
 }
 
-// Админка переводится не будет (#102): администратору всегда русский, выбор
-// пользователя в этом браузере сохраняется и возвращается после выхода админа.
-export function useRoleLanguage(role: components['schemas']['Role'] | undefined): void {
+type Role = components['schemas']['Role']
+
+// Английский нужен иностранным кредиторам (#102). Заёмщики — российские компании,
+// админка не переводится: им всегда русский. До входа (role нет) — выбор со страницы входа.
+export function canChooseLanguage(role: Role | undefined): boolean {
+  return role !== 'admin' && role !== 'borrower'
+}
+
+// Выбор пользователя в этом браузере сохраняется и возвращается после выхода
+// заёмщика или админа.
+export function useRoleLanguage(role: Role | undefined): void {
   useEffect(() => {
-    void i18n.changeLanguage(role === 'admin' ? 'ru' : chosenLanguage())
+    void i18n.changeLanguage(canChooseLanguage(role) ? chosenLanguage() : 'ru')
   }, [role])
 }
 

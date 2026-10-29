@@ -81,7 +81,16 @@ describe('useRoleLanguage', () => {
     expect(currentLanguage()).toBe('en')
   })
 
-  it('клиенту — выбранный язык', () => {
+  it('заёмщику — русский, выбор в браузере не затирается', () => {
+    setLanguage('en')
+    renderHook(() => useRoleLanguage('borrower'))
+
+    expect(currentLanguage()).toBe('ru')
+    expect(kycStatusLabel('verified')).toBe('Подтверждена')
+    expect(localStorage.getItem('lp.language')).toBe('en')
+  })
+
+  it('кредитору — выбранный язык', () => {
     setLanguage('en')
     renderHook(() => useRoleLanguage('lender'))
 
