@@ -46,11 +46,12 @@ describe('компания на проверке видит свои докум�
   })
 })
 
-// Админка без layout: очереди и карточка компании на своих маршрутах.
-function renderAdmin(path: string) {
+// Админка без layout: очереди и карточка компании на своих маршрутах; меню — по запросу.
+function renderAdmin(path: string, { withMenu = false } = {}) {
   loginAs(ADMIN)
   return render(
     <AppProviders initialEntries={[path]}>
+      {withMenu && <Navigation />}
       <Routes>
         <Route path="/admin/kyc" element={<KycQueueTab />} />
         <Route path="/admin/applications" element={<ApplicationsModerationTab />} />
@@ -102,13 +103,22 @@ describe('карточка компании', () => {
     }
   })
 
-  it('подтверждение в карточке: статус «Подтверждена», кнопок решения больше нет', async () => {
-    renderAdmin(`/admin/organizations/${applicant.organization.id}`)
+  it('подтверждение в карточке: статус «Подтверждена», компания уходит из очереди, счётчик в меню уменьшается', async () => {
+    renderAdmin('/admin/kyc', { withMenu: true })
+    const kycMenuLink = await screen.findByRole('link', { name: 'Проверка компаний' })
+    const queueSize = () => within(kycMenuLink).queryByText(/^\d+$/)?.textContent ?? '0'
+    const before = Number((await within(kycMenuLink).findByText(/^\d+$/)).textContent)
+
+    fireEvent.click(await screen.findByRole('link', { name: applicant.organization.name }))
     fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить компанию' }))
 
     expect(await screen.findByText('Подтверждена')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Подтвердить компанию' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Отклонить' })).toBeNull()
+    await waitFor(() => expect(queueSize()).toBe(String(before - 1)))
+
+    fireEvent.click(screen.getByRole('link', { name: /Очередь проверки/ }))
+    await waitFor(() => expect(screen.queryByRole('link', { name: applicant.organization.name })).toBeNull())
   })
 
   it('«Отказать» неактивна без причины; после отказа статус «Отклонена»', async () => {
