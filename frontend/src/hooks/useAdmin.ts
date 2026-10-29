@@ -15,6 +15,8 @@ const ADMIN_ORGANIZATIONS_KEY = ['admin-organizations'] as const
 const ADMIN_USERS_KEY = ['admin-users'] as const
 const ADMIN_AML_FLAGS_KEY = ['admin-aml-flags'] as const
 const ADMIN_ANALYTICS_KEY = ['admin-analytics'] as const
+const ADMIN_AUDIT_LOG_KEY = ['admin-audit-log'] as const
+const USER_ORGANIZATION_KEY = ['user-organization'] as const
 
 // --- Организации (справочник для фильтров AML и т.п.; KYC-очередь — useKycQueue) ---
 
@@ -146,5 +148,48 @@ export function useAnalyticsSummary(params: AnalyticsParams = {}) {
     // Сводка дорогая: обновляем раз в минуту, чаще поллить не нужно.
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
+  })
+}
+
+// --- Журнал аудита ---
+
+export interface AuditLogParams {
+  user_id?: string
+  action?: string
+  entity_type?: Schemas['EntityType']
+  entity_id?: string
+  created_from?: string
+  created_to?: string
+}
+
+export type AuditLogEntry = Schemas['AuditLogEntry']
+
+export function useAuditLog(params: AuditLogParams = {}) {
+  return useInfiniteQuery({
+    queryKey: [...ADMIN_AUDIT_LOG_KEY, params],
+    queryFn: ({ pageParam }) =>
+      api.get<Schemas['AuditLogPage']>('/admin/audit-log', {
+        query: { ...params, page: pageParam, page_size: PAGE_SIZE },
+      }),
+    ...pagedList<Schemas['AuditLogPage']>(),
+    refetchInterval: LIST_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+  })
+}
+
+// Компания пользователя по UUID автора строки журнала — только из уже отдаваемых
+// данных (/admin/users отдаёт organization_id), новых эндпоинтов не добавляем.
+// null — компании нет (администратор или учётку удалили); undefined — ещё не загружено.
+export function useUserOrganization(userId: string | undefined) {
+  return useQuery({
+    queryKey: [...USER_ORGANIZATION_KEY, userId],
+    enabled: !!userId,
+    staleTime: Infinity, // привязка пользователя к компании не меняется
+    queryFn: async () => {
+      const page = await api.get<Schemas['UserPage']>('/admin/users', {
+        query: { page: 1, page_size: 200 },
+      })
+      return page.items.find((u) => u.id === userId)?.organization_id ?? null
+    },
   })
 }

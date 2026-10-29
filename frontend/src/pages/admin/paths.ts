@@ -1,9 +1,10 @@
-// Карточка компании открывается из очереди проверки, модерации заявок и AML-флагов;
+// Карточка компании открывается из очереди проверки, модерации заявок, AML-флагов и аудита;
 // ссылка «назад» в карточке ведёт туда, откуда её открыли.
 const CARD_ORIGINS = {
   kyc: { to: '/admin/kyc', label: 'Очередь проверки' },
   moderation: { to: '/admin/applications', label: 'Модерация заявок' },
   aml: { to: '/admin/aml', label: 'AML-флаги' },
+  audit: { to: '/admin/audit', label: 'Аудит' },
 }
 
 type CardOrigin = keyof typeof CARD_ORIGINS
@@ -14,6 +15,11 @@ export function companyCardLink(organizationId: string, from: CardOrigin) {
 }
 
 export const AML_ORGANIZATION_PARAM = 'organization_id'
+
+// Компания пользователя: в аудите UUID автора действия ведёт сюда (user_id → organization_id).
+export function companyCardByUserPath(userId: string) {
+  return `/admin/organizations?by_user=${userId}`
+}
 
 // AML-флаги одной компании: так их открывает карточка компании.
 export function companyAmlFlagsPath(organizationId: string) {
