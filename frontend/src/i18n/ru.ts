@@ -3,6 +3,9 @@ import type { components } from '@/lib/api-schema'
 type Role = components['schemas']['Role']
 type KycStatus = components['schemas']['KycStatus']
 type KycDocumentType = components['schemas']['KycDocumentType']
+type ApplicationStatus = components['schemas']['ApplicationStatus']
+type OfferStatus = components['schemas']['OfferStatus']
+type RepaymentSchedule = components['schemas']['RepaymentSchedule']
 
 // Русский словарь — эталон: en.ts обязан повторить его ключи (тип Dictionary).
 // Сообщения валидации — ключи validation.*, их переводит FieldError при показе.
@@ -11,6 +14,9 @@ export const ru = {
     loading: 'Загрузка…',
     delete: 'Удалить',
     add: 'Добавить',
+    loadMore: 'Показать ещё',
+    cancel: 'Отмена',
+    close: 'Закрыть',
   },
   language: {
     label: 'Язык интерфейса',
@@ -27,6 +33,103 @@ export const ru = {
       verified: 'Подтверждена',
       rejected: 'Отклонена',
     } satisfies Record<KycStatus, string>,
+    applicationStatus: {
+      draft: 'Черновик',
+      moderation: 'На модерации',
+      rejected: 'Отклонена',
+      published: 'Опубликована',
+      agreed: 'Согласована',
+      cancelled: 'Отменена',
+    } satisfies Record<ApplicationStatus, string>,
+    offerStatus: {
+      sent: 'Отправлен',
+      accepted: 'Принят',
+      rejected: 'Отклонен',
+      withdrawn: 'Отозван',
+    } satisfies Record<OfferStatus, string>,
+    repaymentSchedule: {
+      bullet: 'В конце срока',
+      annuity: 'Аннуитетный',
+      interest_monthly_principal_bullet: 'Проценты ежемесячно, тело в конце',
+      custom: 'Индивидуальный',
+    } satisfies Record<RepaymentSchedule, string>,
+  },
+  nav: {
+    dashboard: 'Дашборд',
+    applications: 'Мои заявки',
+    offers: 'Предложения',
+    marketplace: 'Витрина заявок',
+    myOffers: 'Мои предложения',
+    deals: 'Сделки',
+  },
+  dashboard: {
+    title: 'Дашборд',
+    welcome: 'Добро пожаловать на платформу ликвидности.',
+  },
+  marketplace: {
+    title: 'Витрина заявок',
+    subtitle: 'Опубликованные заявки на привлечение ликвидности',
+    country: 'Страна',
+    allCountries: 'Все страны',
+    fatfHighRisk: 'FATF: повышенный риск',
+    currency: 'Валюта',
+    anyCurrency: 'Любая',
+    amountFrom: 'Сумма от',
+    chooseCurrencyFirst: 'Сначала выберите валюту',
+    reset: 'Сбросить',
+    term: 'Срок: {{months}} мес.',
+    targetCountry: 'Страна: {{code}}',
+    offerSent: 'Оффер отправлен',
+    makeOffer: 'Предложить финансирование',
+    empty: 'По вашему запросу ничего не найдено.',
+    offer: {
+      title: 'Предложение по заявке {{number}}',
+      requests: '{{borrower}} запрашивает {{amount}}',
+      amount: 'Сумма ({{currency}})',
+      rate: 'Ставка (% годовых)',
+      fee: 'Комиссия площадки (%)',
+      feeFixed: 'Комиссия платформы фиксирована и не может быть изменена.',
+      schedule: 'График погашения',
+      collateral: 'Обеспечение (опционально)',
+      collateralPlaceholder: 'Например: залог оборудования',
+      terms: 'Доп. условия',
+      submit: 'Отправить предложение',
+      created: 'Оффер отправлен заемщику',
+    },
+  },
+  offers: {
+    title: 'Мои предложения',
+    proposed: 'Вы предложили: <b>{{amount}}</b> под <b>{{rate}}</b> годовых',
+    details: 'Комиссия: {{fee}} | График: {{schedule}}',
+    chat: 'Чат',
+    withdraw: 'Отозвать',
+    withdrawConfirm: 'Вы уверены, что хотите отозвать предложение?',
+    withdrawn: 'Предложение отозвано',
+    empty: 'Вы еще не отправляли предложений. Перейдите в «Витрину заявок», чтобы найти интересные проекты.',
+  },
+  deals: {
+    title: 'Сделки',
+    agreed: 'Сделка зафиксирована',
+    lender: 'Кредитор: {{name}}',
+    borrower: 'Заемщик: {{name}}',
+    rate: 'Ставка: {{rate}}',
+    fee: 'Комиссия площадки (фиксированная): {{fee}}',
+    date: 'Дата: {{date}}',
+    empty: 'Сделок пока нет.',
+  },
+  chat: {
+    title: 'Чат по офферу',
+    application: 'Заявка: {{number}}',
+    counterparty: 'Собеседник: {{name}}',
+    empty: 'Напишите первое сообщение, чтобы обсудить детали сделки.',
+    placeholder: 'Напишите сообщение...',
+    send: 'Отправить',
+  },
+  notifications: {
+    title: 'Уведомления',
+    markAll: 'Отметить все',
+    empty: 'Нет уведомлений',
+    showAll: 'Показать все уведомления',
   },
   auth: {
     email: 'Email',

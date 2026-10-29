@@ -2,7 +2,14 @@
 import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { components } from '@/lib/api-schema'
-import { kycStatusLabel, roleLabel } from '@/lib/labels'
+import {
+  applicationStatusLabel,
+  countryName,
+  currencyName,
+  kycStatusLabel,
+  repaymentScheduleLabel,
+  roleLabel,
+} from '@/lib/labels'
 import { en } from './en'
 import { currentLanguage, currentLocale, setLanguage, useRoleLanguage } from './index'
 import { ru } from './ru'
@@ -53,6 +60,23 @@ describe('переключение языка', () => {
     expect(currentLocale()).toBe('en-GB')
     expect(localStorage.getItem('lp.language')).toBe('en')
     expect(document.documentElement.lang).toBe('en')
+  })
+
+  it('подписи экранов кредитора: справочники и названия из API', () => {
+    const cyprus = { code: 'CY', name_ru: 'Кипр', name_en: 'Cyprus' }
+    const usd = { code: 'USD', name: 'Доллар США' }
+
+    expect(repaymentScheduleLabel('bullet')).toBe('В конце срока')
+    expect(applicationStatusLabel('published')).toBe('Опубликована')
+    expect(countryName(cyprus)).toBe('Кипр')
+    expect(currencyName(usd)).toBe('Доллар США')
+
+    setLanguage('en')
+
+    expect(repaymentScheduleLabel('bullet')).toBe('Bullet (at maturity)')
+    expect(applicationStatusLabel('published')).toBe('Published')
+    expect(countryName(cyprus)).toBe('Cyprus')
+    expect(currencyName(usd)).toBe('US Dollar')
   })
 
   it('setLanguage("ru") возвращает русский', () => {

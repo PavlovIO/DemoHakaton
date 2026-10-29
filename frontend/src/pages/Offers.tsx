@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { Trans, useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/useAuth'
 import { useMyOffers, useWithdrawOffer, type Offer } from '@/hooks/useOffers'
 import { handleApiError } from '@/lib/api-errors'
 import { formatMoney, formatPercent } from '@/lib/money'
-import { repaymentScheduleLabel } from '@/lib/labels'
+import { offerStatusLabel, repaymentScheduleLabel } from '@/lib/labels'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ChatModal } from '@/components/ChatModal'
@@ -21,6 +22,7 @@ export function Offers() {
 }
 
 function MyOffers() {
+  const { t } = useTranslation()
   const offersQuery = useMyOffers()
   const { data, isLoading } = offersQuery
   const offers = data?.items ?? []
@@ -28,27 +30,28 @@ function MyOffers() {
   const [chatOffer, setChatOffer] = useState<Offer | null>(null)
 
   const handleWithdraw = (id: string) => {
-    if (confirm('Вы уверены, что хотите отозвать предложение?')) {
+    if (confirm(t('offers.withdrawConfirm'))) {
       withdrawOffer.mutate(id, {
-        onSuccess: () => toast.success('Предложение отозвано'),
+        onSuccess: () => toast.success(t('offers.withdrawn')),
         onError: handleApiError,
       })
     }
   }
 
   const getStatusBadge = (status: Offer['status']) => {
+    const label = offerStatusLabel(status)
     switch (status) {
-      case 'sent': return <Badge variant="warning">Отправлен</Badge>
-      case 'accepted': return <Badge variant="success">Принят</Badge>
-      case 'rejected': return <Badge variant="danger">Отклонен</Badge>
-      case 'withdrawn': return <Badge variant="default">Отозван</Badge>
+      case 'sent': return <Badge variant="warning">{label}</Badge>
+      case 'accepted': return <Badge variant="success">{label}</Badge>
+      case 'rejected': return <Badge variant="danger">{label}</Badge>
+      case 'withdrawn': return <Badge variant="default">{label}</Badge>
     }
   }
 
   return (
     <div className="space-y-6 relative">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Мои предложения</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('offers.title')}</h1>
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -62,16 +65,23 @@ function MyOffers() {
                     {getStatusBadge(offer.status)}
                   </div>
                   <p className="text-sm text-gray-900">
-                    Вы предложили: <span className="font-medium">{formatMoney(offer.amount, offer.currency)}</span> под <span className="font-medium">{formatPercent(offer.interest_rate_annual)}</span> годовых
+                    <Trans
+                      i18nKey="offers.proposed"
+                      values={{ amount: formatMoney(offer.amount, offer.currency), rate: formatPercent(offer.interest_rate_annual) }}
+                      components={{ b: <span className="font-medium" /> }}
+                    />
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Комиссия: {formatPercent(offer.fee_percent)} | График: {repaymentScheduleLabel(offer.repayment_schedule)}
+                    {t('offers.details', {
+                      fee: formatPercent(offer.fee_percent),
+                      schedule: repaymentScheduleLabel(offer.repayment_schedule),
+                    })}
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
+                  <Button variant="outline" onClick={() => setChatOffer(offer)}>{t('offers.chat')}</Button>
                   {offer.status === 'sent' && (
-                    <Button variant="danger" disabled={withdrawOffer.isPending} onClick={() => handleWithdraw(offer.id)}>Отозвать</Button>
+                    <Button variant="danger" disabled={withdrawOffer.isPending} onClick={() => handleWithdraw(offer.id)}>{t('offers.withdraw')}</Button>
                   )}
                 </div>
               </div>
@@ -79,7 +89,7 @@ function MyOffers() {
           ))}
           {!isLoading && offers.length === 0 && (
             <li className="p-8 text-center text-gray-500">
-              Вы еще не отправляли предложений. Перейдите в «Витрину заявок», чтобы найти интересные проекты.
+              {t('offers.empty')}
             </li>
           )}
         </ul>
