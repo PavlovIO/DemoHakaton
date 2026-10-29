@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { DocumentList } from '@/components/kyc/DocumentList'
 import { AmlFlagList } from './AmlFlagsTab'
 import { CompanyDecision } from './CompanyDecision'
-import { companyCardOrigin } from './paths'
+import { companyAmlFlagsPath, companyCardOrigin } from './paths'
 
 type RegistryCheck = NonNullable<OrganizationDetails['registry_check']>
 
@@ -118,7 +118,7 @@ export function CompanyCard() {
         ) : (
           <>
             <AmlFlagList flags={company.aml_flags} />
-            <Link to="/admin/aml" className="mt-2 inline-block text-sm text-blue-600 hover:underline">
+            <Link to={companyAmlFlagsPath(company.id)} className="mt-2 inline-block text-sm text-blue-600 hover:underline">
               Разобрать на вкладке AML-флагов →
             </Link>
           </>

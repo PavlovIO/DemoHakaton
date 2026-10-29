@@ -13,6 +13,13 @@ export function companyCardLink(organizationId: string, from: CardOrigin) {
   return { to: `/admin/organizations/${organizationId}`, state: { from } }
 }
 
+export const AML_ORGANIZATION_PARAM = 'organization_id'
+
+// AML-флаги одной компании: так их открывает карточка компании.
+export function companyAmlFlagsPath(organizationId: string) {
+  return `/admin/aml?${AML_ORGANIZATION_PARAM}=${organizationId}`
+}
+
 // Куда вести «назад» по state истории; без него (прямая ссылка, перезагрузка) — в очередь проверки.
 export function companyCardOrigin(state: unknown) {
   const from = (state as { from?: unknown } | null)?.from

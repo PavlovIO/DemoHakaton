@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAmlFlags, useResolveAmlFlag, type AmlFlag } from '@/hooks/useAdmin'
 import { handleApiError } from '@/lib/api-errors'
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { currentLocale } from '@/i18n'
-import { companyCardLink } from './paths'
+import { AML_ORGANIZATION_PARAM, companyCardLink } from './paths'
 
 type Schemas = components['schemas']
 type AmlResolution = 'false_positive' | 'confirmed' // enum requestBody adminResolveAmlFlag
@@ -133,8 +133,11 @@ function ResolveFlagModal({ flag, onClose }: ResolveModalProps) {
 }
 
 // Вкладка «AML-флаги» : таблица со severity-бейджами, фильтры status/severity,
-// снятие открытого флага через модалку с обязательным комментарием.
+// снятие открытого флага через модалку с обязательным комментарием. Из карточки компании
+// вкладка открывается с organization_id в URL — только флаги этой компании.
 export function AmlFlagsTab() {
+  const [searchParams] = useSearchParams()
+  const organizationId = searchParams.get(AML_ORGANIZATION_PARAM) ?? undefined
   const [status, setStatus] = useState<'' | Schemas['AmlFlagStatus']>('open')
   const [severity, setSeverity] = useState<'' | Schemas['AmlSeverity']>('')
   const [resolvingFlag, setResolvingFlag] = useState<AmlFlag | null>(null)
@@ -142,6 +145,7 @@ export function AmlFlagsTab() {
   const flagsQuery = useAmlFlags({
     status: status || undefined,
     severity: severity || undefined,
+    organization_id: organizationId,
   })
   const flags = flagsQuery.data?.items ?? []
 
@@ -177,6 +181,12 @@ export function AmlFlagsTab() {
             ))}
           </select>
         </label>
+        {organizationId && (
+          <span className="text-sm text-gray-600">
+            Только {flags[0]?.organization.name ?? 'одна компания'} ·{' '}
+            <Link to="/admin/aml" className="text-blue-600 hover:underline">Все компании</Link>
+          </span>
+        )}
         <span className="ml-auto text-sm text-gray-500">Всего: {flagsQuery.data?.total ?? '—'}</span>
       </div>
 

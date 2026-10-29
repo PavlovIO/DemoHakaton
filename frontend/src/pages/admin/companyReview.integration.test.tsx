@@ -4,6 +4,7 @@ import { Route, Routes } from 'react-router-dom'
 import { KycQueueTab } from './KycQueue'
 import { ApplicationsModerationTab } from './ApplicationsModerationTab'
 import { CompanyCard } from './CompanyCard'
+import { AmlFlagsTab } from './AmlFlagsTab'
 import { Navigation } from '@/components/Navigation'
 import { PrivateRoute } from '@/components/PrivateRoute'
 import { KycStub } from '@/pages/KycStub'
@@ -55,6 +56,7 @@ function renderAdmin(path: string, { withMenu = false } = {}) {
       <Routes>
         <Route path="/admin/kyc" element={<KycQueueTab />} />
         <Route path="/admin/applications" element={<ApplicationsModerationTab />} />
+        <Route path="/admin/aml" element={<AmlFlagsTab />} />
         <Route path="/admin/organizations/:organizationId" element={<CompanyCard />} />
       </Routes>
     </AppProviders>,
@@ -164,6 +166,23 @@ describe('карточка компании', () => {
 
     const back = await screen.findByRole('link', { name: '← Модерация заявок' })
     expect(back.getAttribute('href')).toBe('/admin/applications')
+  })
+
+  // Сид: открытые AML-флаги у Gamma GmbH и Delta Trading; тестовые компании добавляют
+  // свои, так что без фильтра флаги Gamma могут не попасть на первую страницу.
+  it('из карточки AML-флаги открываются только по этой компании, фильтр можно сбросить', async () => {
+    renderAdmin('/admin/organizations/55555555-5555-5555-5555-555555555555')
+    fireEvent.click(await screen.findByRole('link', { name: /Разобрать на вкладке AML-флагов/ }))
+
+    await screen.findByRole('link', { name: 'Gamma GmbH' })
+    const companies = within(screen.getByRole('table')).getAllByRole('link').map((link) => link.textContent)
+    expect(new Set(companies)).toEqual(new Set(['Gamma GmbH']))
+    const filteredTotal = Number(screen.getByText(/^Всего:/).textContent!.replace(/\D/g, ''))
+
+    fireEvent.click(screen.getByRole('link', { name: 'Все компании' }))
+    await waitFor(() =>
+      expect(Number(screen.getByText(/^Всего:/).textContent!.replace(/\D/g, ''))).toBeGreaterThan(filteredTotal),
+    )
   })
 
   it('карточка, открытая по прямой ссылке, ведёт назад в очередь проверки', async () => {
