@@ -8,7 +8,8 @@
 Скрипт идемпотентен:
 - метки и вехи создаются, только если их нет;
 - issue ищется по префиксу заголовка «[KEY]», существующие не дублируются;
-- тело issue всегда пересобирается: {{KEY}} → #номер, внизу добавляются обратные ссылки на сценарии.
+- тело созданного в этом запуске issue пересобирается: {{KEY}} → #номер, внизу — обратные ссылки
+  на сценарии; существующие issues не трогаются, чтобы не затереть ручные правки в GitHub.
 """
 from __future__ import annotations
 
@@ -67,8 +68,13 @@ def gh(method: str, path: str, payload: dict | None = None, paginate: bool = Fal
         cmd += ["--paginate", "--jq", ".[]"]
     if payload is not None:
         cmd += ["--input", "-"]
-    proc = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None,
-                          capture_output=True, text=True)
+    # Обрыв на TLS-рукопожатии — запрос ещё не ушёл, повтор безопасен и для POST.
+    for attempt in range(5):
+        proc = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None,
+                              capture_output=True, text=True, encoding="utf-8")  # на Windows иначе cp1251
+        if proc.returncode == 0 or "TLS handshake timeout" not in proc.stderr:
+            break
+        time.sleep(2 * (attempt + 1))
     if proc.returncode != 0:
         raise RuntimeError(f"gh api {method} {path} failed: {proc.stderr.strip() or proc.stdout.strip()}")
     if paginate:
@@ -146,6 +152,7 @@ def main() -> None:
             numbers[m.group(1)] = item["number"]
 
     # 4. Создаём недостающие (тело — временное, ссылки проставим во втором проходе)
+    created_issues: list[dict] = []
     for issue in data["issues"]:
         if issue["key"] in numbers:
             print(f"skip   #{numbers[issue['key']]} [{issue['key']}]")
@@ -159,13 +166,14 @@ def main() -> None:
             payload["milestone"] = ms_numbers[issue["milestone"]]
         created = gh("POST", f"{repo}/issues", payload)
         numbers[issue["key"]] = created["number"]
+        created_issues.append(issue)
         print(f"issue  + #{created['number']} [{issue['key']}] {issue['title']}")
         time.sleep(1)  # бережём secondary rate limit
 
-    # 5. Второй проход: проставляем ссылки #N во всех телах
-    for issue in data["issues"]:
+    # 5. Второй проход: проставляем ссылки #N в телах созданных issues
+    for issue in created_issues:
         gh("PATCH", f"{repo}/issues/{numbers[issue['key']]}", {"body": render_body(issue, numbers, links)})
-    print(f"\nГотово: {len(numbers)} issues, ссылки между сценариями и задачами проставлены.")
+    print(f"\nГотово: создано {len(created_issues)}, всего {len(numbers)} issues; ссылки в новых проставлены.")
 
 
 if __name__ == "__main__":
