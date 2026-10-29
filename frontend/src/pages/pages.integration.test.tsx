@@ -107,6 +107,9 @@ describe('редактирование заявки (шаг 2C)', () => {
       term_months: 9,
     }))
 
+    // Модалка закрывается после ответа PATCH. Раньше этого findByText(newPurpose) нашёл бы
+    // само поле: React пишет значение управляемого textarea и в его текст.
+    await waitFor(() => expect(screen.queryByText('Редактирование заявки')).toBeNull())
     await screen.findByText(newPurpose)
     const updated = await api.get<Application>('/applications/{applicationId}', { path: { applicationId: app.id } })
     expect(updated).toMatchObject({ status: 'draft', purpose: newPurpose, term_months: 9 })
