@@ -9,11 +9,13 @@ export type KycDocumentType = components['schemas']['KycDocumentType']
 export type Beneficiary = components['schemas']['Beneficiary']
 type Organization = components['schemas']['Organization']
 type OrganizationPage = components['schemas']['OrganizationPage']
+export type OrganizationDetails = components['schemas']['OrganizationDetails']
 
 const DOCUMENTS_KEY = ['kyc-documents'] as const
 const ORGANIZATION_KEY = ['my-organization'] as const
 const KYC_QUEUE_KEY = ['kyc-queue'] as const
-export { KYC_QUEUE_KEY }
+const COMPANY_CARD_KEY = ['company-card'] as const
+export { KYC_QUEUE_KEY, COMPANY_CARD_KEY }
 
 export function useMyDocuments() {
   return useQuery({
@@ -113,6 +115,23 @@ export function useKycQueueCount() {
   })
 }
 
+// Карточка компании: всё, что администратор смотрит перед решением по проверке.
+export function useCompanyCard(organizationId: string) {
+  return useQuery({
+    queryKey: [...COMPANY_CARD_KEY, organizationId],
+    queryFn: () =>
+      api.get<OrganizationDetails>('/admin/organizations/{organizationId}', { path: { organizationId } }),
+  })
+}
+
+// Решение меняет и очередь (компания уходит из неё), и карточку (статус, кнопки).
+function invalidateKycDecision(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: KYC_QUEUE_KEY }),
+    queryClient.invalidateQueries({ queryKey: COMPANY_CARD_KEY }),
+  ])
+}
+
 export function useApproveKyc() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -120,7 +139,7 @@ export function useApproveKyc() {
       api.post<Organization>('/admin/organizations/{organizationId}/kyc/approve', undefined, {
         path: { organizationId },
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: KYC_QUEUE_KEY }),
+    onSuccess: () => invalidateKycDecision(queryClient),
   })
 }
 
@@ -133,6 +152,6 @@ export function useRejectKyc() {
         { reason },
         { path: { organizationId: id } },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: KYC_QUEUE_KEY }),
+    onSuccess: () => invalidateKycDecision(queryClient),
   })
 }
