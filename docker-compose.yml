@@ -73,6 +73,32 @@
       retries: 10
     restart: unless-stopped
 
+  # Публичный HTTPS-URL на фронт через ngrok (make tunnel-up) — показать демо внешнему человеку.
+  # TLS терминирует ngrok, в nginx приходит http + X-Forwarded-Proto: https. Профиль tunnel —
+  # docker compose up его не запускает. Токен — NGROK_AUTHTOKEN из .env; без :? — иначе без
+  # токена падали бы все команды compose (интерполируется весь файл), проверку делает Makefile.
+  ngrok:
+    image: ngrok/ngrok:3-alpine
+    container_name: lp_ngrok
+    profiles: [tunnel]
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    # NGROK_DOMAIN — статический домен из дашборда ngrok; без него URL случайный при каждом старте.
+    command: http frontend:8080 --log=stdout ${NGROK_DOMAIN:+--url=${NGROK_DOMAIN}}
+    ports:
+      # Веб-панель ngrok (URL туннеля, журнал запросов) — только с хоста.
+      - "127.0.0.1:${NGROK_WEB_PORT:-4040}:4040"
+    healthcheck:
+      # Панель отвечает и до подключения к ngrok — healthy, только когда туннель уже выдан.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4040/api/tunnels | grep -q public_url"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   # Одноразовый: demo-PDF сида BE-16 в volume документов (make backend-seed-files).
   # Профиль seed — docker compose up его не запускает.
   seed-files:

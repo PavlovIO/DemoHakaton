@@ -33,7 +33,7 @@ VACUUM_NO_UPDATE_CHECK := true
 MSYS_NO_PATHCONV := 1
 PSQL          := docker exec -i $(PG_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -v ON_ERROR_STOP=1
 
-.PHONY: db db-reset db-roles up down logs ps backend-up backend-seed-files backend-logs frontend-up frontend-logs migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
+.PHONY: db db-reset db-roles up down logs ps backend-up backend-seed-files backend-logs frontend-up frontend-logs tunnel-up tunnel-url tunnel-down migrate-up migrate-down migrate-reset migrate-status migrate-create load-sanctions seed seed-demo seed-files test-invariants psql gen gen-api gen-sqlc bundle-api lint-api diff-api gen-check run build test test-all lint tidy-check lint-actions verify tools hooks
 
 # Полный цикл: postgres + роли + миграции + санкционный мок-список + проверка инвариантов + демо-данные.
 # load-sanctions — раньше seed-demo: сид ссылается на запись мок-списка (BE-16).
@@ -72,6 +72,22 @@ frontend-up: backend-seed-files
 
 frontend-logs:
 	docker compose logs -f frontend
+
+# Публичный HTTPS-URL на приложение через ngrok (после make db): показать демо внешнему
+# человеку. Нужен NGROK_AUTHTOKEN в .env (dashboard.ngrok.com → Your Authtoken). Поднимает
+# и фронт с бэкендом. Пока туннель поднят, приложение открыто в интернет — потом tunnel-down.
+tunnel-up: backend-seed-files
+	$(if $(NGROK_AUTHTOKEN),,$(error NGROK_AUTHTOKEN не задан: добавьте его в .env))
+	docker compose --profile tunnel up -d --build --wait ngrok
+	@$(MAKE) --no-print-directory tunnel-url
+
+# URL туннеля из API веб-панели ngrok. Разбор — внутри контейнера: make из PowerShell
+# выполняет рецепты через cmd.exe, где нет grep (и test для проверки токена выше).
+tunnel-url:
+	@docker compose exec -T ngrok sh -c "wget -qO- http://127.0.0.1:4040/api/tunnels | grep -m1 -oE 'https://[a-zA-Z0-9.-]+'"
+
+tunnel-down:
+	docker compose --profile tunnel stop ngrok
 
 ps:
 	docker compose ps

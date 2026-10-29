@@ -89,6 +89,22 @@ make frontend-logs # логи nginx
 
 CI (`frontend.yml`, джоба `docker`) собирает образы, поднимает compose до healthy и проверяет SPA, ассеты и прокси `/api` через порт фронта.
 
+#### Публичная ссылка через ngrok
+
+Показать демо человеку снаружи (например, проверить чат вдвоём) — сервис `ngrok` в профиле `tunnel`: публичный HTTPS-URL ведёт на `frontend`, TLS терминирует ngrok. Чат — polling, фронт и API на одном origin, поэтому хватает одного туннеля без CORS.
+
+```sh
+# один раз: токен с dashboard.ngrok.com → Your Authtoken
+echo NGROK_AUTHTOKEN=<токен> >> .env
+
+make db           # если БД ещё не готова
+make tunnel-up    # поднимает фронт, бэкенд и ngrok, печатает https://….ngrok-free.app
+make tunnel-url   # напомнить URL; журнал запросов — http://localhost:4040
+make tunnel-down  # закрыть туннель
+```
+
+На free-плане ngrok при первом заходе показывает свою заглушку — нажать «Visit Site». URL меняется при каждом старте, если не задать `NGROK_DOMAIN` (статический домен из дашборда). Пока туннель поднят, приложение доступно всему интернету — после проверки `make tunnel-down`.
+
 ### Демо-данные
 
 `make db` заливает демо-сид (`backend/migrations/testdata/seed_demo_*.sql`) и кладёт PDF документов в `DOCUMENT_STORAGE_DIR`. Вариантов два, на одной БД они несовместимы — переключение только с чистой базы:
