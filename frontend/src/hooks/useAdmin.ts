@@ -15,6 +15,7 @@ const ADMIN_ORGANIZATIONS_KEY = ['admin-organizations'] as const
 const ADMIN_USERS_KEY = ['admin-users'] as const
 const ADMIN_AML_FLAGS_KEY = ['admin-aml-flags'] as const
 const ADMIN_ANALYTICS_KEY = ['admin-analytics'] as const
+const ADMIN_AUDIT_LOG_KEY = ['admin-audit-log'] as const
 
 // --- Организации (справочник для фильтров AML и т.п.; KYC-очередь — useKycQueue) ---
 
@@ -145,6 +146,32 @@ export function useAnalyticsSummary(params: AnalyticsParams = {}) {
     queryFn: () => api.get<AnalyticsSummary>('/admin/analytics/summary', { query: { ...params } }),
     // Сводка дорогая: обновляем раз в минуту, чаще поллить не нужно.
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+// --- Журнал аудита ---
+
+export interface AuditLogParams {
+  user_id?: string
+  action?: string
+  entity_type?: Schemas['EntityType']
+  entity_id?: string
+  created_from?: string
+  created_to?: string
+}
+
+export type AuditLogEntry = Schemas['AuditLogEntry']
+
+export function useAuditLog(params: AuditLogParams = {}) {
+  return useInfiniteQuery({
+    queryKey: [...ADMIN_AUDIT_LOG_KEY, params],
+    queryFn: ({ pageParam }) =>
+      api.get<Schemas['AuditLogPage']>('/admin/audit-log', {
+        query: { ...params, page: pageParam, page_size: PAGE_SIZE },
+      }),
+    ...pagedList<Schemas['AuditLogPage']>(),
+    refetchInterval: LIST_POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   })
 }

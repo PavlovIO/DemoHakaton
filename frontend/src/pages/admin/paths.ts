@@ -4,6 +4,7 @@ const CARD_ORIGINS = {
   kyc: { to: '/admin/kyc', label: 'Очередь проверки' },
   moderation: { to: '/admin/applications', label: 'Модерация заявок' },
   aml: { to: '/admin/aml', label: 'AML-флаги' },
+  users: { to: '/admin/users', label: 'Пользователи'},
 }
 
 type CardOrigin = keyof typeof CARD_ORIGINS

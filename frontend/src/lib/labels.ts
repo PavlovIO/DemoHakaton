@@ -144,3 +144,49 @@ export function transferMethodLabel(code: TransferMethod | string, methods?: { c
     code
   )
 }
+
+type EntityType = components['schemas']['EntityType']
+
+export const ENTITY_TYPE_LABEL: Record<EntityType, string> = {
+  user: 'Пользователь',
+  organization: 'Компания',
+  document: 'Документ',
+  application: 'Заявка',
+  offer: 'Предложение',
+  deal: 'Сделка',
+  message: 'Сообщение',
+  aml_flag: 'AML-флаг',
+}
+
+export function entityTypeLabel(entityType: EntityType | string | null | undefined): string {
+  if (!entityType) return '—'
+  return ENTITY_TYPE_LABEL[entityType as EntityType] ?? entityType
+}
+
+export const AUDIT_ACTION_LABEL: Record<string, string> = {
+  'auth.login': 'Вход',
+  'auth.login_failed': 'Неудачный вход',
+  'auth.register': 'Регистрация',
+  'kyc.submit': 'Отправка компании на проверку',
+  'kyc.approve': 'Одобрение проверки компании',
+  'kyc.reject': 'Отклонение проверки компании',
+  'document.upload': 'Загрузка документа',
+  'document.download': 'Скачивание документа',
+  'application.create': 'Создание заявки',
+  'application.submit': 'Отправка заявки',
+  'application.cancel': 'Отмена заявки',
+  'application.approve': 'Одобрение заявки',
+  'application.reject': 'Отклонение заявки',
+  'offer.create': 'Создание предложения',
+  'offer.accept': 'Принятие предложения',
+  'offer.reject': 'Отклонение предложения',
+  'offer.withdraw': 'Отзыв предложения',
+  'aml_flag.resolve': 'Разбор AML-флага',
+  'user.block': 'Блокировка пользователя',
+  'user.unblock': 'Разблокировка пользователя',
+}
+
+// Неизвестное действие показываем как есть — журнал пишется и новыми код-путьями.
+export function auditActionLabel(action: string): string {
+  return AUDIT_ACTION_LABEL[action] ?? action
+}

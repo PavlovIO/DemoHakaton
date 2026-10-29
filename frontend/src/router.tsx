@@ -17,6 +17,7 @@ import { AmlFlagsTab } from '@/pages/admin/AmlFlagsTab'
 import { UsersTab } from '@/pages/admin/UsersTab'
 import { AnalyticsTab } from '@/pages/admin/AnalyticsTab'
 import { CompanyCard } from '@/pages/admin/CompanyCard'
+import { AuditTab } from '@/pages/admin/AuditTab'
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -51,6 +52,7 @@ const router = createBrowserRouter([
           { path: 'aml', element: <AmlFlagsTab /> },
           { path: 'users', element: <UsersTab /> },
           { path: 'analytics', element: <AnalyticsTab /> },
+          { path: 'audit', element: <AuditTab /> },
           { path: 'organizations/:organizationId', element: <CompanyCard /> },
           // Неизвестный путь внутри /admin — редирект на первую вкладку.
           { path: '*', element: <AdminIndexRedirect /> },
