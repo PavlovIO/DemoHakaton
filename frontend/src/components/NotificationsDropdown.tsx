@@ -80,12 +80,6 @@ export function NotificationsDropdown() {
               ))
             )}
           </div>
-
-          <div className="border-t border-gray-200 px-4 py-2">
-            <button className="w-full text-center text-xs text-primary-600 hover:text-primary-700">
-              {t('notifications.showAll')}
-            </button>
-          </div>
         </div>
       )}
     </div>

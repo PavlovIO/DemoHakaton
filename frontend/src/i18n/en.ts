@@ -120,11 +120,14 @@ export const en: Dictionary = {
     title: 'Notifications',
     markAll: 'Mark all as read',
     empty: 'No notifications',
-    showAll: 'Show all notifications',
   },
   auth: {
     email: 'Email',
     password: 'Password',
+    passwordField: {
+      show: 'Show password',
+      hide: 'Hide password',
+    },
     login: {
       title: 'Sign in to Liquidity Platform',
       submit: 'Sign in',

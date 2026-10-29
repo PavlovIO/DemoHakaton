@@ -8,6 +8,7 @@ import { validationMessage } from '@/i18n'
 import { Button } from '@/components/ui/Button'
 import { FieldError } from '@/components/ui/FieldError'
 import { Input } from '@/components/ui/Input'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 
 const baseSchema = z.object({
@@ -187,7 +188,7 @@ export function Register() {
 
           <div>
             <label className="text-sm">{t('auth.password')}</label>
-            <Input {...register('password')} type="password" autoComplete="new-password" />
+            <PasswordInput {...register('password')} autoComplete="new-password" />
             <FieldError message={errors.password?.message} />
           </div>
         </fieldset>

@@ -129,11 +129,14 @@ export const ru = {
     title: 'Уведомления',
     markAll: 'Отметить все',
     empty: 'Нет уведомлений',
-    showAll: 'Показать все уведомления',
   },
   auth: {
     email: 'Email',
     password: 'Пароль',
+    passwordField: {
+      show: 'Показать пароль',
+      hide: 'Скрыть пароль',
+    },
     login: {
       title: 'Вход в платформу ликвидности',
       submit: 'Войти',
