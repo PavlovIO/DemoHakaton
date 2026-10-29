@@ -65,9 +65,13 @@ function buildQuery(query?: RequestOptions['query']): string {
   return s ? `?${s}` : ''
 }
 
+function buildUrl(path: keyof paths | string, { query, path: params }: Pick<RequestOptions, 'query' | 'path'> = {}) {
+  return `/api/v1${buildPath(String(path), params)}${buildQuery(query)}`
+}
+
 async function request<T>(path: keyof paths | string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, path: params, signal } = options
-  const url = `/api/v1${buildPath(String(path), params)}${buildQuery(query)}`
+  const { method = 'GET', body, signal } = options
+  const url = buildUrl(path, options)
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -130,4 +134,7 @@ export const api = {
 
   delete: <T>(path: keyof paths, opts?: Omit<RequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...opts, method: 'DELETE' }),
+
+  // Адрес для ссылки (<a href download>): браузер сам шлёт cookie сессии на GET.
+  url: (path: keyof paths, opts?: Pick<RequestOptions, 'query' | 'path'>) => buildUrl(path, opts),
 }

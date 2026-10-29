@@ -22,6 +22,11 @@ export function useMyDocuments() {
   })
 }
 
+// Скачивание — обычной ссылкой: файл отдаёт и владельцу, и администратору.
+export function documentFileUrl(id: string) {
+  return api.url('/documents/{documentId}/file', { path: { documentId: id } })
+}
+
 export function useUploadDocument() {
   const queryClient = useQueryClient()
   return useMutation({

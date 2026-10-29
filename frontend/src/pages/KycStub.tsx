@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   type Beneficiary,
   type KycDocumentType,
+  documentFileUrl,
   useDeleteDocument,
   useMyDocuments,
   useMyOrganization,
@@ -24,6 +25,7 @@ import { Button } from '@/components/ui/Button'
 import { FieldError } from '@/components/ui/FieldError'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
+import { DocumentList } from '@/components/kyc/DocumentList'
 
 // Обязательные документы; кредитору бэкенд дополнительно требует source_of_funds.
 // Подписи — kyc.documents.type.<тип> в словаре.
@@ -132,6 +134,21 @@ export function KycStub() {
           </Link>
         </div>
       )}
+
+      {!editable && <SubmittedDocuments />}
+    </div>
+  )
+}
+
+// После отправки форма закрыта, но компания видит, что отправила на проверку.
+function SubmittedDocuments() {
+  const { t } = useTranslation()
+  const { data: documents } = useMyDocuments()
+  if (!documents) return null
+  return (
+    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4">
+      <h3 className="text-lg font-medium text-gray-900 mb-4">{t('kyc.documents.submittedTitle')}</h3>
+      <DocumentList documents={documents} />
     </div>
   )
 }
@@ -175,7 +192,9 @@ function KycForm({ isLender }: { isLender: boolean }) {
                 <span className="text-sm font-medium text-gray-700">{t(`kyc.documents.type.${type}`)}</span>
                 {uploaded ? (
                   <span className="flex items-center gap-3 text-sm">
-                    <span className="text-green-600 font-medium">✓ {uploaded.file_name}</span>
+                    <a href={documentFileUrl(uploaded.id)} download className="text-green-600 font-medium hover:underline">
+                      ✓ {uploaded.file_name}
+                    </a>
                     <Button
                       size="sm"
                       variant="outline"

@@ -194,6 +194,8 @@ export const ru = {
     },
     documents: {
       title: 'Загрузка документов',
+      submittedTitle: 'Отправленные документы',
+      empty: 'Документы не загружены.',
       formats: 'PDF, PNG или JPEG, до 10 МБ.',
       upload: 'Загрузить файл',
       type: {

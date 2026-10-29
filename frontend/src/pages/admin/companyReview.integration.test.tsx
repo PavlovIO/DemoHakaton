@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { Navigation } from '@/components/Navigation'
+import { PrivateRoute } from '@/components/PrivateRoute'
+import { KycStub } from '@/pages/KycStub'
 import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, loginAs } from '@/test/integration/actors'
 import { kycSubmittedApplicant, submitApplication } from '@/test/integration/fixtures'
@@ -10,9 +12,34 @@ import type { components } from '@/lib/api-schema'
 type Schemas = components['schemas']
 
 // Одна компания в очереди проверки на весь файл: регистраций 10 в час с IP.
+let applicant: Awaited<ReturnType<typeof kycSubmittedApplicant>>
 beforeAll(async () => {
-  await kycSubmittedApplicant()
+  applicant = await kycSubmittedApplicant()
   await submitApplication()
+})
+
+// Ссылка ведёт на настоящий файл: GET с cookie сессии текущего актёра.
+async function expectDownloadable(link: HTMLElement) {
+  const res = await fetch(link.getAttribute('href')!)
+  expect(res.status).toBe(200)
+}
+
+describe('компания на проверке видит свои документы', () => {
+  it('после отправки на проверку документы видны и скачиваются', async () => {
+    applicant.resume()
+    render(
+      <PrivateRoute requireKyc={false}>
+        <KycStub />
+      </PrivateRoute>,
+      { wrapper: AppProviders },
+    )
+
+    await screen.findByText('Документы на проверке')
+    const charter = await screen.findByRole('link', { name: 'charter.pdf' })
+    expect(screen.getByRole('link', { name: 'address_proof.pdf' })).toBeTruthy()
+    expect(screen.queryByText('Загрузить файл')).toBeNull()
+    await expectDownloadable(charter)
+  })
 })
 
 describe('меню админа: размер очередей', () => {
