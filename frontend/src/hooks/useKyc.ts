@@ -1,7 +1,7 @@
 import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
-import { PAGE_SIZE, pagedList } from '@/lib/pagination'
+import { OBSERVE_ONLY, PAGE_SIZE, pagedList } from '@/lib/pagination'
 import { ME_KEY } from './meKey'
 
 export type KycDocument = components['schemas']['KycDocument']
@@ -9,17 +9,29 @@ export type KycDocumentType = components['schemas']['KycDocumentType']
 export type Beneficiary = components['schemas']['Beneficiary']
 type Organization = components['schemas']['Organization']
 type OrganizationPage = components['schemas']['OrganizationPage']
+export type OrganizationDetails = components['schemas']['OrganizationDetails']
 
 const DOCUMENTS_KEY = ['kyc-documents'] as const
 const ORGANIZATION_KEY = ['my-organization'] as const
 const KYC_QUEUE_KEY = ['kyc-queue'] as const
-export { KYC_QUEUE_KEY }
+const COMPANY_CARD_KEY = ['company-card'] as const
+export { KYC_QUEUE_KEY, COMPANY_CARD_KEY }
 
 export function useMyDocuments() {
   return useQuery({
     queryKey: DOCUMENTS_KEY,
     queryFn: () => api.get<KycDocument[]>('/organizations/me/documents'),
   })
+}
+
+// Файл документа отдаётся и владельцу, и администратору. Адрес — для href ссылки
+// (открыть в новой вкладке), скачивание по клику — через downloadDocumentFile.
+export function documentFileUrl(id: string) {
+  return api.url('/documents/{documentId}/file', { path: { documentId: id } })
+}
+
+export function downloadDocumentFile(id: string) {
+  return api.blob('/documents/{documentId}/file', { path: { documentId: id } })
 }
 
 export function useUploadDocument() {
@@ -79,17 +91,52 @@ export function useSubmitKyc() {
   })
 }
 
-export function useKycQueue() {
+// Компании, ждущие решения администратора; счётчик в меню считает тем же фильтром.
+const KYC_QUEUE_FILTER = { kyc_status: ['under_review'] }
+
+// observeOnly — бейдж в меню на странице очереди: читает total из её списка, не опрашивая.
+export function useKycQueue({ observeOnly = false } = {}) {
   return useInfiniteQuery({
     queryKey: KYC_QUEUE_KEY,
     queryFn: ({ pageParam }) =>
       api.get<OrganizationPage>('/admin/organizations', {
-        query: { kyc_status: ['under_review'], page: pageParam, page_size: PAGE_SIZE },
+        query: { ...KYC_QUEUE_FILTER, page: pageParam, page_size: PAGE_SIZE },
       }),
     ...pagedList<OrganizationPage>(),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
+    ...(observeOnly && OBSERVE_ONLY),
   })
+}
+
+// Размер очереди: total считает бэкенд, строки не нужны. Ключ под KYC_QUEUE_KEY —
+// решения по компаниям сбрасывают и его.
+export function useKycQueueCount() {
+  return useQuery({
+    queryKey: [...KYC_QUEUE_KEY, 'count'],
+    queryFn: () =>
+      api.get<OrganizationPage>('/admin/organizations', { query: { ...KYC_QUEUE_FILTER, page_size: 1 } }),
+    select: (page) => page.total,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+// Карточка компании: всё, что администратор смотрит перед решением по проверке.
+export function useCompanyCard(organizationId: string) {
+  return useQuery({
+    queryKey: [...COMPANY_CARD_KEY, organizationId],
+    queryFn: () =>
+      api.get<OrganizationDetails>('/admin/organizations/{organizationId}', { path: { organizationId } }),
+  })
+}
+
+// Решение меняет и очередь (компания уходит из неё), и карточку (статус, кнопки).
+function invalidateKycDecision(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: KYC_QUEUE_KEY }),
+    queryClient.invalidateQueries({ queryKey: COMPANY_CARD_KEY }),
+  ])
 }
 
 export function useApproveKyc() {
@@ -99,7 +146,7 @@ export function useApproveKyc() {
       api.post<Organization>('/admin/organizations/{organizationId}/kyc/approve', undefined, {
         path: { organizationId },
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: KYC_QUEUE_KEY }),
+    onSuccess: () => invalidateKycDecision(queryClient),
   })
 }
 
@@ -112,6 +159,6 @@ export function useRejectKyc() {
         { reason },
         { path: { organizationId: id } },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: KYC_QUEUE_KEY }),
+    onSuccess: () => invalidateKycDecision(queryClient),
   })
 }

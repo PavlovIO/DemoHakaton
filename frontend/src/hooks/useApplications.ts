@@ -1,7 +1,7 @@
-import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components, operations } from '@/lib/api-schema'
-import { PAGE_SIZE, pagedList } from '@/lib/pagination'
+import { OBSERVE_ONLY, PAGE_SIZE, pagedList } from '@/lib/pagination'
 
 export type Application = components['schemas']['Application']
 export type ApplicationCreate = components['schemas']['ApplicationCreate']
@@ -44,14 +44,30 @@ export function useMarketplace(filters: MarketplaceFilters = {}) {
   })
 }
 
-export function useModerationQueue() {
+const MODERATION_FILTER = { status: ['moderation'] }
+
+// observeOnly — бейдж в меню на странице очереди: читает total из её списка, не опрашивая.
+export function useModerationQueue({ observeOnly = false } = {}) {
   return useInfiniteQuery({
     queryKey: [...APPLICATIONS_KEY, 'moderation'],
     queryFn: ({ pageParam }) =>
       api.get<ApplicationPage>('/applications', {
-        query: { status: ['moderation'], sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
+        query: { ...MODERATION_FILTER, sort: 'created_at_desc', page: pageParam, page_size: PAGE_SIZE },
       }),
     ...pagedList<ApplicationPage>(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    ...(observeOnly && OBSERVE_ONLY),
+  })
+}
+
+// Размер очереди модерации: total считает бэкенд. Ключ под APPLICATIONS_KEY —
+// мутации заявок сбрасывают и его.
+export function useModerationQueueCount() {
+  return useQuery({
+    queryKey: [...APPLICATIONS_KEY, 'moderation', 'count'],
+    queryFn: () => api.get<ApplicationPage>('/applications', { query: { ...MODERATION_FILTER, page_size: 1 } }),
+    select: (page) => page.total,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   })

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAmlFlags, useResolveAmlFlag, type AmlFlag } from '@/hooks/useAdmin'
 import { handleApiError } from '@/lib/api-errors'
@@ -8,6 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { currentLocale } from '@/i18n'
+import { AML_ORGANIZATION_PARAM, companyCardLink } from './paths'
 
 type Schemas = components['schemas']
 type AmlResolution = 'false_positive' | 'confirmed' // enum requestBody adminResolveAmlFlag
@@ -131,15 +133,24 @@ function ResolveFlagModal({ flag, onClose }: ResolveModalProps) {
 }
 
 // Вкладка «AML-флаги» : таблица со severity-бейджами, фильтры status/severity,
-// снятие открытого флага через модалку с обязательным комментарием.
+// снятие открытого флага через модалку с обязательным комментарием. Из карточки компании
+// вкладка открывается с organization_id в URL — только флаги этой компании, в любом
+// статусе, как в карточке. key сбрасывает фильтры при смене компании или сбросе на все.
 export function AmlFlagsTab() {
-  const [status, setStatus] = useState<'' | Schemas['AmlFlagStatus']>('open')
+  const [searchParams] = useSearchParams()
+  const organizationId = searchParams.get(AML_ORGANIZATION_PARAM) ?? undefined
+  return <AmlFlagsList key={organizationId ?? ''} organizationId={organizationId} />
+}
+
+function AmlFlagsList({ organizationId }: { organizationId?: string }) {
+  const [status, setStatus] = useState<'' | Schemas['AmlFlagStatus']>(organizationId ? '' : 'open')
   const [severity, setSeverity] = useState<'' | Schemas['AmlSeverity']>('')
   const [resolvingFlag, setResolvingFlag] = useState<AmlFlag | null>(null)
 
   const flagsQuery = useAmlFlags({
     status: status || undefined,
     severity: severity || undefined,
+    organization_id: organizationId,
   })
   const flags = flagsQuery.data?.items ?? []
 
@@ -175,6 +186,12 @@ export function AmlFlagsTab() {
             ))}
           </select>
         </label>
+        {organizationId && (
+          <span className="text-sm text-gray-600">
+            Только {flags[0]?.organization.name ?? 'одна компания'} ·{' '}
+            <Link to="/admin/aml" className="text-blue-600 hover:underline">Все компании</Link>
+          </span>
+        )}
         <span className="ml-auto text-sm text-gray-500">Всего: {flagsQuery.data?.total ?? '—'}</span>
       </div>
 
@@ -194,7 +211,9 @@ export function AmlFlagsTab() {
             {flags.map((flag) => (
               <tr key={flag.id} className="hover:bg-gray-50 align-top">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">{flag.organization.name}</div>
+                  <Link {...companyCardLink(flag.organization.id, 'aml')} className="font-medium text-blue-600 hover:underline">
+                    {flag.organization.name}
+                  </Link>
                   <div className="text-xs text-gray-500">{flag.organization.country_code}</div>
                   {flag.application_id && (
                     <div className="mt-0.5 font-mono text-xs text-gray-400" title={flag.application_id}>
@@ -252,9 +271,8 @@ export function AmlFlagsTab() {
   )
 }
 
-export function AmlFlagsForApplication({ applicationId }: { applicationId: string }) {
-  const { data } = useAmlFlags({ application_id: applicationId })
-  const flags = data?.items ?? []
+// Компактный список флагов для карточек заявки и компании; у закрытых — чем закрыт.
+export function AmlFlagList({ flags }: { flags: AmlFlag[] }) {
   if (flags.length === 0) return null
   return (
     <ul className="mt-2 space-y-1">
@@ -262,8 +280,14 @@ export function AmlFlagsForApplication({ applicationId }: { applicationId: strin
         <li key={f.id} className="flex items-center gap-2 text-xs">
           <Badge variant={severityVariant(f.severity)}>{amlSeverityLabel(f.severity)}</Badge>
           <span className="text-gray-600">{amlRuleLabel(f.rule)}: {f.details}</span>
+          {f.status !== 'open' && <span className="text-gray-400">({amlFlagStatusLabel(f.status)})</span>}
         </li>
       ))}
     </ul>
   )
+}
+
+export function AmlFlagsForApplication({ applicationId }: { applicationId: string }) {
+  const { data } = useAmlFlags({ application_id: applicationId })
+  return <AmlFlagList flags={data?.items ?? []} />
 }

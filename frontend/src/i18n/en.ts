@@ -185,6 +185,8 @@ export const en: Dictionary = {
     },
     documents: {
       title: 'Documents',
+      submittedTitle: 'Submitted documents',
+      empty: 'No documents uploaded.',
       formats: 'PDF, PNG or JPEG, up to 10 MB.',
       upload: 'Upload file',
       type: {

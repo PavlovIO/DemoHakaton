@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
 import { PAGE_SIZE, pagedList } from '@/lib/pagination'
+import { COMPANY_CARD_KEY } from './useKyc'
 
 const LIST_POLL_INTERVAL_MS = 30_000
 
@@ -121,7 +122,12 @@ export function useResolveAmlFlag() {
         // flagId по контракту int64, путь подставляет строки.
         { path: { flagId: String(flagId) } },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ADMIN_AML_FLAGS_KEY }),
+    // Карточка компании показывает флаги, а открытый high блокирует подтверждение.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ADMIN_AML_FLAGS_KEY }),
+        queryClient.invalidateQueries({ queryKey: COMPANY_CARD_KEY }),
+      ]),
   })
 }
 

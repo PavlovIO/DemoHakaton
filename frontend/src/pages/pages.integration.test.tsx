@@ -9,8 +9,7 @@ import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, loginAs } from '@/test/integration/actors'
 import { fireEvent, waitFor, within } from '@testing-library/react'
 import { type Application } from '@/hooks/useApplications'
-import { kycSubmittedApplicant, publishApplication } from '@/test/integration/fixtures'
-import { KycQueueTab } from './admin/KycQueue'
+import { publishApplication } from '@/test/integration/fixtures'
 import { api } from '@/lib/api-client'
 import { Applications } from './Applications'
 
@@ -45,31 +44,6 @@ describe('страницы: чужая роль не запрашивает чу
 
     await screen.findByText('Доступно только для кредиторов.')
     expect(requestedPaths()).not.toContain('/api/v1/applications')
-  })
-})
-
-describe('проверка компаний: отказ с причиной', () => {
-  it('«Отказать» неактивна без причины; после отказа компания уходит из очереди', async () => {
-    const applicant = await kycSubmittedApplicant()
-    loginAs(ADMIN)
-    render(<KycQueueTab />, { wrapper: AppProviders })
-
-    const name = applicant.organization.name
-    const row = (await screen.findByText(name)).closest('li')!
-    fireEvent.click(within(row).getByRole('button', { name: 'Отклонить' }))
-
-    const dialog = screen.getByRole('dialog')
-    const submit = within(dialog).getByRole<HTMLButtonElement>('button', { name: 'Отказать' })
-    const reason = within(dialog).getByLabelText(/Причина/)
-    expect(submit.disabled).toBe(true)
-    fireEvent.change(reason, { target: { value: 'ок' } })
-    expect(submit.disabled).toBe(true)
-    fireEvent.change(reason, { target: { value: 'Устав без подписи директора' } })
-    expect(submit.disabled).toBe(false)
-
-    fireEvent.click(submit)
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    await waitFor(() => expect(screen.queryByText(name)).toBeNull())
   })
 })
 

@@ -12,6 +12,7 @@ import {
   ScrollText,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { type AdminQueue, QueueCountBadge } from './QueueCountBadge'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
@@ -19,6 +20,7 @@ interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
+  queue?: AdminQueue
 }
 
 // Функция, а не константа: подписи клиентов берутся из словаря на текущем языке.
@@ -37,8 +39,9 @@ const navigationConfig = (t: TFunction): Record<UserRole, NavItem[]> => ({
   ],
   admin: [
     { to: '/admin/analytics', label: 'Аналитика', icon: <BarChart3 className="h-4 w-4" /> },
-    { to: '/admin/kyc', label: 'Проверка компаний', icon: <CheckCircle className="h-4 w-4" /> },
-    { to: '/admin/applications', label: 'Модерация заявок', icon: <FileText className="h-4 w-4" /> },
+    // Бейдж очереди есть только у админа: у других ролей запросов счётчиков нет.
+    { to: '/admin/kyc', label: 'Проверка компаний', icon: <CheckCircle className="h-4 w-4" />, queue: 'kyc' },
+    { to: '/admin/applications', label: 'Модерация заявок', icon: <FileText className="h-4 w-4" />, queue: 'moderation' },
     { to: '/admin/aml', label: 'AML-флаги', icon: <AlertTriangle className="h-4 w-4" /> },
     { to: '/admin/users', label: 'Пользователи', icon: <Users className="h-4 w-4" /> },
     { to: '/admin/audit', label: 'Аудит', icon: <ScrollText className="h-4 w-4" /> },
@@ -59,6 +62,8 @@ export function Navigation() {
         <NavLink
           key={item.to}
           to={item.to}
+          // Подпись скрыта до lg — без явного имени ссылка читалась бы как одно число бейджа.
+          aria-label={item.label}
           className={({ isActive }) =>
             cn(
               'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -68,8 +73,15 @@ export function Navigation() {
             )
           }
         >
-          {item.icon}
-          <span className="hidden lg:inline">{item.label}</span>
+          {({ isActive }) => (
+            <>
+              <span className="relative">
+                {item.icon}
+                {item.queue && <QueueCountBadge queue={item.queue} onQueuePage={isActive} />}
+              </span>
+              <span className="hidden lg:inline">{item.label}</span>
+            </>
+          )}
         </NavLink>
       ))}
     </nav>

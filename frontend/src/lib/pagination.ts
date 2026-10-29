@@ -9,6 +9,14 @@ type Schemas = components['schemas']
 type ListPage = Schemas[Extract<keyof Schemas, `${string}Page`>]
 type ItemOf<P> = P extends { items: (infer T)[] } ? T : never
 
+// Наблюдатель, который только читает кэш списка, а опрашивает его другой (страница списка):
+// без запроса на монтировании, по таймеру и при фокусе окна. Пустой кэш всё равно загрузит.
+export const OBSERVE_ONLY = {
+  refetchOnMount: false,
+  refetchOnWindowFocus: false,
+  refetchInterval: false,
+} as const
+
 // Общие опции useInfiniteQuery для списков API c page/page_size. select склеивает
 // загруженные страницы, и экран читает data.items / data.total как у обычного запроса.
 export function pagedList<P extends ListPage>() {
