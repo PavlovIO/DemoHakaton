@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 
 const LINKS = [
-  { to: '/admin/kyc', label: 'Очередь KYC' },
+  { to: '/admin/kyc', label: 'Проверка компаний' },
   { to: '/admin/applications', label: 'Модерация заявок' },
 ]
 

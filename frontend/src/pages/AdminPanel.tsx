@@ -2,7 +2,7 @@ import { NavLink, Navigate, Outlet } from 'react-router-dom'
 import { useAdminQueueCounts } from './admin/Counts'
 
 const TABS = [
-  { path: '/admin/kyc', totalKey: 'kyc' as const, label: 'Очередь KYC' },
+  { path: '/admin/kyc', totalKey: 'kyc' as const, label: 'Проверка компаний' },
   { path: '/admin/applications', totalKey: 'moderation' as const, label: 'Модерация заявок' },
 ]
 
@@ -16,7 +16,7 @@ export function AdminPanel() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Панель администратора</h1>
-        <p className="mt-1 text-sm text-gray-500">Управление верификацией и модерацией платформы</p>
+        <p className="mt-1 text-sm text-gray-500">Проверка компаний и модерация заявок</p>
       </div>
 
       {/* Табы */}

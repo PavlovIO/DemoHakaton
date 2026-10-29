@@ -9,13 +9,13 @@ export function ProfileStub() {
       <div className="mx-auto max-w-xl p-6">
         <h1 className="text-2xl font-semibold">Профиль компании</h1>
         <p className="mt-2 text-gray-600">
-          Профиль уже заполнен. Перейдите к верификации.
+          Профиль уже заполнен. Перейдите к проверке компании.
         </p>
         <Link
           to="/profile/kyc"
           className="mt-4 inline-block rounded bg-blue-600 px-4 py-2 text-sm text-white"
         >
-          Перейти к KYC →
+          Перейти к проверке компании →
         </Link>
       </div>
     )
@@ -37,7 +37,7 @@ export function ProfileStub() {
         <p className="font-medium">Профиль компании не заполнен</p>
         <p className="mt-1">
           Для работы с заявками и офферами необходимо заполнить профиль компании
-          и пройти верификацию.
+          и пройти проверку компании.
         </p>
       </div>
 
@@ -46,7 +46,7 @@ export function ProfileStub() {
         <ul className="mt-2 list-inside list-disc space-y-1">
           <li>Форма редактирования профиля компании</li>
           <li>Загрузка учредительных документов</li>
-          <li>Отправка на верификацию администратору</li>
+          <li>Отправка компании на проверку администратору</li>
         </ul>
       </div>
 

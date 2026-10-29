@@ -14,7 +14,9 @@ import {
   useUpdateBeneficiaries,
   useUploadDocument,
 } from '@/hooks/useKyc'
+import type { components } from '@/lib/api-schema'
 import { handleApiError } from '@/lib/api-errors'
+import { kycStatusLabel } from '@/lib/labels'
 import { formatPercent } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -30,6 +32,13 @@ const REQUIRED_DOCS: { type: KycDocumentType; label: string }[] = [
 const LENDER_DOCS: { type: KycDocumentType; label: string }[] = [
   { type: 'source_of_funds', label: 'Подтверждение источника средств' },
 ]
+
+const KYC_BADGE_VARIANT: Record<components['schemas']['KycStatus'], 'default' | 'warning' | 'success' | 'danger'> = {
+  draft: 'default',
+  under_review: 'warning',
+  verified: 'success',
+  rejected: 'danger',
+}
 
 const beneficiarySchema = z.object({
   full_name: z.string().trim().min(1, 'Укажите ФИО'),
@@ -76,7 +85,7 @@ export function KycStub() {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <h1 className="text-2xl font-semibold mb-2">Верификация компании (KYC)</h1>
+      <h1 className="text-2xl font-semibold mb-2">Проверка компании</h1>
 
       <div className="mb-6 rounded-lg bg-white p-4 shadow border border-gray-200">
         <h2 className="text-lg font-medium text-gray-900">{organization.name}</h2>
@@ -87,16 +96,13 @@ export function KycStub() {
         </div>
         <div className="mt-4 flex items-center gap-2">
           <span className="text-sm font-medium text-gray-700">Статус:</span>
-          {status === 'draft' && <Badge variant="default">Черновик</Badge>}
-          {status === 'under_review' && <Badge variant="warning">На проверке</Badge>}
-          {status === 'verified' && <Badge variant="success">Верифицирована</Badge>}
-          {status === 'rejected' && <Badge variant="danger">Отклонена</Badge>}
+          <Badge variant={KYC_BADGE_VARIANT[status]}>{kycStatusLabel(status)}</Badge>
         </div>
       </div>
 
       {status === 'rejected' && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
-          <h3 className="font-medium text-red-800">Верификация отклонена</h3>
+          <h3 className="font-medium text-red-800">Проверка не пройдена</h3>
           {organization.kyc_reject_reason && (
             <p className="mt-1 text-sm text-red-700">Причина: {organization.kyc_reject_reason}</p>
           )}
@@ -117,7 +123,7 @@ export function KycStub() {
 
       {status === 'verified' && (
         <div className="rounded-lg border border-green-200 bg-green-50 p-6 text-center">
-          <h3 className="text-lg font-medium text-green-800 mb-2">Компания верифицирована!</h3>
+          <h3 className="text-lg font-medium text-green-800 mb-2">Компания подтверждена!</h3>
           <p className="text-green-700 mb-6">
             Теперь вам доступны все функции платформы: создание заявок, предложений и сделок.
           </p>

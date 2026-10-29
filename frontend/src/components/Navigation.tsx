@@ -34,7 +34,7 @@ const navigationConfig: Record<UserRole, NavItem[]> = {
   ],
   admin: [
     { to: '/admin/analytics', label: 'Аналитика', icon: <BarChart3 className="h-4 w-4" /> },
-    { to: '/admin/kyc', label: 'Очередь KYC', icon: <CheckCircle className="h-4 w-4" /> },
+    { to: '/admin/kyc', label: 'Проверка компаний', icon: <CheckCircle className="h-4 w-4" /> },
     { to: '/admin/applications', label: 'Модерация заявок', icon: <FileText className="h-4 w-4" /> },
     { to: '/admin/aml', label: 'AML-флаги', icon: <AlertTriangle className="h-4 w-4" /> },
     { to: '/admin/users', label: 'Пользователи', icon: <Users className="h-4 w-4" /> },
