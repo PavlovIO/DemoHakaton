@@ -78,6 +78,18 @@ export function kycStatusLabel(status: KycStatus | string): string {
   return i18n.t(key, { defaultValue: status })
 }
 
+// Цвет бейджа статуса проверки: один у компании в её профиле и у админа в карточке компании.
+const KYC_STATUS_VARIANT: Record<KycStatus, 'default' | 'warning' | 'success' | 'danger'> = {
+  draft: 'default',
+  under_review: 'warning',
+  verified: 'success',
+  rejected: 'danger',
+}
+
+export function kycStatusVariant(status: KycStatus) {
+  return KYC_STATUS_VARIANT[status]
+}
+
 const FALLBACK_COUNTRY_NAME_RU: Partial<Record<CountryCode, string>> = {
   DE: 'Германия',
   CN: 'Китай',

@@ -16,10 +16,9 @@ import {
   useUpdateBeneficiaries,
   useUploadDocument,
 } from '@/hooks/useKyc'
-import type { components } from '@/lib/api-schema'
 import { validationMessage } from '@/i18n'
 import { handleApiError } from '@/lib/api-errors'
-import { kycStatusLabel } from '@/lib/labels'
+import { kycStatusLabel, kycStatusVariant } from '@/lib/labels'
 import { formatPercent } from '@/lib/money'
 import { Button } from '@/components/ui/Button'
 import { FieldError } from '@/components/ui/FieldError'
@@ -31,13 +30,6 @@ import { DocumentList } from '@/components/kyc/DocumentList'
 // Подписи — kyc.documents.type.<тип> в словаре.
 const REQUIRED_DOCS: KycDocumentType[] = ['charter', 'registration_certificate', 'address_proof', 'beneficiaries_register']
 const LENDER_DOCS: KycDocumentType[] = ['source_of_funds']
-
-const KYC_BADGE_VARIANT: Record<components['schemas']['KycStatus'], 'default' | 'warning' | 'success' | 'danger'> = {
-  draft: 'default',
-  under_review: 'warning',
-  verified: 'success',
-  rejected: 'danger',
-}
 
 const beneficiarySchema = z.object({
   full_name: z.string().trim().min(1, validationMessage('validation.fullName')),
@@ -95,7 +87,7 @@ export function KycStub() {
         </div>
         <div className="mt-4 flex items-center gap-2">
           <span className="text-sm font-medium text-gray-700">{t('kyc.status')}</span>
-          <Badge variant={KYC_BADGE_VARIANT[status]}>{kycStatusLabel(status)}</Badge>
+          <Badge variant={kycStatusVariant(status)}>{kycStatusLabel(status)}</Badge>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { type OrganizationDetails, useCompanyCard } from '@/hooks/useKyc'
-import { kycStatusLabel, roleLabel, userStatusLabel } from '@/lib/labels'
+import { kycStatusLabel, kycStatusVariant, roleLabel, userStatusLabel } from '@/lib/labels'
 import { formatPercent } from '@/lib/money'
 import { currentLocale } from '@/i18n'
 import { ApiError } from '@/lib/api-client'
@@ -11,13 +11,6 @@ import { AmlFlagList } from './AmlFlagsTab'
 import { CompanyDecision } from './CompanyDecision'
 
 type RegistryCheck = NonNullable<OrganizationDetails['registry_check']>
-
-const KYC_BADGE_VARIANT: Record<OrganizationDetails['kyc_status'], 'default' | 'warning' | 'success' | 'danger'> = {
-  draft: 'default',
-  under_review: 'warning',
-  verified: 'success',
-  rejected: 'danger',
-}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -77,7 +70,7 @@ export function CompanyCard() {
           <h2 className="text-xl font-semibold text-gray-900">{company.name}</h2>
           <div className="mt-2 flex items-center gap-2">
             <Badge variant="default">{roleLabel(company.type)}</Badge>
-            <Badge variant={KYC_BADGE_VARIANT[company.kyc_status]}>{kycStatusLabel(company.kyc_status)}</Badge>
+            <Badge variant={kycStatusVariant(company.kyc_status)}>{kycStatusLabel(company.kyc_status)}</Badge>
           </div>
           {company.kyc_status === 'rejected' && company.kyc_reject_reason && (
             <p className="mt-2 text-sm text-danger">Причина отказа: {company.kyc_reject_reason}</p>
