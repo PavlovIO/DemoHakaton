@@ -24,9 +24,14 @@ export function useMyDocuments() {
   })
 }
 
-// Скачивание — обычной ссылкой: файл отдаёт и владельцу, и администратору.
+// Файл документа отдаётся и владельцу, и администратору. Адрес — для href ссылки
+// (открыть в новой вкладке), скачивание по клику — через downloadDocumentFile.
 export function documentFileUrl(id: string) {
   return api.url('/documents/{documentId}/file', { path: { documentId: id } })
+}
+
+export function downloadDocumentFile(id: string) {
+  return api.blob('/documents/{documentId}/file', { path: { documentId: id } })
 }
 
 export function useUploadDocument() {

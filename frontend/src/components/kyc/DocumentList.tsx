@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
-import { type KycDocument, documentFileUrl } from '@/hooks/useKyc'
+import type { KycDocument } from '@/hooks/useKyc'
 import { currentLocale } from '@/i18n'
+import { DocumentFileLink } from './DocumentFileLink'
 
 function formatSize(bytes: number) {
   const unit = bytes < 1024 * 1024 ? 'kilobyte' : 'megabyte'
@@ -23,9 +24,7 @@ export function DocumentList({ documents }: { documents: KycDocument[] }) {
         <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
           <span className="font-medium text-gray-700">{t(`kyc.documents.type.${doc.doc_type}`)}</span>
           <span className="flex items-center gap-3">
-            <a href={documentFileUrl(doc.id)} download className="text-blue-600 hover:underline">
-              {doc.file_name}
-            </a>
+            <DocumentFileLink doc={doc} className="text-blue-600 hover:underline" />
             <span className="text-gray-500">{formatSize(doc.size_bytes)}</span>
             <span className="text-gray-500">{new Date(doc.uploaded_at).toLocaleDateString(currentLocale())}</span>
           </span>

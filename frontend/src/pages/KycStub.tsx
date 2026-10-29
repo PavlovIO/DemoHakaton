@@ -8,7 +8,6 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   type Beneficiary,
   type KycDocumentType,
-  documentFileUrl,
   useDeleteDocument,
   useMyDocuments,
   useMyOrganization,
@@ -25,6 +24,7 @@ import { FieldError } from '@/components/ui/FieldError'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { DocumentList } from '@/components/kyc/DocumentList'
+import { DocumentFileLink } from '@/components/kyc/DocumentFileLink'
 
 // Обязательные документы; кредитору бэкенд дополнительно требует source_of_funds.
 // Подписи — kyc.documents.type.<тип> в словаре.
@@ -184,9 +184,9 @@ function KycForm({ isLender }: { isLender: boolean }) {
                 <span className="text-sm font-medium text-gray-700">{t(`kyc.documents.type.${type}`)}</span>
                 {uploaded ? (
                   <span className="flex items-center gap-3 text-sm">
-                    <a href={documentFileUrl(uploaded.id)} download className="text-green-600 font-medium hover:underline">
+                    <DocumentFileLink doc={uploaded} className="text-green-600 font-medium hover:underline">
                       ✓ {uploaded.file_name}
-                    </a>
+                    </DocumentFileLink>
                     <Button
                       size="sm"
                       variant="outline"

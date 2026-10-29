@@ -39,6 +39,8 @@ interface RequestOptions {
   // Значения для {param} в шаблоне пути из OpenAPI: '/offers/{offerId}/accept', { path: { offerId } }
   path?: Record<string, string>
   signal?: AbortSignal
+  // Тело успешного ответа — файл, а не JSON (скачивание документа).
+  responseType?: 'blob'
 }
 
 function buildPath(template: string, params: Record<string, string> = {}): string {
@@ -98,6 +100,7 @@ async function request<T>(path: keyof paths | string, options: RequestOptions = 
 
   // 204 No Content (например, logout)
   if (res.status === 204) return undefined as T
+  if (res.ok && options.responseType === 'blob') return (await res.blob()) as T
 
   const data = await res.json().catch(() => null)
 
@@ -135,6 +138,10 @@ export const api = {
   delete: <T>(path: keyof paths, opts?: Omit<RequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...opts, method: 'DELETE' }),
 
-  // Адрес для ссылки (<a href download>): браузер сам шлёт cookie сессии на GET.
+  // Файл целиком: ошибки — как у остальных запросов (401 ведёт на логин, иначе ApiError).
+  blob: (path: keyof paths, opts?: Omit<RequestOptions, 'method' | 'body' | 'responseType'>) =>
+    request<Blob>(path, { ...opts, method: 'GET', responseType: 'blob' }),
+
+  // Адрес для ссылки: браузер сам шлёт cookie сессии на GET.
   url: (path: keyof paths, opts?: Pick<RequestOptions, 'query' | 'path'>) => buildUrl(path, opts),
 }

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { KycQueueTab } from './KycQueue'
 import { ApplicationsModerationTab } from './ApplicationsModerationTab'
 import { CompanyCard } from './CompanyCard'
@@ -53,6 +54,7 @@ function renderAdmin(path: string, { withMenu = false } = {}) {
   return render(
     <AppProviders initialEntries={[path]}>
       {withMenu && <Navigation />}
+      <Toaster />
       <Routes>
         <Route path="/admin/kyc" element={<KycQueueTab />} />
         <Route path="/admin/applications" element={<ApplicationsModerationTab />} />
@@ -74,6 +76,23 @@ describe('карточка компании', () => {
     expect(screen.getByText(/Петров Пётр Петрович · RU · 100/)).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Сверка с реестром' })).toBeTruthy()
     await expectDownloadable(charter)
+  })
+
+  // Файлы сида на месте, поэтому 404 отдаём на границе сети — тем же телом, что бэкенд.
+  it('файл документа недоступен — админ видит ошибку, а не битую загрузку', async () => {
+    const realFetch = globalThis.fetch
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) =>
+      /\/documents\/[^/]+\/file$/.test(String(input))
+        ? Promise.resolve(Response.json({ error: { code: 'NOT_FOUND', message: 'document not found' } }, { status: 404 }))
+        : realFetch(input, init),
+    )
+    try {
+      renderAdmin('/admin/organizations/55555555-5555-5555-5555-555555555555')
+      fireEvent.click(await screen.findByRole('link', { name: 'Charter_Gamma.pdf' }))
+      expect(await screen.findByText('Запись не найдена')).toBeTruthy()
+    } finally {
+      fetchSpy.mockRestore()
+    }
   })
 
   it('в строке очереди нет кнопок решения: решение — только в карточке', async () => {
