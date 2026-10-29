@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useAdminUsers, useBlockUser, useUnblockUser, type AdminUser } from '@/hooks/useAdmin'
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { currentLocale } from '@/i18n'
+import { companyCardLink } from './paths'
 
 type Schemas = components['schemas']
 
@@ -157,6 +159,7 @@ export function UsersTab() {
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-4 py-3 text-left font-medium text-gray-500">UUID</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Email</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Роль</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Статус</th>
@@ -169,6 +172,20 @@ export function UsersTab() {
               const isSelf = u.id === currentUser?.id
               return (
                 <tr key={u.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <span className="font-medium text-gray-900">
+                      {u.organization_id ? (
+                        <Link 
+                          {...companyCardLink(u.organization_id, 'users')} 
+                          className="font-semibold text-blue-600 hover:underline"
+                        >
+                          {u.id}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold">{u.id}</span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <span className="font-medium text-gray-900">{u.email}</span>
                     {isSelf && <span className="ml-2 text-xs text-gray-400">(вы)</span>}
