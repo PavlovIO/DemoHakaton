@@ -16,8 +16,8 @@ import {
   LoadingRows,
   StatCard,
   StatusBadge,
-  useDashboardKyc,
 } from './common'
+import { useDashboardKyc } from './useDashboardKyc'
 
 // Витрина дашборда — топ newest; точные счётчики KPI берутся из total count-запросов.
 const TOP_ROWS = 5

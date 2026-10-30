@@ -14,8 +14,8 @@ import {
   LoadingRows,
   StatCard,
   StatusBadge,
-  useDashboardKyc,
 } from './common'
+import { useDashboardKyc } from './useDashboardKyc'
 
 // Витрина дашборда — топ загруженных страниц; точные суммы по всем записям берутся из total.
 const TOP_ROWS = 5

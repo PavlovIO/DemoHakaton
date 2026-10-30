@@ -5,25 +5,10 @@ import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 import type { components } from '@/lib/api-schema'
 import { Badge } from '@/components/ui/Badge'
 import { applicationStatusLabel } from '@/lib/labels'
-import { useMyOrganization } from '@/hooks/useKyc'
-import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
+import type { KycStatus } from './useDashboardKyc'
 
 type ApplicationStatus = components['schemas']['ApplicationStatus']
-export type KycStatus = components['schemas']['KycStatus']
-
-// Причина отказа KYC есть только в GET /organizations/me; в /auth/me её нет,
-// поэтому при статусе rejected догружаем полный профиль (запрос включён только в этом случае).
-export function useDashboardKyc(): { status: KycStatus | null; rejectReason: string | null } {
-  const { organization } = useAuth()
-  const status = organization?.kyc_status ?? null
-  const rejected = status === 'rejected'
-  const detailsQuery = useMyOrganization({ enabled: rejected })
-  return {
-    status,
-    rejectReason: rejected ? detailsQuery.data?.kyc_reject_reason ?? null : null,
-  }
-}
 
 const APPLICATION_BADGE_VARIANT: Record<ApplicationStatus, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
   draft: 'default',
