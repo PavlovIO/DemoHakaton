@@ -210,15 +210,16 @@ function BorrowerApplications() {
                   <div className="flex flex-col gap-2 sm:w-56 sm:shrink-0 lg:w-auto lg:flex-row lg:items-center">
                     {(app.status === 'draft' || app.status === 'rejected') && (
                       <>
-                        <Button variant="outline" disabled={updateApplication.isPending} onClick={() => openEditModal(app)}>
+                        <Button variant="outline" className="w-full text-wrap" disabled={updateApplication.isPending} onClick={() => openEditModal(app)}>
                           Редактировать
                         </Button>
-                        <Button disabled={submitApplication.isPending} onClick={() => handleSubmit(app.id)}>
+                        <Button className="w-full text-wrap" disabled={submitApplication.isPending} onClick={() => handleSubmit(app.id)}>
                           Отправить на модерацию
                         </Button>
                       </>
                     )}
                     <Button
+                      className="w-full text-wrap"
                       variant={appOffersCount > 0 && app.status === 'published' ? 'primary' : 'outline'}
                       onClick={() => setSelectedAppForOffers(app)}
                     >
@@ -279,12 +280,13 @@ function BorrowerApplications() {
                 <label className="block text-sm font-medium text-gray-700">Назначение</label>
                 <textarea required rows={3} value={formData.purpose} onChange={e => setFormData({...formData, purpose: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Закупка оборудования..."></textarea>
               </div>
+              {/* На мобильных кнопки друг под другом во всю ширину (sm:flex-row вернёт строку от 640px). */}
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-                <Button type="button" variant="outline" onClick={closeFormModal}>Отмена</Button>
+                <Button type="button" variant="outline" className="w-full text-wrap sm:w-auto" onClick={closeFormModal}>Отмена</Button>
                 {editingApp ? (
-                  <Button type="submit" disabled={updateApplication.isPending}>Сохранить</Button>
+                  <Button type="submit" className="w-full text-wrap sm:w-auto" disabled={updateApplication.isPending}>Сохранить</Button>
                 ) : (
-                  <Button type="submit" disabled={createApplication.isPending}>Отправить на модерацию</Button>
+                  <Button type="submit" className="w-full text-wrap sm:w-auto" disabled={createApplication.isPending}>Отправить на модерацию</Button>
                 )}
               </div>
             </form>

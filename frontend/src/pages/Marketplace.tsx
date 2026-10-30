@@ -226,8 +226,8 @@ function LenderMarketplace() {
               </div>
 
               <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:gap-3">
-                <Button type="button" variant="outline" onClick={() => setSelectedApp(null)}>{t('common.cancel')}</Button>
-                <Button type="submit" disabled={createOffer.isPending}>{t('marketplace.offer.submit')}</Button>
+                <Button type="button" variant="outline" className="w-full text-wrap sm:w-auto" onClick={() => setSelectedApp(null)}>{t('common.cancel')}</Button>
+                <Button type="submit" className="w-full text-wrap sm:w-auto" disabled={createOffer.isPending}>{t('marketplace.offer.submit')}</Button>
               </div>
             </form>
           </div>
