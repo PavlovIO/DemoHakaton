@@ -15,9 +15,7 @@ export function Deals() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">{t('deals.title')}</h1>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900">{t('deals.title')}</h1>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" className="divide-y divide-gray-200">
@@ -25,7 +23,7 @@ export function Deals() {
             <li key={deal.id} className="p-4 hover:bg-gray-50">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-3 mb-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-3">
                     <span className="font-mono text-sm text-gray-500">{deal.number}</span>
                     <Badge variant="success">{t('deals.agreed')}</Badge>
                   </div>

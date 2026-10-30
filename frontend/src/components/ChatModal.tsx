@@ -42,11 +42,11 @@ export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyN
       <div className="w-full max-w-lg rounded-lg bg-white shadow-xl flex flex-col h-[600px] max-h-[90vh]">
 
         <div className="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-lg">
-          <div>
+          <div className="min-w-0">
             <h3 className="text-lg font-semibold text-gray-900">{t('chat.title')}</h3>
             <p className="text-xs text-gray-500">{t('chat.application', { number: offerNumber })}</p>
             {counterpartyName && (
-              <p className="text-xs text-gray-500 font-medium">{t('chat.counterparty', { name: counterpartyName })}</p>
+              <p className="break-words text-xs text-gray-500 font-medium">{t('chat.counterparty', { name: counterpartyName })}</p>
             )}
           </div>
           <Button variant="outline" onClick={onClose}>{t('common.close')}</Button>

@@ -155,7 +155,7 @@ export function UsersTab() {
         <span className="ml-auto text-sm text-gray-500">Всего: {usersQuery.data?.total ?? '—'}</span>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+      <div className="bg-white shadow overflow-x-auto sm:rounded-md">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>

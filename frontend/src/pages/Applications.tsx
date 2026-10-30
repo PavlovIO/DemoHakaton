@@ -178,7 +178,7 @@ function BorrowerApplications() {
 
   return (
     <div className="space-y-6 relative">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Мои заявки</h1>
         <Button onClick={openCreateModal}>+ Создать заявку</Button>
       </div>
@@ -191,22 +191,23 @@ function BorrowerApplications() {
             return (
               <li key={app.id} className="p-4 hover:bg-gray-50">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
                       <span className="font-mono text-sm text-gray-500">{app.number}</span>
                       {getStatusBadge(app.status)}
                     </div>
-                    <p className="mt-1 text-sm font-medium text-gray-900">{app.purpose}</p>
+                    <p className="mt-1 break-words text-sm font-medium text-gray-900">{app.purpose}</p>
                     {app.status === 'rejected' && app.moderation_comment && (
                       <p className="mt-1 text-sm text-danger">Причина отказа: {app.moderation_comment}</p>
                     )}
-                    <div className="mt-1 text-sm text-gray-500 flex gap-4">
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
                       <span>{formatMoney(app.amount, app.currency)}</span>
                       <span>Срок: {app.term_months} мес.</span>
                       <span>Страна: {app.target_country_code}</span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  {/* На мобильных кнопки складываются в колонку и занимают всю ширину — зона нажатия под палец. */}
+                  <div className="flex flex-col gap-2 sm:w-56 sm:shrink-0 lg:w-auto lg:flex-row lg:items-center">
                     {(app.status === 'draft' || app.status === 'rejected') && (
                       <>
                         <Button variant="outline" disabled={updateApplication.isPending} onClick={() => openEditModal(app)}>
@@ -244,10 +245,10 @@ function BorrowerApplications() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Сумма и валюта</label>
                 <div className="mt-1 flex gap-2">
-                   <input required type="number" min="1" max={MAX_MONEY} step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="500000.00" />
-                  <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as Application['currency']})} className="rounded-md border-gray-300 shadow-sm p-2 border">
+                   <input required type="number" min="1" max={MAX_MONEY} step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="block w-full min-w-0 rounded-md border-gray-300 shadow-sm p-2 border" placeholder="500000.00" />
+                  <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value as Application['currency']})} className="w-24 shrink-0 rounded-md border-gray-300 shadow-sm p-2 border">
                      {currencyOptions.map((c) => (
-                      <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+                      <option key={c.code} value={c.code}>{c.code}</option>
                     ))}
                   </select>
                 </div>
@@ -278,7 +279,7 @@ function BorrowerApplications() {
                 <label className="block text-sm font-medium text-gray-700">Назначение</label>
                 <textarea required rows={3} value={formData.purpose} onChange={e => setFormData({...formData, purpose: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Закупка оборудования..."></textarea>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
                 <Button type="button" variant="outline" onClick={closeFormModal}>Отмена</Button>
                 {editingApp ? (
                   <Button type="submit" disabled={updateApplication.isPending}>Сохранить</Button>
@@ -295,8 +296,8 @@ function BorrowerApplications() {
       {selectedAppForOffers && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-4">
-              <div>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <h2 className="text-xl font-semibold">Предложения по заявке {selectedAppForOffers.number}</h2>
                 <p className="text-sm text-gray-500">Запрошено: {formatMoney(selectedAppForOffers.amount, selectedAppForOffers.currency)}</p>
               </div>
@@ -309,9 +310,9 @@ function BorrowerApplications() {
               <div className="space-y-4">
                 {currentAppOffers.map(offer => (
                   <div key={offer.id} className="border rounded-lg p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-gray-900">{offer.lender.name}</span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="break-words font-semibold text-gray-900">{offer.lender.name}</span>
                         {offer.status === 'sent' && <Badge variant="warning">Активен</Badge>}
                         {offer.status === 'accepted' && <Badge variant="success">Принят</Badge>}
                         {offer.status === 'rejected' && <Badge variant="danger">Отклонен</Badge>}
@@ -324,10 +325,11 @@ function BorrowerApplications() {
                       </p>
                       <p className="text-xs text-gray-400">Комиссия платформы фиксирована и не может быть изменена.</p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
+                    {/* На мобильных кнопки друг под другом на всю ширину; на десктопе (>1024px) — как раньше, в строку. */}
+                    <div className="flex w-full flex-col gap-2 sm:flex-row sm:w-auto md:w-full lg:w-auto lg:flex-row">
+                      <Button className="w-full lg:w-auto" variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
                       {offer.status === 'sent' && selectedAppForOffers.status === 'published' && (
-                        <Button disabled={acceptOffer.isPending} onClick={() => handleAcceptOffer(offer)}>Принять</Button>
+                        <Button className="w-full lg:w-auto" disabled={acceptOffer.isPending} onClick={() => handleAcceptOffer(offer)}>Принять</Button>
                       )}
                     </div>
                   </div>
