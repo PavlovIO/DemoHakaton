@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next'
-import { useMyApplications, type Application } from '@/hooks/useApplications'
 import { useDeals } from '@/hooks/useDeals'
 import { useNotifications } from '@/hooks/useNotifications'
 import { formatMoney } from '@/lib/money'
 import { currentLocale } from '@/i18n'
+import { useMyApplications, type Application } from '@/hooks/useApplications'
+import { OFFERS_KEY } from '@/hooks/useOffers'
+import { useListTotal } from './useCounters'
 import {
   DashboardSection,
   EmptyRow,
@@ -12,17 +14,19 @@ import {
   LoadingRows,
   StatCard,
   StatusBadge,
+  useDashboardKyc,
 } from './common'
 
-// Верхние пороги списков: счётчики KPI считают бэкенд по всем страницам, а здесь — только витрина.
+// Витрина дашборда — топ загруженных страниц; точные суммы по всем записям берутся из total.
 const TOP_ROWS = 5
 
-export function BorrowerDashboard({ kycStatus, rejectReason }: { kycStatus?: string; rejectReason?: string | null }) {
+export function BorrowerDashboard() {
   const { t } = useTranslation()
+  const { status: kycStatus, rejectReason } = useDashboardKyc()
 
-  // Данные берутся из кэша тех же запросов, что и страницы «Мои заявки» и «Сделки»:
-  // дашборд не создаёт отдельных эндпоинтов и живёт на их интервале опроса (30 с).
+  // Те же запросы, что у страниц «Мои заявки», «Сделки» и колокольчика, — без новых эндпоинтов.
   const applicationsQuery = useMyApplications()
+  const offersCountQuery = useListTotal(OFFERS_KEY, '/offers')
   const dealsQuery = useDeals()
   const notificationsQuery = useNotifications()
 
@@ -30,38 +34,44 @@ export function BorrowerDashboard({ kycStatus, rejectReason }: { kycStatus?: str
   const deals = dealsQuery.data?.items ?? []
   const notifications = notificationsQuery.data?.items ?? []
 
-  const activeCount = applications.filter((a) => a.status === 'published' || a.status === 'moderation').length
-  const publishedCount = applications.filter((a) => a.status === 'published').length
-  const offersAwaiting = applications.reduce((sum, a) => sum + (a.offers_count ?? 0), 0)
-  const totalRequested = applications
-    .filter((a) => a.status === 'published' || a.status === 'moderation')
-    .reduce((sum, a) => sum + Number(a.amount), 0)
-  const currency = applications.find((a) => a.status === 'published' || a.status === 'moderation')?.currency
+  const published = applications.filter((a) => a.status === 'published')
+  const inModeration = applications.filter((a) => a.status === 'moderation')
+  const activeSum = [...published, ...inModeration].reduce((sum, a) => sum + Number(a.amount), 0)
+  const currency = published[0]?.currency ?? inModeration[0]?.currency
 
-  const recentApplications = [...applications]
-    .sort(compareByUpdatedDesc)
-    .slice(0, TOP_ROWS)
-  const withOffers = applications
-    .filter((a) => a.status === 'published' && (a.offers_count ?? 0) > 0)
+  const recentApplications = [...applications].sort(compareByUpdatedDesc).slice(0, TOP_ROWS)
+  const withOffers = published
+    .filter((a) => (a.offers_count ?? 0) > 0)
     .sort(compareByUpdatedDesc)
     .slice(0, TOP_ROWS)
 
   return (
     <div className="space-y-6">
-      {kycStatus && kycStatus !== 'verified' && (
-        <KycBanner status={kycStatus as never} rejectReason={rejectReason} />
-      )}
+      {kycStatus && kycStatus !== 'verified' && <KycBanner status={kycStatus} rejectReason={rejectReason} />}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={t('dashboard.borrower.activeApps')} value={activeCount} loading={applicationsQuery.isLoading} />
-        <StatCard label={t('dashboard.borrower.published')} value={publishedCount} loading={applicationsQuery.isLoading} />
-        <StatCard label={t('dashboard.borrower.offersAwaiting')} value={offersAwaiting} loading={applicationsQuery.isLoading} />
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
-          label={t('dashboard.borrower.requestedSum')}
-          value={formatMoney(totalRequested.toFixed(2), currency)}
+          label={t('dashboard.borrower.published')}
+          value={published.length}
           loading={applicationsQuery.isLoading}
         />
-      </div>
+        <StatCard
+          label={t('dashboard.borrower.inModeration')}
+          value={inModeration.length}
+          loading={applicationsQuery.isLoading}
+        />
+        <StatCard
+          label={t('dashboard.borrower.offersAwaiting')}
+          // Для заёмщика /offers отдаёт офферы по его заявкам — это решения, которых он ждёт.
+          value={offersCountQuery.data?.total ?? null}
+          loading={offersCountQuery.isPending}
+        />
+        <StatCard
+          label={t('dashboard.borrower.requestedSum')}
+          value={formatMoney(activeSum.toFixed(2), currency)}
+          loading={applicationsQuery.isLoading}
+        />
+      </dl>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <DashboardSection
@@ -116,7 +126,11 @@ export function BorrowerDashboard({ kycStatus, rejectReason }: { kycStatus?: str
           ))}
         </DashboardSection>
 
-        <DashboardSection title={t('dashboard.notificationsTitle')} to="/profile" linkLabel={t('dashboard.viewAll')}>
+        <DashboardSection
+          title={t('dashboard.notificationsTitle', { count: notificationsQuery.data?.unread_total ?? 0 })}
+          to="/applications"
+          linkLabel={t('dashboard.viewAll')}
+        >
           {notificationsQuery.isLoading && <LoadingRows />}
           {!notificationsQuery.isLoading && notifications.length === 0 && (
             <EmptyRow>{t('dashboard.notificationsEmpty')}</EmptyRow>

@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next'
 import { useDeals } from '@/hooks/useDeals'
 import { useMarketplace, type Application } from '@/hooks/useApplications'
-import { useMyOffers, type Offer } from '@/hooks/useOffers'
+import { useMyOffers, OFFERS_KEY, type Offer } from '@/hooks/useOffers'
 import { useNotifications } from '@/hooks/useNotifications'
 import { formatMoney, formatPercent } from '@/lib/money'
 import { offerStatusLabel } from '@/lib/labels'
 import { currentLocale } from '@/i18n'
 import { Badge } from '@/components/ui/Badge'
+import { useListTotal } from './useCounters'
 import {
   DashboardSection,
   EmptyRow,
@@ -15,17 +16,20 @@ import {
   LoadingRows,
   StatCard,
   StatusBadge,
+  useDashboardKyc,
 } from './common'
 
-// Витрина дашборда — топ newest: счётчики KPI считает бэкенд по всем страницам.
+// Витрина дашборда — топ newest; точные счётчики KPI берутся из total count-запросов.
 const TOP_ROWS = 5
 
-export function LenderDashboard({ kycStatus, rejectReason }: { kycStatus?: string; rejectReason?: string | null }) {
+export function LenderDashboard() {
   const { t } = useTranslation()
+  const { status: kycStatus, rejectReason } = useDashboardKyc()
 
   // Те же запросы, что у страниц «Витрина», «Мои предложения» и «Сделки», — без новых эндпоинтов.
   const marketplaceQuery = useMarketplace()
   const offersQuery = useMyOffers()
+  const sentCountQuery = useListTotal(OFFERS_KEY, '/offers', { status: ['sent'] })
   const dealsQuery = useDeals()
   const notificationsQuery = useNotifications()
 
@@ -41,11 +45,9 @@ export function LenderDashboard({ kycStatus, rejectReason }: { kycStatus?: strin
 
   return (
     <div className="space-y-6">
-      {kycStatus && kycStatus !== 'verified' && (
-        <KycBanner status={kycStatus as never} rejectReason={rejectReason} />
-      )}
+      {kycStatus && kycStatus !== 'verified' && <KycBanner status={kycStatus} rejectReason={rejectReason} />}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label={t('dashboard.lender.marketplace')}
           value={marketplaceQuery.data?.total ?? 0}
@@ -53,8 +55,8 @@ export function LenderDashboard({ kycStatus, rejectReason }: { kycStatus?: strin
         />
         <StatCard
           label={t('dashboard.lender.activeOffers')}
-          value={offersQuery.data?.total ?? sentOffers.length}
-          loading={offersQuery.isLoading}
+          value={sentCountQuery.data?.total ?? null}
+          loading={sentCountQuery.isPending}
         />
         <StatCard
           label={t('dashboard.lender.activeVolume')}
@@ -66,7 +68,7 @@ export function LenderDashboard({ kycStatus, rejectReason }: { kycStatus?: strin
           value={dealsQuery.data?.total ?? 0}
           loading={dealsQuery.isLoading}
         />
-      </div>
+      </dl>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <DashboardSection title={t('dashboard.lender.newAppsTitle')} to="/marketplace" linkLabel={t('dashboard.viewAll')}>
@@ -106,7 +108,11 @@ export function LenderDashboard({ kycStatus, rejectReason }: { kycStatus?: strin
           ))}
         </DashboardSection>
 
-        <DashboardSection title={t('dashboard.notificationsTitle')} to="/profile" linkLabel={t('dashboard.viewAll')}>
+        <DashboardSection
+          title={t('dashboard.notificationsTitle', { count: notificationsQuery.data?.unread_total ?? 0 })}
+          to="/marketplace"
+          linkLabel={t('dashboard.viewAll')}
+        >
           {notificationsQuery.isLoading && <LoadingRows />}
           {!notificationsQuery.isLoading && notifications.length === 0 && (
             <EmptyRow>{t('dashboard.notificationsEmpty')}</EmptyRow>
