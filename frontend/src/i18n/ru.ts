@@ -57,7 +57,6 @@ export const ru = {
   nav: {
     dashboard: 'Дашборд',
     applications: 'Мои заявки',
-    offers: 'Предложения',
     marketplace: 'Витрина заявок',
     myOffers: 'Мои предложения',
     deals: 'Сделки',

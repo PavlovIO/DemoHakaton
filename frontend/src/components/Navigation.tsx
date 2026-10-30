@@ -28,7 +28,7 @@ const navigationConfig = (t: TFunction): Record<UserRole, NavItem[]> => ({
   borrower: [
     { to: '/dashboard', label: t('nav.dashboard'), icon: <LayoutDashboard className="h-4 w-4" /> },
     { to: '/applications', label: t('nav.applications'), icon: <FileText className="h-4 w-4" /> },
-    { to: '/offers', label: t('nav.offers'), icon: <MessageSquare className="h-4 w-4" /> },
+    // Вкладки «Предложения» у заёмщика нет: входящие предложения видны в карточке заявки.
     { to: '/deals', label: t('nav.deals'), icon: <Briefcase className="h-4 w-4" /> },
   ],
   lender: [

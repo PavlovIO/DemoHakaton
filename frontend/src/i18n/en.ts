@@ -48,7 +48,6 @@ export const en: Dictionary = {
   nav: {
     dashboard: 'Dashboard',
     applications: 'My applications',
-    offers: 'Offers',
     marketplace: 'Marketplace',
     myOffers: 'My offers',
     deals: 'Deals',
