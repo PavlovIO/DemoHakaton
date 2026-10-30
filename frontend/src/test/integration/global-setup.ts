@@ -2,7 +2,7 @@
 import type { TestProject } from 'vitest/node'
 import { ACTORS, PASSWORD, type SerializedSession } from './actors-config'
 
-const API_URL = process.env.INTEGRATION_API_URL ?? 'http://localhost:8080'
+const API_URL = process.env.INTEGRATION_API_URL ?? 'http://localhost'
 
 // Участники входят один раз за прогон, а не в каждом файле: лимит логина —
 // 50 с IP за 15 минут, и повторные локальные прогоны иначе упираются в 429.
