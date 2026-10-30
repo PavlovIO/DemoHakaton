@@ -11,14 +11,14 @@ import {
 } from './useApplications'
 import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, LENDER, loginAs } from '@/test/integration/actors'
-import { ensureBorrowerApplications, publishApplication, sendOffer, submitApplication } from '@/test/integration/fixtures'
+import { ensureBorrowerApplications, publishApplication, sendOffer, submitApplication, testPurpose } from '@/test/integration/fixtures'
 import { api } from '@/lib/api-client'
 import { PAGE_SIZE } from '@/lib/pagination'
 
 describe('заявки против живого бэкенда', () => {
   it('заёмщик сохраняет черновик и подаёт его — заявка в его списке на модерации', async () => {
     loginAs(BORROWER)
-    const purpose = `Закупка оборудования ${crypto.randomUUID()}`
+    const purpose = testPurpose('Закупка оборудования')
 
     const { result } = renderHook(
       () => ({ create: useCreateApplication(), submit: useSubmitApplication(), list: useMyApplications() }),

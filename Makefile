@@ -65,13 +65,12 @@ backend-seed-files:
 backend-logs:
 	docker compose logs -f backend
 
-# Фронтенд в контейнере (docker/Dockerfile.frontend) — после make db. Поднимает и бэкенд
-# (depends_on): приложение целиком на http://localhost:3000 (FRONTEND_PORT).
+# Всё приложение за внешним nginx — после make db. Порты frontend/backend остаются внутри Compose.
 frontend-up: backend-seed-files
-	docker compose up -d --build --wait frontend
+	docker compose up -d --build --wait backend frontend nginx
 
 frontend-logs:
-	docker compose logs -f frontend
+	docker compose logs -f nginx frontend
 
 # Публичный HTTPS-URL на приложение через ngrok (после make db): показать демо внешнему
 # человеку. Нужен NGROK_AUTHTOKEN в .env (dashboard.ngrok.com → Your Authtoken). Поднимает

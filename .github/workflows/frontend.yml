@@ -39,8 +39,8 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # Фронт против живого бэкенда: стенд как у разработчика (make db && make backend-up) —
-  # Postgres, роли, миграции, демо-сид (вариант B) и образ бэкенда из docker-compose.yml.
+  # Фронт против API за nginx: стенд как у разработчика (make db && make frontend-up) —
+  # Postgres, роли, миграции, демо-сид (вариант B), backend, frontend и единая точка входа.
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -57,9 +57,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: stand
         working-directory: .
-        run: make db backend-up
+        run: make db frontend-up
       - run: npm ci
       - run: npm run test:integration
+        env:
+          INTEGRATION_API_URL: http://localhost
       - name: logs
         if: failure()
         working-directory: .
@@ -70,7 +72,7 @@ jobs:
         run: docker compose --profile seed down -v
 
   # Образ фронтенда (INF-02): приложение целиком в compose — Postgres, бэкенд и nginx со
-  # статикой. Смоук через порт фронта: SPA и fallback на index.html, ассеты, прокси /api на
+  # статикой. Смоук через внешний nginx: SPA и fallback на index.html, ассеты, прокси /api на
   # бэкенд (/healthz пингует БД), non-root. Схема и сид не нужны: в браузер здесь не ходим.
   docker:
     runs-on: ubuntu-latest
@@ -89,9 +91,9 @@ jobs:
           docker compose exec -T postgres psql -U lp -d liquidity_platform -v ON_ERROR_STOP=1 \
             -v app_password=lp_app_dev_password -v migrator_password=lp_migrator_dev_password \
             -f - < backend/db/roles.sql
-      # depends_on: frontend стартует только после healthy backend.
+      # Публичный вход — только через nginx; backend и frontend не публикуют host-порты.
       - name: up
-        run: docker compose up -d --wait --wait-timeout 120 frontend
+        run: docker compose up -d --wait --wait-timeout 120 frontend nginx
       - name: non-root
         run: |
           uid="$(docker exec lp_frontend id -u)"
@@ -101,7 +103,7 @@ jobs:
           fi
       - name: smoke
         run: |
-          base=http://localhost:3000
+          base=http://localhost
           curl -fsS "$base/" | grep -q 'id="root"'
           # Маршрут react-router: nginx должен отдать index.html, а не 404.
           curl -fsS "$base/deals/smoke" | grep -q 'id="root"'

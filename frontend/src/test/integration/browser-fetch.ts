@@ -1,9 +1,9 @@
 /// <reference types="node" />
-// Fetch как в браузере за Vite proxy: относительные /api/... уходят на живой бэкенд,
+// Fetch как в браузере за Nginx: относительные /api/... уходят через reverse proxy на бэкенд,
 // cookie хранятся в jar и отправляются обратно, не-HttpOnly (csrf_token) видны в document.cookie.
 // Node fetch cookie не хранит, а jsdom не даёт поставить HttpOnly через document.cookie.
 
-export const API_URL = process.env.INTEGRATION_API_URL ?? 'http://localhost:8080'
+export const API_URL = process.env.INTEGRATION_API_URL ?? 'http://localhost'
 
 interface StoredCookie {
   value: string

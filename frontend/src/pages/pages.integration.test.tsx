@@ -9,7 +9,7 @@ import { AppProviders } from '@/test/integration/render'
 import { ADMIN, BORROWER, loginAs } from '@/test/integration/actors'
 import { fireEvent, waitFor, within } from '@testing-library/react'
 import { type Application } from '@/hooks/useApplications'
-import { publishApplication } from '@/test/integration/fixtures'
+import { publishApplication, testPurpose } from '@/test/integration/fixtures'
 import { api } from '@/lib/api-client'
 import { Applications } from './Applications'
 
@@ -65,7 +65,7 @@ async function createDraft(): Promise<Application> {
     target_country_code: 'DE',
     term_months: 6,
     transfer_method: 'sepa',
-    purpose: `Заявка для редактирования ${crypto.randomUUID()}`,
+    purpose: testPurpose('Заявка для редактирования'),
   })
 }
 
@@ -107,6 +107,9 @@ describe('редактирование заявки (шаг 2C)', () => {
       term_months: 9,
     }))
 
+    // Модалка закрывается после ответа PATCH. Раньше этого findByText(newPurpose) нашёл бы
+    // само поле: React пишет значение управляемого textarea и в его текст.
+    await waitFor(() => expect(screen.queryByText('Редактирование заявки')).toBeNull())
     await screen.findByText(newPurpose)
     const updated = await api.get<Application>('/applications/{applicationId}', { path: { applicationId: app.id } })
     expect(updated).toMatchObject({ status: 'draft', purpose: newPurpose, term_months: 9 })

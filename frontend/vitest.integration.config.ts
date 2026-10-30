@@ -1,7 +1,7 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
 import viteConfig from './vite.config.ts'
 
-// Интеграционные тесты против живого бэкенда (docker compose): make db && make backend-up.
+// Интеграционные тесты против API за nginx (docker compose): make db && make frontend-up.
 export default mergeConfig(
   viteConfig,
   defineConfig({

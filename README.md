@@ -56,38 +56,38 @@ curl localhost:8080/api/v1/healthz
 
 ```sh
 make db        # Postgres + миграции + санкции + демо-данные
-make backend-up    # demo-PDF в volume документов, сборка образа, API на http://localhost:8080/api/v1
+make backend-up    # demo-PDF в volume документов, сборка образа; API доступен внутри сети Compose
 make backend-logs  # логи бэкенда (JSON)
 ```
 
 | Что | Как |
 |---|---|
 | Образ | Многоэтапная сборка: Go из `toolchain` в `go.mod`, статический бинарник на `alpine`, пользователь `app` (uid 10001), не root |
-| БД | `postgres:5432` внутри сети compose из `POSTGRES_*`; другая — `BACKEND_DATABASE_URL` |
+| БД | `postgres:5432` внутри сети Compose; хостовый порт `POSTGRES_PORT` доступен только на localhost для `make db`; другая БД — `BACKEND_DATABASE_URL` |
 | Документы | volume `lp_documents` → `/var/lib/liquidity-platform/documents`; `make backend-seed-files` (входит в `backend-up`) кладёт туда PDF сида. `make db-reset` удаляет и его |
-| Порт | `BACKEND_PORT` (по умолчанию `8080`); одновременно с `make run` — задайте другой |
+| Порт | Не публикуется на хост; для доступа к API с хоста используйте `make frontend-up` (через nginx) |
 | Настройки | `LOG_LEVEL`, `SESSION_TTL`, `COOKIE_SECURE` (по умолчанию `false` — локальный http), `CORS_ALLOWED_ORIGINS`, `DB_MAX_CONNS` — из `.env`; `LOG_FORMAT=json` |
 
-`make down` останавливает и бэкенд, и Postgres. CI (`backend.yml`, джоба `docker`) собирает оба образа и поднимает compose до healthy.
+`make down` останавливает Compose-сервисы, не удаляя volumes. CI (`backend.yml`, джоба `docker`) собирает образ бэкенда и поднимает нужные сервисы до healthy.
 
 ### Приложение целиком в Docker
 
-Фронтенд тоже собирается в образ (`docker/Dockerfile.frontend`, сервис `frontend`): Vite-сборка отдаётся nginx, а `/api` nginx проксирует на `backend` — фронт и API на одном origin, как у `npm run dev`, CORS не нужен.
+Фронтенд собирается в образ (`docker/Dockerfile.frontend`, сервис `frontend`), доступный только во внутренней сети Compose. Внешний сервис `nginx` — единственная точка входа веб-приложения: `/` и `/assets/` проксируются во `frontend`, а `/api/` — в `backend`. Frontend/backend не публикуют порты хоста; фронт и API работают на одном origin, CORS не нужен.
 
 ```sh
 make db            # Postgres + миграции + санкции + демо-данные
-make frontend-up   # demo-PDF, сборка образов бэкенда и фронта, приложение на http://localhost:3000
-make frontend-logs # логи nginx
+make frontend-up   # demo-PDF, сборка образов, приложение через nginx на http://localhost
+make frontend-logs # логи внешнего nginx и frontend
 ```
 
 | Что | Как |
 |---|---|
 | Образ | Сборка на `node:22`, рантайм `nginx-unprivileged` (uid 101, порт 8080 в контейнере), не root |
-| Маршруты | неизвестный путь → `index.html` (react-router); `/assets/*` кэшируются навсегда, `index.html` — `no-cache` |
-| Порт | `FRONTEND_PORT` (по умолчанию `3000`) |
-| Бэкенд | `BACKEND_URL` (по умолчанию `http://backend:8080`); `frontend` стартует после healthy `backend` |
+| Маршруты | Nginx проксирует SPA и ассеты во `frontend`, неизвестный путь → `index.html` (react-router); `/assets/*` кэшируются, `index.html` — `no-cache` |
+| Порты | Веб-вход — через nginx (`80`); `frontend:8080` и `backend:8080` доступны только в Compose, Postgres — на localhost для локальных команд |
+| Бэкенд | `BACKEND_URL` (по умолчанию `http://backend:8080`); `frontend` стартует после healthy `backend`, nginx — после healthy обоих |
 
-CI (`frontend.yml`, джоба `docker`) собирает образы, поднимает compose до healthy и проверяет SPA, ассеты и прокси `/api` через порт фронта.
+CI (`frontend.yml`, джоба `docker`) собирает образы, поднимает frontend за nginx и проверяет SPA, ассеты и прокси `/api` через опубликованный nginx-порт.
 
 #### Публичная ссылка через ngrok
 
@@ -166,7 +166,7 @@ npm run dev          # запуск Vite-сервера на http://localhost:51
 | `npm run build` | Продакшен-сборка (TypeScript check + Vite build) в папку frontend/dist
 | `npm run preview` | Локальный просмотр собранного продакшен-билда
 | `npm run lint` | Проверка кода через ESLint (TypeScript + React правила)
-| `npm run test:integration` | Интеграционные тесты (`*.integration.test.ts(x)`, Vitest + jsdom) против живого бэкенда: сначала `make db && make backend-up` из корня; другой адрес — `INTEGRATION_API_URL`
+| `npm run test:integration` | Интеграционные тесты (`*.integration.test.ts(x)`, Vitest + jsdom) против API за nginx: сначала `make db && make frontend-up` из корня; другой адрес — `INTEGRATION_API_URL`
 
 На странице логина введите специальные email-адреса, чтобы получить нужную роль: \
 `borrower@test.com` - войдёте как Заёмщик (с верифицированной компанией).\
