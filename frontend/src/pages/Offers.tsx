@@ -50,17 +50,15 @@ function MyOffers() {
 
   return (
     <div className="space-y-6 relative">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">{t('offers.title')}</h1>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900">{t('offers.title')}</h1>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" className="divide-y divide-gray-200">
           {offers.map((offer) => (
             <li key={offer.id} className="p-4 hover:bg-gray-50">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-3">
                     <span className="font-mono text-sm text-gray-500">{offer.application_number}</span>
                     {getStatusBadge(offer.status)}
                   </div>
@@ -78,7 +76,8 @@ function MyOffers() {
                     })}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                {/* На мобильных кнопки друг под другом на всю ширину; на десктопе (>1024px) — как раньше, в строку. */}
+                <div className="flex flex-col gap-2 sm:w-40 sm:shrink-0 lg:w-auto lg:flex-row lg:items-center">
                   <Button variant="outline" onClick={() => setChatOffer(offer)}>{t('offers.chat')}</Button>
                   {offer.status === 'sent' && (
                     <Button variant="danger" disabled={withdrawOffer.isPending} onClick={() => handleWithdraw(offer.id)}>{t('offers.withdraw')}</Button>

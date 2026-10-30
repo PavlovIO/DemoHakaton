@@ -148,24 +148,24 @@ function LenderMarketplace() {
           {filteredApps.map((app) => (
             <li key={app.id} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="font-mono text-sm text-gray-500">{app.number}</span>
                     <Badge variant="success">{applicationStatusLabel('published')}</Badge>
-                    <span className="text-sm font-semibold text-gray-900">{app.borrower.name}</span>
+                    <span className="break-words text-sm font-semibold text-gray-900">{app.borrower.name}</span>
                   </div>
-                  <p className="text-sm text-gray-900">{app.purpose}</p>
+                  <p className="break-words text-sm text-gray-900">{app.purpose}</p>
                   <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500">
                     <span className="font-medium text-gray-900">{formatMoney(app.amount, app.currency)}</span>
                     <span>{t('marketplace.term', { months: app.term_months })}</span>
                     <span>{t('marketplace.targetCountry', { code: app.target_country_code })}</span>
                   </div>
                 </div>
-                <div>
+                <div className="sm:shrink-0">
                   {app.my_offer_id ? (
                     <Badge variant="success">{t('marketplace.offerSent')}</Badge>
                   ) : (
-                    <Button onClick={() => openOfferModal(app)}>{t('marketplace.makeOffer')}</Button>
+                    <Button className="w-full sm:w-auto" onClick={() => openOfferModal(app)}>{t('marketplace.makeOffer')}</Button>
                   )}
                 </div>
               </div>
@@ -225,9 +225,9 @@ function LenderMarketplace() {
                 <textarea rows={2} value={offerData.additional_terms} onChange={e => setOfferData({...offerData, additional_terms: e.target.value})} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm"></textarea>
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button type="button" variant="outline" onClick={() => setSelectedApp(null)}>{t('common.cancel')}</Button>
-                <Button type="submit" disabled={createOffer.isPending}>{t('marketplace.offer.submit')}</Button>
+              <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:gap-3">
+                <Button type="button" variant="outline" className="w-full text-wrap sm:w-auto" onClick={() => setSelectedApp(null)}>{t('common.cancel')}</Button>
+                <Button type="submit" className="w-full text-wrap sm:w-auto" disabled={createOffer.isPending}>{t('marketplace.offer.submit')}</Button>
               </div>
             </form>
           </div>

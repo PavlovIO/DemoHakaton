@@ -57,7 +57,9 @@ export function Navigation() {
   const navItems = navigationConfig(t)[user.role]
 
   return (
-    <nav className="flex items-center gap-1">
+    // На мобильных навигация на втором уровне шапки: подписи видны, кнопки тянутся на всю ширину (flex-1).
+    // На lg+ подписи скрыты (иконки + aria-label), чтобы не распирать одну строку с логотипом.
+    <nav className="flex flex-wrap items-center gap-1">
       {navItems.map((item) => (
         <NavLink
           key={item.to}
@@ -66,7 +68,9 @@ export function Navigation() {
           aria-label={item.label}
           className={({ isActive }) =>
             cn(
-              'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              // shrink-0 + whitespace-nowrap: текст кнопок меню никогда не обрезается; если строк
+              // больше трёх (админ), второй уровень шапки даёт горизонтальный скролл только внутри себя.
+              'inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
               isActive
                 ? 'bg-primary-50 text-primary-700'
                 : 'text-gray-700 hover:bg-white/50 hover:text-gray-900'
@@ -79,7 +83,10 @@ export function Navigation() {
                 {item.icon}
                 {item.queue && <QueueCountBadge queue={item.queue} onQueuePage={isActive} />}
               </span>
-              <span className="hidden lg:inline">{item.label}</span>
+              {/* Подпись: на мобильных видна (второй уровень шапки), на lg показываем только иконки,
+                  чтобы строка с логотипом не расползалась в горизонтальный скролл. whitespace-nowrap —
+                  текст кнопки не режется по буквам при поджатии flex-элементами. */}
+              <span className="whitespace-nowrap lg:hidden">{item.label}</span>
             </>
           )}
         </NavLink>

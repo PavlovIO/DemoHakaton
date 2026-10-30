@@ -11,7 +11,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         className={cn(
-          'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+          // break-words + min-h вместо фиксированной h: длинный текст кнопки переносится, а не обрезается.
+          'inline-flex min-h-10 items-center justify-center gap-2 rounded-md font-medium break-words transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
           {
             'bg-primary-600 text-white hover:bg-primary-700': variant === 'primary',
             'bg-gray-100 text-gray-900 hover:bg-gray-200': variant === 'secondary',
@@ -20,9 +21,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             'bg-danger text-white hover:bg-danger/90': variant === 'danger',
           },
           {
-            'h-8 px-3 text-sm': size === 'sm',
-            'h-10 px-4 text-sm': size === 'md',
-            'h-12 px-6 text-base': size === 'lg',
+            'min-h-8 px-3 text-sm': size === 'sm',
+            'min-h-10 px-4 text-sm': size === 'md',
+            'min-h-12 px-6 text-base': size === 'lg',
           },
           className
         )}

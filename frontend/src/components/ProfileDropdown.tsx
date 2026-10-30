@@ -80,7 +80,7 @@ export function ProfileDropdown() {
       {isOpen && (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-2 w-72 rounded-lg border border-gray-200 bg-white shadow-lg"
+          className="absolute right-0 z-50 mt-2 w-[calc(100vw-1rem)] max-w-72 rounded-lg border border-gray-200 bg-white shadow-lg"
         >
           {/* Шапка */}
           <div className="border-b border-gray-200 px-4 py-3">

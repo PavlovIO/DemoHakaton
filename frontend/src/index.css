@@ -29,6 +29,12 @@
   --radius-xl: 1rem;
 }
 
+html,
+body {
+  /* На мобильных (375px) любой случайно выбившийся элемент не должен порождать горизонтальный скролл. */
+  overflow-x: hidden;
+}
+
 body {
   @apply text-gray-900 antialiased;
   font-family: var(--font-sans);

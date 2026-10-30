@@ -137,6 +137,7 @@ export function AnalyticsTab() {
           {summary.amounts_by_currency.length === 0 ? (
             <p className="text-sm text-gray-400">Нет данных.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -157,6 +158,7 @@ export function AnalyticsTab() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>
