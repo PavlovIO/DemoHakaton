@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useDeals } from '@/hooks/useDeals'
 import { useMarketplace, type Application } from '@/hooks/useApplications'
-import { useMyOffers, OFFERS_KEY, type Offer } from '@/hooks/useOffers'
+import { useMyOffers, OFFERS_KEY, type Offer, type OfferPage } from '@/hooks/useOffers'
 import { useNotifications } from '@/hooks/useNotifications'
 import { formatMoney, formatPercent } from '@/lib/money'
 import { offerStatusLabel } from '@/lib/labels'
@@ -29,7 +29,7 @@ export function LenderDashboard() {
   // Те же запросы, что у страниц «Витрина», «Мои предложения» и «Сделки», — без новых эндпоинтов.
   const marketplaceQuery = useMarketplace()
   const offersQuery = useMyOffers()
-  const sentCountQuery = useListTotal(OFFERS_KEY, '/offers', { status: ['sent'] })
+  const sentCountQuery = useListTotal<OfferPage>(OFFERS_KEY, '/offers', { status: ['sent'] })
   const dealsQuery = useDeals()
   const notificationsQuery = useNotifications()
 
@@ -60,8 +60,9 @@ export function LenderDashboard() {
         />
         <StatCard
           label={t('dashboard.lender.activeVolume')}
-          value={formatMoney(activeVolume.toFixed(2), activeCurrency)}
-          loading={offersQuery.isLoading}
+          // formatMoney при пустом значении вернёт '—', а карточка ждёт число — грузим скелетон.
+          value={activeVolume}
+          loading={offersQuery.isLoading || activeCurrency === undefined}
         />
         <StatCard
           label={t('dashboard.lender.deals')}

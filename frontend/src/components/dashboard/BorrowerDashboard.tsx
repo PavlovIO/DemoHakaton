@@ -4,7 +4,7 @@ import { useNotifications } from '@/hooks/useNotifications'
 import { formatMoney } from '@/lib/money'
 import { currentLocale } from '@/i18n'
 import { useMyApplications, type Application } from '@/hooks/useApplications'
-import { OFFERS_KEY } from '@/hooks/useOffers'
+import { OFFERS_KEY, type OfferPage } from '@/hooks/useOffers'
 import { useListTotal } from './useCounters'
 import {
   DashboardSection,
@@ -26,7 +26,7 @@ export function BorrowerDashboard() {
 
   // Те же запросы, что у страниц «Мои заявки», «Сделки» и колокольчика, — без новых эндпоинтов.
   const applicationsQuery = useMyApplications()
-  const offersCountQuery = useListTotal(OFFERS_KEY, '/offers')
+  const offersCountQuery = useListTotal<OfferPage>(OFFERS_KEY, '/offers')
   const dealsQuery = useDeals()
   const notificationsQuery = useNotifications()
 
@@ -37,7 +37,8 @@ export function BorrowerDashboard() {
   const published = applications.filter((a) => a.status === 'published')
   const inModeration = applications.filter((a) => a.status === 'moderation')
   const activeSum = [...published, ...inModeration].reduce((sum, a) => sum + Number(a.amount), 0)
-  const currency = published[0]?.currency ?? inModeration[0]?.currency
+  // Сумма складывается только по одной валюте: берём валюту первой активной заявки (page_size=1).
+  const currency = published[0]?.currency ?? inModeration[0]?.currency ?? offersCountQuery.data?.firstItem?.currency
 
   const recentApplications = [...applications].sort(compareByUpdatedDesc).slice(0, TOP_ROWS)
   const withOffers = published
@@ -68,8 +69,9 @@ export function BorrowerDashboard() {
         />
         <StatCard
           label={t('dashboard.borrower.requestedSum')}
-          value={formatMoney(activeSum.toFixed(2), currency)}
-          loading={applicationsQuery.isLoading}
+          // formatMoney при пустом значении вернёт '—', а карточка ждёт число — грузим скелетон.
+          value={activeSum}
+          loading={applicationsQuery.isLoading || currency === undefined}
         />
       </dl>
 

@@ -7,7 +7,7 @@ import { DEALS_KEY, type Deal } from './useDeals'
 
 export type Offer = components['schemas']['Offer']
 export type OfferCreate = components['schemas']['OfferCreate']
-type OfferPage = components['schemas']['OfferPage']
+export type OfferPage = components['schemas']['OfferPage']
 
 export const OFFERS_KEY = ['offers'] as const
 
