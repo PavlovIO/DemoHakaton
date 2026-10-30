@@ -11,7 +11,9 @@ type OfferPage = components['schemas']['OfferPage']
 
 export const OFFERS_KEY = ['offers'] as const
 
-// Кредитору бэкенд отдаёт офферы его организации.
+// GET /offers — role-scoped: кредитору бэкенд отдаёт офферы его организации,
+// заёмщику — все входящие предложения на заявки его компании (включая отклонённые
+// и принятые: статусы не фильтруем, список работает как архив входящих).
 export function useMyOffers() {
   return useInfiniteQuery({
     queryKey: [...OFFERS_KEY, 'mine'],
@@ -19,6 +21,20 @@ export function useMyOffers() {
     ...pagedList<OfferPage>(),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
+  })
+}
+
+// Отклонение входящего оффера заёмщиком (borrower-владелец заявки); остальные
+// sent-офферы по заявке бэкенд не трогает — отклоняет только выбранный.
+export function useRejectOffer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ offerId, comment }: { offerId: string; comment?: string }) =>
+      api.post<Offer>('/offers/{offerId}/reject', comment ? { comment } : undefined, { path: { offerId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: OFFERS_KEY })
+      queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY })
+    },
   })
 }
 
