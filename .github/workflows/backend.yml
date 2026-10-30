@@ -205,24 +205,23 @@ jobs:
       - name: build
         run: go -C backend build -o bin/server ./cmd/server
 
-  # Образ бэкенда (INF-01): сборка обеих целей docker/Dockerfile.backend через compose и смоук —
-  # compose поднимает Postgres и бэкенд до healthy (/healthz пингует БД), seed-files
-  # кладёт demo-PDF в volume под пользователем сервера. Схема не нужна: /healthz её не читает.
+  # Образы backend и frontend (для reverse proxy) и смоук API через единую точку входа nginx.
+  # Postgres и backend запускаются до healthy (/healthz пингует БД), затем frontend и nginx.
+  # seed-files кладёт demo-PDF в volume под пользователем сервера.
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      # Только образы бэкенда: frontend собирает и проверяет frontend.yml (джоба docker).
       - name: build
-        run: docker compose --profile seed build backend seed-files
+        run: docker compose --profile seed build backend frontend seed-files
       # Бэкенд ходит под lp_app — роли до его старта, как make db-roles.
       - name: db roles
         run: |
           docker compose up -d --wait --wait-timeout 60 postgres
           docker compose exec -T postgres psql -U lp -d liquidity_platform -v ON_ERROR_STOP=1             -v app_password=lp_app_dev_password -v migrator_password=lp_migrator_dev_password             -f - < backend/db/roles.sql
       - name: up
-        run: docker compose up -d --wait --wait-timeout 120 backend
+        run: docker compose up -d --wait --wait-timeout 120 backend frontend nginx
       - name: non-root
         run: |
           user="$(docker inspect -f '{{.Config.User}}' lp_backend)"
@@ -231,7 +230,7 @@ jobs:
             exit 1
           fi
       - name: healthz
-        run: curl -fsS http://localhost:8080/api/v1/healthz
+        run: curl -fsS http://localhost/api/v1/healthz
       - name: seed files
         run: docker compose run --rm seed-files
       - name: logs
