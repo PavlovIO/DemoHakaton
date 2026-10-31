@@ -323,7 +323,7 @@ function BorrowerApplications() {
                       <p className="text-sm text-gray-600">
                         Ставка: <span className="font-medium">{formatPercent(offer.interest_rate_annual)}</span> | Комиссия площадки: {formatPercent(offer.fee_percent)}
                       </p>
-                      <p className="text-xs text-gray-400">Комиссия платформы фиксирована и не может быть изменена.</p>
+                      <p className="text-xs text-gray-400">Комиссия платформы.</p>
                     </div>
                     <div className="flex w-full felx-col gap-2 sm:flex-row sm:w-auto md:w-full lg:w-auto lg:flex-row">
                       <Button className="w-full lg:w-auto" variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>

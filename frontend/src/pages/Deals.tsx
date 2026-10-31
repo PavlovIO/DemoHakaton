@@ -1,8 +1,11 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/useAuth'
-import { useDeals } from '@/hooks/useDeals'
+import { useDeals, type Deal } from '@/hooks/useDeals'
 import { formatMoney, formatPercent } from '@/lib/money'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { ChatModal } from '@/components/ChatModal'
 import { LoadMore } from '@/components/ui/LoadMore'
 import { currentLocale } from '@/i18n'
 
@@ -12,6 +15,7 @@ export function Deals() {
   const dealsQuery = useDeals()
   const { data, isLoading } = dealsQuery
   const deals = data?.items ?? []
+  const [chatDeal, setChatDeal] = useState<Deal | null>(null)
 
   return (
     <div className="space-y-6">
@@ -22,7 +26,7 @@ export function Deals() {
           {deals.map((deal) => (
             <li key={deal.id} className="p-4 hover:bg-gray-50">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="mb-1 flex flex-wrap items-center gap-3">
                     <span className="font-mono text-sm text-gray-500">{deal.number}</span>
                     <Badge variant="success">{t('deals.agreed')}</Badge>
@@ -39,6 +43,9 @@ export function Deals() {
                     <span>{t('deals.date', { date: new Date(deal.agreed_at).toLocaleDateString(currentLocale()) })}</span>
                   </div>
                 </div>
+                <Button variant="outline" onClick={() => setChatDeal(deal)}>
+                  {t('deals.chat')}
+                </Button>
               </div>
             </li>
           ))}
@@ -50,6 +57,15 @@ export function Deals() {
         </ul>
         <LoadMore query={dealsQuery} />
       </div>
+      <ChatModal
+        key={chatDeal?.offer_id}
+        isOpen={!!chatDeal}
+        onClose={() => setChatDeal(null)}
+        offerId={chatDeal?.offer_id || ''}
+        offerNumber={''}
+        dealNumber={chatDeal?.number || ''}
+        counterpartyName={user?.role === 'borrower' ? chatDeal?.lender.name : chatDeal?.borrower.name}
+      />
     </div>
   )
 }

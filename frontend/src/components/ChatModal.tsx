@@ -11,9 +11,10 @@ interface ChatModalProps {
   offerId: string
   offerNumber: string
   counterpartyName?: string
+  dealNumber?: string
 }
 
-export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyName }: ChatModalProps) {
+export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyName, dealNumber }: ChatModalProps) {
   const { t } = useTranslation()
   const { data: messages = [] } = useMessages(isOpen ? offerId : undefined)
   const sendMessage = useSendMessage(offerId)
@@ -44,7 +45,9 @@ export function ChatModal({ isOpen, onClose, offerId, offerNumber, counterpartyN
         <div className="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-lg">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold text-gray-900">{t('chat.title')}</h3>
-            <p className="text-xs text-gray-500">{t('chat.application', { number: offerNumber })}</p>
+            <p className="text-xs text-gray-500">
+              {dealNumber ? t('chat.deal', { number: dealNumber }) : t('chat.application', { number: offerNumber })}
+            </p>
             {counterpartyName && (
               <p className="break-words text-xs text-gray-500 font-medium">{t('chat.counterparty', { name: counterpartyName })}</p>
             )}
