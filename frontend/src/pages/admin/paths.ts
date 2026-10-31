@@ -5,6 +5,8 @@ const CARD_ORIGINS = {
   moderation: { to: '/admin/applications', label: 'Модерация заявок' },
   aml: { to: '/admin/aml', label: 'AML-флаги' },
   users: { to: '/admin/users', label: 'Пользователи'},
+  b_app: { to: '/applications', label: ''},
+  deals: { to: '/deals', label: ''},
 }
 
 type CardOrigin = keyof typeof CARD_ORIGINS

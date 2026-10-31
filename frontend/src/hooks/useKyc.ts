@@ -1,4 +1,5 @@
 import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { UseQueryOptions } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { components } from '@/lib/api-schema'
 import { OBSERVE_ONLY, PAGE_SIZE, pagedList } from '@/lib/pagination'
@@ -58,10 +59,11 @@ export function useDeleteDocument() {
 }
 
 // Полный профиль: в /auth/me организация без бенефициаров.
-export function useMyOrganization() {
+export function useMyOrganization(options?: Pick<UseQueryOptions<Organization>, 'enabled'>) {
   return useQuery({
     queryKey: ORGANIZATION_KEY,
     queryFn: () => api.get<Organization>('/organizations/me'),
+    ...options,
   })
 }
 

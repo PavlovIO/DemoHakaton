@@ -7,7 +7,7 @@ import { DEALS_KEY, type Deal } from './useDeals'
 
 export type Offer = components['schemas']['Offer']
 export type OfferCreate = components['schemas']['OfferCreate']
-type OfferPage = components['schemas']['OfferPage']
+export type OfferPage = components['schemas']['OfferPage']
 
 export const OFFERS_KEY = ['offers'] as const
 
@@ -19,6 +19,18 @@ export function useMyOffers() {
     ...pagedList<OfferPage>(),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
+  })
+}
+
+export function useRejectOffer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ offerId, comment }: { offerId: string; comment?: string }) =>
+      api.post<Offer>('/offers/{offerId}/reject', comment ? { comment } : undefined, { path: { offerId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: OFFERS_KEY })
+      queryClient.invalidateQueries({ queryKey: APPLICATIONS_KEY })
+    },
   })
 }
 

@@ -28,7 +28,7 @@ const navigationConfig = (t: TFunction): Record<UserRole, NavItem[]> => ({
   borrower: [
     { to: '/dashboard', label: t('nav.dashboard'), icon: <LayoutDashboard className="h-4 w-4" /> },
     { to: '/applications', label: t('nav.applications'), icon: <FileText className="h-4 w-4" /> },
-    { to: '/offers', label: t('nav.offers'), icon: <MessageSquare className="h-4 w-4" /> },
+    //{ to: '/offers', label: t('nav.offers'), icon: <MessageSquare className="h-4 w-4" /> },
     { to: '/deals', label: t('nav.deals'), icon: <Briefcase className="h-4 w-4" /> },
   ],
   lender: [
@@ -57,7 +57,7 @@ export function Navigation() {
   const navItems = navigationConfig(t)[user.role]
 
   return (
-    <nav className="flex items-center gap-1">
+    <nav className="flex flex-wrap items-center gap-1">
       {navItems.map((item) => (
         <NavLink
           key={item.to}
@@ -66,7 +66,7 @@ export function Navigation() {
           aria-label={item.label}
           className={({ isActive }) =>
             cn(
-              'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              'inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
               isActive
                 ? 'bg-primary-50 text-primary-700'
                 : 'text-gray-700 hover:bg-white/50 hover:text-gray-900'
@@ -79,7 +79,7 @@ export function Navigation() {
                 {item.icon}
                 {item.queue && <QueueCountBadge queue={item.queue} onQueuePage={isActive} />}
               </span>
-              <span className="hidden lg:inline">{item.label}</span>
+              <span className="whitespace-nowrap">{item.label}</span>
             </>
           )}
         </NavLink>

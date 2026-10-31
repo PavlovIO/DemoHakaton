@@ -180,11 +180,11 @@ function KycForm({ isLender }: { isLender: boolean }) {
           {requiredDocs.map((type) => {
             const uploaded = documents.find((d) => d.doc_type === type)
             return (
-              <li key={type} className="flex items-center justify-between gap-3 p-3 border rounded-md">
+              <li key={type} className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <span className="text-sm font-medium text-gray-700">{t(`kyc.documents.type.${type}`)}</span>
                 {uploaded ? (
-                  <span className="flex items-center gap-3 text-sm">
-                    <DocumentFileLink doc={uploaded} className="text-green-600 font-medium hover:underline">
+                  <span className="flex flex-wrap items-center gap-3 text-sm">
+                    <DocumentFileLink doc={uploaded} className="min-w-0 break-all text-green-600 font-medium hover:underline">
                       ✓ {uploaded.file_name}
                     </DocumentFileLink>
                     <Button
@@ -265,8 +265,8 @@ function BeneficiariesForm({
       {beneficiaries.length > 0 ? (
         <ul className="mb-4 space-y-2">
           {beneficiaries.map((b, i) => (
-            <li key={`${b.full_name}-${i}`} className="flex items-center justify-between p-3 border rounded-md text-sm">
-              <span>
+            <li key={`${b.full_name}-${i}`} className="flex flex-col gap-2 rounded-md border p-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-0">
+              <span className="min-w-0 break-words">
                 {b.full_name} · {b.citizenship_country_code} · {formatPercent(b.ownership_percent)}
               </span>
               <Button

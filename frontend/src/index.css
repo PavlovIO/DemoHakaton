@@ -29,6 +29,11 @@
   --radius-xl: 1rem;
 }
 
+html,
+body {
+    overflow-x: hidden;
+}
+
 body {
   @apply text-gray-900 antialiased;
   font-family: var(--font-sans);
