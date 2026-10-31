@@ -326,7 +326,7 @@ function BorrowerApplications() {
                       <p className="text-xs text-gray-400">Комиссия платформы фиксирована и не может быть изменена.</p>
                     </div>
                     <div className="flex w-full felx-col gap-2 sm:flex-row sm:w-auto md:w-full lg:w-auto lg:flex-row">
-                      <Button variant="w-full lg:w-auto" variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
+                      <Button className="w-full lg:w-auto" variant="outline" onClick={() => setChatOffer(offer)}>Чат</Button>
                       {offer.status === 'sent' && selectedAppForOffers.status === 'published' && (
                         <Button className="w-full lg:w-auto" disabled={acceptOffer.isPending} onClick={() => handleAcceptOffer(offer)}>Принять</Button>
                       )}
