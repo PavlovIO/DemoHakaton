@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { LoadMore } from '@/components/ui/LoadMore'
+import { Select, type SelectOption } from '@/components/ui/Select'
 
 type CountryCode = components['schemas']['CountryCode']
 
@@ -46,6 +47,19 @@ function LenderMarketplace() {
     countryName(a).localeCompare(countryName(b)),
   )
   const currencyOptions = currenciesQuery.data ?? []
+
+  const countrySelectOptions: SelectOption[] = [
+    { value: '', label: t('marketplace.allCountries') },
+    ...countryOptions.map((c) => ({
+      value: c.code,
+      label: `${countryName(c)} (${c.code})`,
+      hint: c.fatf_high_risk ? t('marketplace.fatfHighRisk') : undefined,
+    })),
+  ]
+  const currencySelectOptions: SelectOption[] = [
+    { value: '', label: t('marketplace.anyCurrency') },
+    ...currencyOptions.map((c) => ({ value: c.code, label: `${c.code} — ${currencyName(c)}` })),
+  ]
 
   // Фильтрует бэкенд; пустые значения в запрос не уходят. Сумма без валюты не фильтрует.
   const target_country = filterCountry ? [filterCountry as CountryCode] : undefined
@@ -115,24 +129,26 @@ function LenderMarketplace() {
 
       <div className="bg-white p-4 rounded-lg shadow border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">{t('marketplace.country')}</label>
-          <select value={filterCountry} onChange={e => setFilterCountry(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
-            <option value="">{t('marketplace.allCountries')}</option>
-            {countryOptions.map((c) => (
-              <option key={c.code} value={c.code}>
-                {countryName(c)} ({c.code}){c.fatf_high_risk ? ` — ${t('marketplace.fatfHighRisk')}` : ''}
-              </option>
-            ))}
-          </select>
+          <label id="filter-country-label" className="block text-xs font-medium text-gray-700 mb-1">{t('marketplace.country')}</label>
+          <Select
+            name="filter_country"
+            value={filterCountry}
+            onChange={setFilterCountry}
+            options={countrySelectOptions}
+            placeholder={t('marketplace.allCountries')}
+            aria-labelledby="filter-country-label"
+          />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">{t('marketplace.currency')}</label>
-          <select value={filterCurrency} onChange={e => setFilterCurrency(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border text-sm">
-            <option value="">{t('marketplace.anyCurrency')}</option>
-            {currencyOptions.map((c) => (
-              <option key={c.code} value={c.code}>{c.code} — {currencyName(c)}</option>
-            ))}
-          </select>
+          <label id="filter-currency-label" className="block text-xs font-medium text-gray-700 mb-1">{t('marketplace.currency')}</label>
+          <Select
+            name="filter_currency"
+            value={filterCurrency}
+            onChange={setFilterCurrency}
+            options={currencySelectOptions}
+            placeholder={t('marketplace.anyCurrency')}
+            aria-labelledby="filter-currency-label"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">{t('marketplace.amountFrom')}</label>
