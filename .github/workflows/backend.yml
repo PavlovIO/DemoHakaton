@@ -34,7 +34,7 @@ jobs:
       # grep: комментарии и пустые строки не должны попасть в $GITHUB_ENV.
       - name: versions
         run: grep -E '^[A-Z][A-Z0-9_]*=' versions.env >> "$GITHUB_ENV"
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -70,7 +70,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: versions
         run: grep -E '^[A-Z][A-Z0-9_]*=' versions.env >> "$GITHUB_ENV"
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -112,7 +112,7 @@ jobs:
           fetch-depth: 0
       - name: versions
         run: grep -E '^[A-Z][A-Z0-9_]*=' versions.env >> "$GITHUB_ENV"
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -160,7 +160,7 @@ jobs:
       MIGRATE_DATABASE_URL: postgres://lp_migrator:lp_migrator_dev_password@localhost:5432/liquidity_platform?sslmode=disable
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -198,7 +198,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
