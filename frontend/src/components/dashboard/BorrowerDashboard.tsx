@@ -36,10 +36,7 @@ export function BorrowerDashboard() {
 
   const published = applications.filter((a) => a.status === 'published')
   const inModeration = applications.filter((a) => a.status === 'moderation')
-  const activeSum = [...published, ...inModeration].reduce((sum, a) => sum + Number(a.amount), 0)
-  // Сумма складывается только по одной валюте: берём валюту первой активной заявки (page_size=1).
-  const currency = published[0]?.currency ?? inModeration[0]?.currency ?? offersCountQuery.data?.firstItem?.currency
-
+  
   const recentApplications = [...applications].sort(compareByUpdatedDesc).slice(0, TOP_ROWS)
   const withOffers = published
     .filter((a) => (a.offers_count ?? 0) > 0)
@@ -67,12 +64,7 @@ export function BorrowerDashboard() {
           value={offersCountQuery.data?.total ?? null}
           loading={offersCountQuery.isPending}
         />
-        <StatCard
-          label={t('dashboard.borrower.requestedSum')}
-          // formatMoney при пустом значении вернёт '—', а карточка ждёт число — грузим скелетон.
-          value={activeSum}
-          loading={applicationsQuery.isLoading || currency === undefined}
-        />
+        
       </dl>
 
       <div className="grid gap-6 xl:grid-cols-2">

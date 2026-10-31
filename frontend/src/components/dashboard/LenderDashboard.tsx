@@ -40,9 +40,7 @@ export function LenderDashboard() {
 
   const sentOffers = offers.filter((o) => o.status === 'sent')
   const unreadChats = offers.reduce((sum, o) => sum + (o.unread_messages ?? 0), 0)
-  const activeVolume = sentOffers.reduce((sum, o) => sum + Number(o.amount), 0)
-  const activeCurrency = sentOffers[0]?.currency
-
+  
   return (
     <div className="space-y-6">
       {kycStatus && kycStatus !== 'verified' && <KycBanner status={kycStatus} rejectReason={rejectReason} />}
@@ -58,12 +56,7 @@ export function LenderDashboard() {
           value={sentCountQuery.data?.total ?? null}
           loading={sentCountQuery.isPending}
         />
-        <StatCard
-          label={t('dashboard.lender.activeVolume')}
-          // formatMoney при пустом значении вернёт '—', а карточка ждёт число — грузим скелетон.
-          value={activeVolume}
-          loading={offersQuery.isLoading || activeCurrency === undefined}
-        />
+        
         <StatCard
           label={t('dashboard.lender.deals')}
           value={dealsQuery.data?.total ?? 0}
